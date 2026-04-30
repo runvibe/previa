@@ -47,12 +47,6 @@ function healthClass(status: string) {
   return "border-muted-foreground/30 bg-muted text-muted-foreground";
 }
 
-function enabledClass(enabled: boolean) {
-  return enabled
-    ? "border-primary/30 bg-primary/10 text-primary"
-    : "border-muted-foreground/30 bg-muted text-muted-foreground";
-}
-
 export default function RunnersPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -286,23 +280,10 @@ export default function RunnersPage() {
                           value={editingNames[runner.id] ?? ""}
                           onChange={(event) => setEditingNames((current) => ({ ...current, [runner.id]: event.target.value }))}
                         />
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge variant="outline" className={enabledClass(runner.enabled)}>
-                            {runner.enabled ? t("runners.enabled") : t("runners.disabled")}
-                          </Badge>
-                          <Badge variant="outline" className="text-muted-foreground">
-                            {runner.source}
-                          </Badge>
-                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="min-w-64">
                       <div className="font-mono text-xs">{runner.endpoint}</div>
-                      {runner.lastError ? (
-                        <div className="mt-1 max-w-xs truncate text-xs text-destructive" title={runner.lastError}>
-                          {runner.lastError}
-                        </div>
-                      ) : null}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className={cn("capitalize", healthClass(runner.healthStatus))}>
