@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-const LOCAL_ORCHESTRATOR_URL = "http://localhost:5056";
+const LOCAL_ORCHESTRATOR_URL = "http://localhost:5588";
 const LOCAL_PERMISSION_ERROR = "local_permission_blocked";
 
 function getFetchErrorType(error: unknown) {
@@ -333,7 +333,7 @@ export function ContextSwitcher() {
             {adding ? (
               <div className="p-3 space-y-2">
                 <Input
-                  placeholder={LOCAL_ORCHESTRATOR_URL}
+                  placeholder="http://localhost:5588"
                   value={newUrl}
                   onChange={(e) => { setNewUrl(e.target.value); setTestStatus("idle"); clearPermissionBlocked(); }}
                   className="h-8 text-xs font-mono"
