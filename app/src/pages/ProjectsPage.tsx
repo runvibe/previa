@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, FolderOpen, Upload } from "lucide-react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
-import { importProject } from "@/lib/project-io";
+import { importProjectFile } from "@/lib/project-io";
 import type { Project } from "@/types/project";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
@@ -67,12 +67,11 @@ export default function ProjectsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      await importProject(text);
+      await importProjectFile(file);
       await loadProjects();
       toast.success(t("projects.imported"));
-    } catch (err: any) {
-      toast.error(err.message || t("projects.importError"));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t("projects.importError"));
     }
     e.target.value = "";
   };
@@ -102,7 +101,7 @@ export default function ProjectsPage() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json"
+                accept=".json,.sqlite,.sqlite3,.db,application/vnd.sqlite3,application/x-sqlite3"
                 className="hidden"
                 onChange={handleImportFile}
               />

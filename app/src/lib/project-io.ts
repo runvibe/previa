@@ -2,6 +2,7 @@ import type { Project } from "@/types/project";
 import { getApiUrl } from "@/stores/useOrchestratorStore";
 import {
   exportProjectRemote,
+  importProjectsSqliteRemote,
   importProjectRemote,
   type ProjectExportEnvelope,
 } from "@/lib/api-client";
@@ -32,9 +33,15 @@ export async function exportProject(project: Project, includeHistory: boolean): 
 export async function importProject(fileContent: string): Promise<Project> {
   const apiUrl = requireApi();
 
-  let parsed: any;
+  let parsed: ProjectExportEnvelope & {
+    history?: unknown[];
+    loadTestHistory?: unknown[];
+  };
   try {
-    parsed = JSON.parse(fileContent);
+    parsed = JSON.parse(fileContent) as ProjectExportEnvelope & {
+      history?: unknown[];
+      loadTestHistory?: unknown[];
+    };
   } catch {
     throw new Error("Arquivo JSON inválido.");
   }
@@ -57,4 +64,64 @@ export async function importProject(fileContent: string): Promise<Project> {
     specs: parsed.project?.specs || [],
     pipelines: parsed.project?.pipelines || [],
   };
+}
+
+export interface ProjectImportFileResult {
+  projectsImported: number;
+}
+
+export function isSqliteProjectImportFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".sqlite")
+    || name.endsWith(".sqlite3")
+    || name.endsWith(".db")
+    || file.type === "application/vnd.sqlite3"
+    || file.type === "application/x-sqlite3"
+  );
+}
+
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Falha ao ler o arquivo."));
+    reader.readAsText(file);
+  });
+}
+
+function readFileArrayBuffer(file: File): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === "function") {
+    return file.arrayBuffer();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Falha ao ler o arquivo SQLite."));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Falha ao ler o arquivo SQLite."));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+export async function importProjectFile(file: File): Promise<ProjectImportFileResult> {
+  if (!isSqliteProjectImportFile(file)) {
+    const text = await readFileText(file);
+    await importProject(text);
+    return { projectsImported: 1 };
+  }
+
+  const apiUrl = requireApi();
+  const bytes = await readFileArrayBuffer(file);
+  const response = await importProjectsSqliteRemote(apiUrl, bytes, true);
+  return { projectsImported: response.projectsImported };
 }

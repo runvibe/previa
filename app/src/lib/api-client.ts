@@ -882,6 +882,20 @@ export interface ProjectImportResponse {
   name: string;
 }
 
+export interface SqliteProjectImportResponse {
+  includeHistory: boolean;
+  projectsImported: number;
+  projects: Array<{
+    sourceProjectId: string;
+    projectId: string;
+    projectName: string;
+    pipelinesImported: number;
+    specsImported: number;
+    e2eHistoryImported: number;
+    loadHistoryImported: number;
+  }>;
+}
+
 export async function exportProjectRemote(
   baseUrl: string,
   projectId: string,
@@ -890,6 +904,22 @@ export async function exportProjectRemote(
   const qs = includeHistory ? "?includeHistory=true" : "";
   return request<ProjectExportEnvelope>(
     `${ensureApiPrefix(baseUrl)}/projects/${projectId}/export${qs}`,
+  );
+}
+
+export async function importProjectsSqliteRemote(
+  baseUrl: string,
+  bytes: ArrayBuffer,
+  includeHistory: boolean,
+): Promise<SqliteProjectImportResponse> {
+  const query = includeHistory ? "?includeHistory=true" : "?includeHistory=false";
+  return request<SqliteProjectImportResponse>(
+    `${ensureApiPrefix(baseUrl)}/projects/import${query}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/vnd.sqlite3" },
+      body: bytes,
+    },
   );
 }
 
