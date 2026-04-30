@@ -296,7 +296,13 @@ export default function RunnersPage() {
                   const isEditingName = editingRunnerId === runner.id;
                   const editedName = editingNames[runner.id] ?? "";
                   return (
-                    <TableRow key={runner.id}>
+                    <TableRow
+                      key={runner.id}
+                      className={cn(
+                        isEditingName
+                          && "bg-primary/10 ring-1 ring-inset ring-primary/30 hover:bg-primary/15",
+                      )}
+                    >
                       <TableCell className="min-w-52">
                         {isEditingName ? (
                           <Input
