@@ -2,6 +2,28 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.20] - 2026-04-30
+
+### Documentation
+- Changelog: update for v1.0.0-alpha.19 (37a68f1)
+
+### Maintenance
+- Bump version to 1.0.0-alpha.20 (de6892c)
+- Update release metadata for v1.0.0-alpha.19 (ecbb387)
+- Update release metadata for v1.0.0-alpha.19 (268d139)
+
+### Other Changes
+- Add selected projects sqlite export in app (c1e7834)
+- Detect same-origin Previa API on startup (b17aeab)
+- Revert "Check local main on port 5056" (eac6755)
+- Check local main on port 5056 (3f13c43)
+- Support SQLite project imports in app (262aa1b)
+- Update repository references to runvibe (191d3ee)
+- Add SQLite import export e2e test plan (9a844df)
+- Add SQLite project import export (d7398d8)
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.19...v1.0.0-alpha.20
+
 ## [v1.0.0-alpha.19] - 2026-04-30
 
 ### Documentation
