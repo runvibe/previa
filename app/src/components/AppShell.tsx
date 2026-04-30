@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
-import { CircleHelp, EllipsisVertical, Github } from "lucide-react";
-import { Outlet } from "react-router-dom";
+import { CircleHelp, EllipsisVertical, Github, Server } from "lucide-react";
+import { Outlet, useNavigate } from "react-router-dom";
 
 import { AppHeader } from "@/components/AppHeader";
 import { ContextSwitcher } from "@/components/ContextSwitcher";
@@ -49,6 +49,7 @@ function MobileHeaderActionRow({ label, children }: { label: string; children: R
 }
 
 export function AppShell() {
+  const navigate = useNavigate();
   const [headerConfig, setHeaderConfigState] = useState<AppHeaderConfig>({});
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
@@ -78,6 +79,17 @@ export function AppShell() {
         <CircleHelp className="h-4 w-4" />
       </Button>
       <InstallAppButton />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 rounded-full"
+        onClick={() => navigate("/runners")}
+        aria-label="Gerenciar runners"
+        title="Runners"
+      >
+        <Server className="h-4 w-4" />
+      </Button>
       <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-full">
         <a
           href={GITHUB_REPOSITORY_URL}
@@ -91,7 +103,7 @@ export function AppShell() {
       </Button>
       {headerConfig.headerActions}
     </>
-  ), [handleOpenOnboarding, headerConfig.headerActions]);
+  ), [handleOpenOnboarding, headerConfig.headerActions, navigate]);
 
   const mobileHeaderActions = useMemo(() => (
     <DropdownMenu open={isMobileActionsOpen} onOpenChange={setIsMobileActionsOpen}>
@@ -128,6 +140,22 @@ export function AppShell() {
           <MobileHeaderActionRow label="Download">
             <InstallAppButton />
           </MobileHeaderActionRow>
+          <MobileHeaderActionRow label="Runners">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              onClick={() => {
+                navigate("/runners");
+                setIsMobileActionsOpen(false);
+              }}
+              aria-label="Gerenciar runners"
+              title="Runners"
+            >
+              <Server className="h-4 w-4" />
+            </Button>
+          </MobileHeaderActionRow>
           <MobileHeaderActionRow label="GitHub">
             <Button asChild variant="ghost" size="icon" className="h-9 w-9 rounded-full">
               <a
@@ -156,7 +184,7 @@ export function AppShell() {
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
-  ), [handleOpenOnboarding, headerConfig.headerActions, isMobileActionsOpen]);
+  ), [handleOpenOnboarding, headerConfig.headerActions, isMobileActionsOpen, navigate]);
 
   return (
     <AppHeaderContext.Provider value={setHeaderConfig}>

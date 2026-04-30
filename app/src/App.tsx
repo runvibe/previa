@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectFlowPage from "./pages/ProjectFlowPage";
+import RunnersPage from "./pages/RunnersPage";
 import NotFound from "./pages/NotFound";
 import { SpecSyncNotifier } from "./components/SpecSyncNotifier";
 import { DotsLoader } from "./components/DotsLoader";
@@ -83,6 +84,7 @@ const App = () => {
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/" element={<ProjectsPage />} />
+            <Route path="/runners" element={<RunnersPage />} />
             <Route path="/projects/:id" element={<ProjectFlowPage />} />
             <Route path="/projects/:id/pipeline/:pipelineId" element={<ProjectFlowPage />} />
             <Route path="/projects/:id/pipeline/new/editor" element={<ProjectFlowPage />} />

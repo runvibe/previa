@@ -130,6 +130,38 @@ export interface HistoryQuery {
   order?: "asc" | "desc";
 }
 
+export interface RunnerRuntimeInfo {
+  pid: number;
+  memoryBytes: number;
+  virtualMemoryBytes: number;
+  cpuUsagePercent: number;
+}
+
+export interface RunnerRecord {
+  id: string;
+  endpoint: string;
+  name?: string | null;
+  source: string;
+  enabled: boolean;
+  healthStatus: string;
+  lastSeenAt?: string | null;
+  lastError?: string | null;
+  runtime?: RunnerRuntimeInfo | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RunnerUpsertRequest {
+  endpoint: string;
+  name?: string | null;
+  enabled?: boolean;
+}
+
+export interface RunnerUpdateRequest {
+  name?: string | null;
+  enabled?: boolean;
+}
+
 // ============ Helper ============
 
 function simpleHash(input: string): string {
@@ -336,6 +368,36 @@ export async function upsertProject(baseUrl: string, id: string, data: ProjectUp
 
 export async function deleteProject(baseUrl: string, id: string): Promise<void> {
   await request<void>(`${baseUrl}/projects/${id}`, { method: "DELETE" });
+}
+
+// ============ Runners ============
+
+export async function listRunners(baseUrl: string): Promise<RunnerRecord[]> {
+  return request<RunnerRecord[]>(`${baseUrl}/runners`);
+}
+
+export async function createRunner(baseUrl: string, payload: RunnerUpsertRequest): Promise<RunnerRecord> {
+  return request<RunnerRecord>(`${baseUrl}/runners`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRunner(
+  baseUrl: string,
+  runnerId: string,
+  payload: RunnerUpdateRequest,
+): Promise<RunnerRecord> {
+  return request<RunnerRecord>(`${baseUrl}/runners/${runnerId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRunner(baseUrl: string, runnerId: string): Promise<void> {
+  await request<void>(`${baseUrl}/runners/${runnerId}`, { method: "DELETE" });
 }
 
 // ============ Pipelines ============
