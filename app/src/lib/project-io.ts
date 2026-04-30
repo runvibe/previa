@@ -2,6 +2,7 @@ import type { Project } from "@/types/project";
 import { getApiUrl } from "@/stores/useOrchestratorStore";
 import {
   exportProjectRemote,
+  exportProjectsSqliteRemote,
   importProjectsSqliteRemote,
   importProjectRemote,
   type ProjectExportEnvelope,
@@ -9,6 +10,10 @@ import {
 
 function downloadJson(payload: unknown, fileName: string) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  downloadBlob(blob, fileName);
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -28,6 +33,27 @@ export async function exportProject(project: Project, includeHistory: boolean): 
   const fileName = `${project.name.toLowerCase().replace(/\s+/g, "-")}.previa.json`;
   const envelope = await exportProjectRemote(apiUrl, project.id, includeHistory);
   downloadJson(envelope, fileName);
+}
+
+export async function exportProjectsSqlite(
+  projectIds: string[],
+  all: boolean,
+  includeHistory: boolean,
+): Promise<void> {
+  if (!all && projectIds.length === 0) {
+    throw new Error("Selecione ao menos um projeto para exportar.");
+  }
+
+  const apiUrl = requireApi();
+  const blob = await exportProjectsSqliteRemote(apiUrl, {
+    all,
+    projectIds: all ? [] : projectIds,
+    includeHistory,
+  });
+  downloadBlob(
+    new Blob([blob], { type: "application/vnd.sqlite3" }),
+    "previa-projects.sqlite3",
+  );
 }
 
 export async function importProject(fileContent: string): Promise<Project> {

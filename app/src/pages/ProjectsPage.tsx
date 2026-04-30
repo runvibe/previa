@@ -4,9 +4,10 @@ import { useTranslation } from "react-i18next";
 import { useAppHeader } from "@/components/AppShell";
 import { ProjectCard } from "@/components/ProjectCard";
 import { ExportDialog } from "@/components/ExportDialog";
+import { ProjectsSqliteExportDialog } from "@/components/ProjectsSqliteExportDialog";
 import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
 import { Button } from "@/components/ui/button";
-import { Plus, FolderOpen, Upload } from "lucide-react";
+import { Plus, FolderOpen, Upload, Download } from "lucide-react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import { importProjectFile } from "@/lib/project-io";
@@ -20,6 +21,7 @@ export default function ProjectsPage() {
   const { projects, loading, loadProjects, loadProject, createProject, updateProject, deleteProject, duplicateProject } = useProjectStore();
   const orchUrl = useOrchestratorStore((s) => s.url);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [sqliteExportOpen, setSqliteExportOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const [exportProject, setExportProject] = useState<Project | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -109,6 +111,16 @@ export default function ProjectsPage() {
                 <Upload className="h-4 w-4" />
                 {t("common.import")}
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="sm:size-default"
+                onClick={() => setSqliteExportOpen(true)}
+                disabled={loading || projects.length === 0}
+              >
+                <Download className="h-4 w-4" />
+                {t("common.export")}
+              </Button>
               <Button size="sm" className="sm:size-default" onClick={handleCreateProject}>
                 <Plus className="h-4 w-4" />
                 {t("projects.new")}
@@ -169,6 +181,12 @@ export default function ProjectsPage() {
         project={exportProject}
         open={!!exportProject}
         onOpenChange={(open) => { if (!open) setExportProject(null); }}
+      />
+
+      <ProjectsSqliteExportDialog
+        projects={projects}
+        open={sqliteExportOpen}
+        onOpenChange={setSqliteExportOpen}
       />
     </main>
   );

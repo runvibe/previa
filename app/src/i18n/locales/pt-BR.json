@@ -48,6 +48,11 @@
   "export.exporting": "Exportando...",
   "export.success": "Projeto exportado com sucesso!",
   "export.error": "Erro ao exportar projeto.",
+  "export.sqlite.title": "Exportar projetos",
+  "export.sqlite.description": "Escolha quais stacks serão exportadas para um arquivo SQLite.",
+  "export.sqlite.selectedCount": "{{count}} de {{total}} selecionados",
+  "export.sqlite.success": "Projetos exportados com sucesso!",
+  "export.sqlite.error": "Erro ao exportar projetos.",
 
   "confirmDelete.title": "Remover {{type}}",
   "confirmDelete.description": "Esta ação não pode ser desfeita. Digite <strong>\"{{name}}\"</strong> para confirmar.",

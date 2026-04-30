@@ -896,6 +896,12 @@ export interface SqliteProjectImportResponse {
   }>;
 }
 
+export interface ProjectSqliteExportRequest {
+  all: boolean;
+  projectIds: string[];
+  includeHistory: boolean;
+}
+
 export async function exportProjectRemote(
   baseUrl: string,
   projectId: string,
@@ -905,6 +911,23 @@ export async function exportProjectRemote(
   return request<ProjectExportEnvelope>(
     `${ensureApiPrefix(baseUrl)}/projects/${projectId}/export${qs}`,
   );
+}
+
+export async function exportProjectsSqliteRemote(
+  baseUrl: string,
+  payload: ProjectSqliteExportRequest,
+): Promise<Blob> {
+  const url = `${ensureApiPrefix(baseUrl)}/projects/export`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text}`);
+  }
+  return res.blob();
 }
 
 export async function importProjectsSqliteRemote(
