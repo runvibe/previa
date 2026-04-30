@@ -32,8 +32,6 @@ const translateMock = vi.hoisted(() => (key: string, params?: Record<string, str
     "runners.enableRunner": "Enable runner",
     "runners.enabled": "Enabled",
     "runners.endpoint": "Endpoint",
-    "runners.cancelNameEdit": `Cancel runner name edit ${params?.endpoint ?? ""}`,
-    "runners.editName": `Edit runner name ${params?.endpoint ?? ""}`,
     "runners.lastSeen": "Last seen",
     "runners.loadError": "Error loading runners.",
     "runners.name": "Name",
@@ -42,7 +40,6 @@ const translateMock = vi.hoisted(() => (key: string, params?: Record<string, str
     "runners.noBackend": "Backend not connected. Select or configure an active context.",
     "runners.refresh": "Refresh",
     "runners.runtime": "Runtime",
-    "runners.saveName": `Save runner name ${params?.endpoint ?? ""}`,
     "runners.status": "Status",
     "runners.subtitle": `Manage runners for ${params?.context ?? ""}`,
     "runners.summary.enabled": "Enabled",
@@ -197,7 +194,7 @@ describe("RunnersPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Local runner")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Local runner")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:55880")).toBeInTheDocument();
     expect(screen.getByText("healthy")).toBeInTheDocument();
   });
@@ -224,17 +221,18 @@ describe("RunnersPage", () => {
         }),
       );
     });
-    expect(await screen.findByText("New runner")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("New runner")).toBeInTheDocument();
   });
 
-  it("edits a runner name through explicit edit mode", async () => {
+  it("auto-saves a runner name when editing finishes", async () => {
     const fetchMock = mockFetch();
 
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit runner name http://127.0.0.1:55880" }));
-    fireEvent.change(screen.getByLabelText("Name for http://127.0.0.1:55880"), { target: { value: "Renamed runner" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save runner name http://127.0.0.1:55880" }));
+    const nameInput = await screen.findByLabelText("Name for http://127.0.0.1:55880");
+    fireEvent.focus(nameInput);
+    fireEvent.change(nameInput, { target: { value: "Renamed runner" } });
+    fireEvent.blur(nameInput);
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

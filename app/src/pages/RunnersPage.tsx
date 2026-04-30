@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  Activity, Check, Loader2, Pencil, Plus, RefreshCw, Server, Trash2, X,
+  Activity, Loader2, Plus, RefreshCw, Server, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -157,19 +157,16 @@ export default function RunnersPage() {
     }
   };
 
-  const handleSaveRunnerName = async (runner: RunnerRecord) => {
+  const handleCommitRunnerName = async (runner: RunnerRecord) => {
     const updatedName = editingNames[runner.id]?.trim() || null;
     if (updatedName === (runner.name ?? null)) {
       setEditingRunnerId(null);
       return;
     }
-    if (await handleUpdateRunner(runner, { name: updatedName })) {
-      setEditingRunnerId(null);
+    const updated = await handleUpdateRunner(runner, { name: updatedName });
+    if (!updated) {
+      setEditingNames((current) => ({ ...current, [runner.id]: runner.name ?? "" }));
     }
-  };
-
-  const handleCancelRunnerNameEdit = (runner: RunnerRecord) => {
-    setEditingNames((current) => ({ ...current, [runner.id]: runner.name ?? "" }));
     setEditingRunnerId(null);
   };
 
@@ -304,15 +301,24 @@ export default function RunnersPage() {
                       )}
                     >
                       <TableCell className="min-w-52">
-                        {isEditingName ? (
-                          <Input
-                            aria-label={t("runners.nameFor", { endpoint: runner.endpoint })}
-                            value={editedName}
-                            onChange={(event) => setEditingNames((current) => ({ ...current, [runner.id]: event.target.value }))}
-                          />
-                        ) : (
-                          <div className="font-medium">{runner.name || runner.endpoint}</div>
-                        )}
+                        <Input
+                          aria-label={t("runners.nameFor", { endpoint: runner.endpoint })}
+                          value={editedName}
+                          disabled={saving}
+                          onFocus={() => setEditingRunnerId(runner.id)}
+                          onBlur={() => { void handleCommitRunnerName(runner); }}
+                          onChange={(event) => setEditingNames((current) => ({ ...current, [runner.id]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.currentTarget.blur();
+                            }
+                            if (event.key === "Escape") {
+                              setEditingNames((current) => ({ ...current, [runner.id]: runner.name ?? "" }));
+                              setEditingRunnerId(null);
+                              event.currentTarget.blur();
+                            }
+                          }}
+                        />
                       </TableCell>
                       <TableCell className="min-w-64">
                         <div className="font-mono text-xs">{runner.endpoint}</div>
@@ -343,44 +349,6 @@ export default function RunnersPage() {
                             disabled={saving}
                             onCheckedChange={(enabled) => { void handleUpdateRunner(runner, { enabled }); }}
                           />
-                          {isEditingName ? (
-                            <>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-9 w-9"
-                                disabled={saving}
-                                onClick={() => { void handleSaveRunnerName(runner); }}
-                                aria-label={t("runners.saveName", { endpoint: runner.endpoint })}
-                                title={t("common.save")}
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9"
-                                disabled={saving}
-                                onClick={() => handleCancelRunnerNameEdit(runner)}
-                                aria-label={t("runners.cancelNameEdit", { endpoint: runner.endpoint })}
-                                title={t("common.cancel")}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9"
-                              disabled={saving}
-                              onClick={() => setEditingRunnerId(runner.id)}
-                              aria-label={t("runners.editName", { endpoint: runner.endpoint })}
-                              title={t("common.edit")}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
                           <Button
                             variant="ghost"
                             size="icon"
