@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,16 @@ import { toast } from "sonner";
 const LOCAL_ORCHESTRATOR_URL = "http://localhost:5588";
 const LOCAL_PERMISSION_ERROR = "local_permission_blocked";
 
+interface DetectedPreviaApi {
+  url: string;
+  name: string;
+  info: {
+    context: string;
+    totalRunners: number;
+    activeRunners: number;
+  };
+}
+
 function getFetchErrorType(error: unknown) {
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return "timeout";
@@ -38,31 +48,73 @@ function getFetchErrorType(error: unknown) {
   return "unknown";
 }
 
+function normalizeContextUrl(url: string) {
+  return url.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
+function parsePreviaInfo(payload: unknown): DetectedPreviaApi["info"] | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const data = payload as Record<string, unknown>;
+  if (typeof data.context !== "string" || !data.context.trim()) return null;
+  if (typeof data.totalRunners !== "number") return null;
+  if (typeof data.activeRunners !== "number") return null;
+
+  return {
+    context: data.context,
+    totalRunners: data.totalRunners,
+    activeRunners: data.activeRunners,
+  };
+}
+
+async function detectPreviaApi(baseUrl: string, timeoutMs = 2500): Promise<DetectedPreviaApi | null> {
+  const url = normalizeContextUrl(baseUrl);
+  const healthRes = await fetch(`${url}/health`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!healthRes.ok) return null;
+
+  const infoRes = await fetch(`${url}/info`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!infoRes.ok) return null;
+
+  const info = parsePreviaInfo(await infoRes.json());
+  if (!info) return null;
+
+  return {
+    url,
+    name: info.context,
+    info,
+  };
+}
+
 export function ContextSwitcher() {
   const { t } = useTranslation();
   const contexts = useOrchestratorStore((s) => s.contexts);
   const activeContext = useOrchestratorStore((s) => s.activeContext);
   const info = useOrchestratorStore((s) => s.info);
-  const { addContext, removeContext, switchContext, updateContext } = useOrchestratorStore();
+  const { addContext, removeContext, switchContext, updateContext, setInfo } = useOrchestratorStore();
 
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newUrl, setNewUrl] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [detectedLocalContext, setDetectedLocalContext] = useState<{ url: string } | null>(null);
+  const [detectedLocalContext, setDetectedLocalContext] = useState<{ url: string; name?: string } | null>(null);
   const [isCheckingLocalContext, setIsCheckingLocalContext] = useState(false);
   const [isActivatingLocalContext, setIsActivatingLocalContext] = useState(false);
   const [dismissedLocalPrompt, setDismissedLocalPrompt] = useState(false);
   const [permissionBlockedUrl, setPermissionBlockedUrl] = useState<string | null>(null);
   const [isRetryingPermission, setIsRetryingPermission] = useState(false);
+  const hasCheckedStartupContextsRef = useRef(false);
 
   const hasLocalContext = useMemo(
-    () => contexts.some((ctx) => ctx.url.replace(/\/+$/, "") === LOCAL_ORCHESTRATOR_URL),
+    () => contexts.some((ctx) => normalizeContextUrl(ctx.url) === LOCAL_ORCHESTRATOR_URL),
     [contexts],
   );
 
-  const buildUniqueContextName = (baseName: string) => {
-    const existingNames = contexts.map((c) => c.name);
+  const buildUniqueContextName = (baseName: string, existingContexts = contexts) => {
+    const existingNames = existingContexts.map((c) => c.name);
     if (!existingNames.includes(baseName)) return baseName;
 
     let suffix = 2;
@@ -72,7 +124,7 @@ export function ContextSwitcher() {
 
   const resolveContextName = async (baseUrl: string) => {
     try {
-      const base = baseUrl.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+      const base = normalizeContextUrl(baseUrl);
       const infoRes = await fetch(`${base}/info`, { signal: AbortSignal.timeout(4000) });
       if (infoRes.ok) {
         const infoData = await infoRes.json();
@@ -85,6 +137,30 @@ export function ContextSwitcher() {
     return baseUrl;
   };
 
+  const activateDetectedApi = (detected: DetectedPreviaApi) => {
+    const store = useOrchestratorStore.getState();
+    const existing = store.contexts.find((ctx) => normalizeContextUrl(ctx.url) === detected.url);
+    if (existing) {
+      if (existing.name !== detected.name) {
+        updateContext(existing.id, {
+          name: buildUniqueContextName(
+            detected.name,
+            store.contexts.filter((ctx) => ctx.id !== existing.id),
+          ),
+        });
+      }
+      switchContext(existing.id);
+      setInfo(detected.info);
+      return;
+    }
+
+    const ctx = addContext(buildUniqueContextName(detected.name, store.contexts), detected.url);
+    if (store.contexts.length > 0) {
+      switchContext(ctx.id);
+    }
+    setInfo(detected.info);
+  };
+
   const showPermissionBlockedFeedback = (url: string) => {
     setPermissionBlockedUrl(url);
     toast.error("O Chrome bloqueou o acesso ao app local. Permita o localhost e tente novamente.");
@@ -95,29 +171,41 @@ export function ContextSwitcher() {
   };
 
   useEffect(() => {
-    if (hasLocalContext || dismissedLocalPrompt || isCheckingLocalContext || permissionBlockedUrl) {
-      if (hasLocalContext) setDetectedLocalContext(null);
+    if (hasCheckedStartupContextsRef.current || permissionBlockedUrl) {
       return;
     }
+    hasCheckedStartupContextsRef.current = true;
 
     let cancelled = false;
 
-    const checkLocalOrchestrator = async () => {
+    const checkStartupContexts = async () => {
       setIsCheckingLocalContext(true);
       try {
-        const response = await fetch(`${LOCAL_ORCHESTRATOR_URL}/health`, {
-          signal: AbortSignal.timeout(2500),
-        });
-
-        if (!cancelled && response.ok) {
-          setDetectedLocalContext({ url: LOCAL_ORCHESTRATOR_URL });
-          clearPermissionBlocked();
+        const currentOrigin = normalizeContextUrl(window.location.origin);
+        try {
+          const sameOriginApi = await detectPreviaApi(currentOrigin);
+          if (cancelled) return;
+          if (sameOriginApi) activateDetectedApi(sameOriginApi);
+        } catch {
+          // Keep the fallback localhost probe even when the current origin is not a Previa API.
         }
-      } catch (error) {
-        if (!cancelled) {
-          setDetectedLocalContext(null);
-          if (getFetchErrorType(error) === LOCAL_PERMISSION_ERROR) {
-            showPermissionBlockedFeedback(LOCAL_ORCHESTRATOR_URL);
+
+        const store = useOrchestratorStore.getState();
+        const localAlreadySaved = store.contexts.some(
+          (ctx) => normalizeContextUrl(ctx.url) === LOCAL_ORCHESTRATOR_URL,
+        );
+        if (currentOrigin !== LOCAL_ORCHESTRATOR_URL && !localAlreadySaved && !dismissedLocalPrompt) {
+          try {
+            const localApi = await detectPreviaApi(LOCAL_ORCHESTRATOR_URL);
+            if (cancelled) return;
+            if (localApi) {
+              setDetectedLocalContext({ url: localApi.url, name: localApi.name });
+              clearPermissionBlocked();
+            }
+          } catch (error) {
+            if (!cancelled && getFetchErrorType(error) === LOCAL_PERMISSION_ERROR) {
+              showPermissionBlockedFeedback(LOCAL_ORCHESTRATOR_URL);
+            }
           }
         }
       } finally {
@@ -127,12 +215,12 @@ export function ContextSwitcher() {
       }
     };
 
-    void checkLocalOrchestrator();
+    void checkStartupContexts();
 
     return () => {
       cancelled = true;
     };
-  }, [dismissedLocalPrompt, hasLocalContext, isCheckingLocalContext, permissionBlockedUrl]);
+  }, [dismissedLocalPrompt, permissionBlockedUrl]);
 
   const handleTestAndAdd = async () => {
     const trimmedUrl = newUrl.trim().replace(/\/+$/, "");
@@ -182,15 +270,15 @@ export function ContextSwitcher() {
 
     setIsActivatingLocalContext(true);
     try {
-      const existing = contexts.find((ctx) => ctx.url.replace(/\/+$/, "") === detectedLocalContext.url);
+      const existing = contexts.find((ctx) => normalizeContextUrl(ctx.url) === detectedLocalContext.url);
       if (existing) {
-        const resolvedName = await resolveContextName(detectedLocalContext.url);
+        const resolvedName = detectedLocalContext.name ?? await resolveContextName(detectedLocalContext.url);
         if (resolvedName && existing.name === existing.url) {
           updateContext(existing.id, { name: buildUniqueContextName(resolvedName) });
         }
         switchContext(existing.id);
       } else {
-        const resolvedName = buildUniqueContextName(await resolveContextName(detectedLocalContext.url));
+        const resolvedName = buildUniqueContextName(detectedLocalContext.name ?? await resolveContextName(detectedLocalContext.url));
         const ctx = addContext(resolvedName, detectedLocalContext.url);
         switchContext(ctx.id);
       }
@@ -211,18 +299,15 @@ export function ContextSwitcher() {
 
     setIsRetryingPermission(true);
     try {
-      const response = await fetch(`${permissionBlockedUrl}/health`, {
-        signal: AbortSignal.timeout(2500),
-      });
-
-      if (!response.ok) {
+      const detected = await detectPreviaApi(permissionBlockedUrl);
+      if (!detected) {
         toast.error("Ainda não foi possível acessar o app local.");
         return;
       }
 
       clearPermissionBlocked();
       setDismissedLocalPrompt(false);
-      setDetectedLocalContext({ url: permissionBlockedUrl });
+      setDetectedLocalContext({ url: detected.url, name: detected.name });
       toast.success("Acesso local liberado. Você já pode ativar o app local.");
     } catch (error) {
       if (getFetchErrorType(error) === LOCAL_PERMISSION_ERROR) {
