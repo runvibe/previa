@@ -35,7 +35,9 @@ use crate::server::handlers::tests_e2e_queue::{
     get_e2e_queue_for_project,
 };
 use crate::server::handlers::tests_load::run_load_test_for_project;
-use crate::server::handlers::transfers::{export_project, import_pipelines, import_project};
+use crate::server::handlers::transfers::{
+    export_project, export_projects_sqlite, import_pipelines, import_project,
+};
 use crate::server::mcp::handlers::{delete_http_session, get_http, handle_http, preflight};
 use crate::server::mcp::models::McpConfig;
 use crate::server::middleware::transaction::propagate_transaction_header;
@@ -101,6 +103,7 @@ pub fn build_app_with_config(
             "/api/v1/runners/{runnerId}",
             get(get_runner).patch(update_runner).delete(delete_runner),
         )
+        .route("/api/v1/projects/export", post(export_projects_sqlite))
         .route("/api/v1/projects/import", post(import_project))
         .route("/api/v1/projects/import/pipelines", post(import_pipelines))
         .route("/api/v1/specs/validate", post(validate_openapi_spec))

@@ -72,6 +72,10 @@ pub enum LocalCommands {
     Up(UpArgs),
     #[command(about = "Push a project-local Previa project to a remote Previa main")]
     Push(LocalPushArgs),
+    #[command(about = "Import every project from a SQLite export into a project-local context")]
+    Import(LocalImportArgs),
+    #[command(about = "Export selected project-local projects into a SQLite database")]
+    Export(LocalExportArgs),
     #[command(about = "Manage registered runner endpoints in a project-local context")]
     Runner(RunnerArgs),
     #[command(about = "Stop a project-local detached context or selected local runners")]
@@ -82,6 +86,44 @@ pub enum LocalCommands {
     Logs(LogsArgs),
     #[command(about = "Open the Previa IDE with the project-local context")]
     Open(OpenArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(about = "Import every project from a SQLite export into a project-local context")]
+pub struct LocalImportArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(value_name = "DB_SQLITE3")]
+    pub path: PathBuf,
+    #[arg(long = "no-history")]
+    pub no_history: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(about = "Export selected project-local projects into a SQLite database")]
+pub struct LocalExportArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "all", conflicts_with = "projects")]
+    pub all: bool,
+    #[arg(long = "project", value_name = "PROJECT_ID", conflicts_with = "all")]
+    pub projects: Vec<String>,
+    #[arg(short = 'o', long = "output", value_name = "DB_SQLITE3")]
+    pub output: PathBuf,
+    #[arg(long = "overwrite")]
+    pub overwrite: bool,
+    #[arg(long = "no-history")]
+    pub no_history: bool,
 }
 
 #[derive(Debug, Args)]
@@ -556,6 +598,46 @@ mod tests {
         assert_eq!(args.to, "https://remote.example");
         assert!(args.overwrite);
         assert!(args.include_history);
+    }
+
+    #[test]
+    fn parses_local_import() {
+        let cli = Cli::try_parse_from(["previa", "local", "import", "./db.sqlite3"])
+            .expect("parse local import");
+
+        let Commands::Local(local) = cli.command else {
+            panic!("expected local command");
+        };
+        let super::LocalCommands::Import(args) = local.command else {
+            panic!("expected local import");
+        };
+        assert_eq!(args.context, "default");
+        assert_eq!(args.path, std::path::PathBuf::from("./db.sqlite3"));
+        assert!(!args.no_history);
+    }
+
+    #[test]
+    fn parses_local_export_all() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "local",
+            "export",
+            "--all",
+            "--output",
+            "./db.sqlite3",
+        ])
+        .expect("parse local export");
+
+        let Commands::Local(local) = cli.command else {
+            panic!("expected local command");
+        };
+        let super::LocalCommands::Export(args) = local.command else {
+            panic!("expected local export");
+        };
+        assert_eq!(args.context, "default");
+        assert!(args.all);
+        assert!(args.projects.is_empty());
+        assert_eq!(args.output, std::path::PathBuf::from("./db.sqlite3"));
     }
 
     #[test]

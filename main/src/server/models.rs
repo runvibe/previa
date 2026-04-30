@@ -91,6 +91,16 @@ pub struct ProjectTransferQuery {
     pub include_history: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectSqliteExportRequest {
+    #[serde(default)]
+    pub all: bool,
+    #[serde(default)]
+    pub project_ids: Vec<String>,
+    pub include_history: Option<bool>,
+}
+
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProxyRequest {

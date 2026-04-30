@@ -70,6 +70,26 @@ previa local push \
 `--overwrite` replaces the remote project with the local snapshot instead of
 merging. Execution history is not included unless `--include-history` is passed.
 
+## Export and Import a Local SQLite Snapshot
+
+For bulk moves, export selected projects from a project-local context into a
+SQLite database:
+
+```bash
+previa local export --all --output ./previa-projects.sqlite3
+previa local export --project my_app_smoke --output ./my-app.sqlite3
+```
+
+Import the SQLite database into another local context with:
+
+```bash
+previa local import ./previa-projects.sqlite3
+```
+
+When a project name already exists in the target context, the imported copy gets
+an `-imported`, `-imported-2`, `-imported-3` suffix instead of merging with or
+overwriting the existing project.
+
 ## 2. Choose One of Two Pipeline Styles
 
 There are two practical ways to keep pipelines in the repo.

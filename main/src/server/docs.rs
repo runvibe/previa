@@ -10,9 +10,9 @@ use crate::server::models::{
     PipelineRuntimeStatus, ProjectE2eQueueRequest, ProjectE2eTestRequest, ProjectExportEnvelope,
     ProjectExportProject, ProjectHistoryExport, ProjectImportResponse, ProjectListQuery,
     ProjectLoadTestRequest, ProjectMetadataUpsertRequest, ProjectPipelineRecord, ProjectRecord,
-    ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectTransferQuery, ProjectUpsertRequest,
-    ProxyRequest, RunnerInfo, RunnerLoadLine, RunnerRecord, RunnerRuntimeInfo, RunnerUpdateRequest,
-    RunnerUpsertRequest, SpecUrlEntry,
+    ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectSqliteExportRequest, ProjectTransferQuery,
+    ProjectUpsertRequest, ProxyRequest, RunnerInfo, RunnerLoadLine, RunnerRecord,
+    RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
 };
 
 #[derive(OpenApi)]
@@ -29,6 +29,7 @@ use crate::server::models::{
         crate::server::handlers::projects::list_projects,
         crate::server::handlers::projects::get_project,
         crate::server::handlers::transfers::export_project,
+        crate::server::handlers::transfers::export_projects_sqlite,
         crate::server::handlers::transfers::import_project,
         crate::server::handlers::transfers::import_pipelines,
         crate::server::handlers::runners::list_runners,
@@ -81,6 +82,7 @@ use crate::server::models::{
         ProjectHistoryExport,
         ProjectExportProject,
         ProjectExportEnvelope,
+        ProjectSqliteExportRequest,
         ProjectImportResponse,
         PipelineImportRequest,
         PipelineImportResponse,

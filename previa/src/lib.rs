@@ -32,7 +32,8 @@ use tokio::time::sleep;
 use crate::browser::{build_open_url, open_browser};
 use crate::cli::{
     Cli, Commands, DownArgs, ExportArgs, ExportTarget, InitArgs, LocalArgs, LocalCommands,
-    LogsArgs, McpArgs, OpenArgs, PsArgs, PullArgs, RestartArgs, StatusArgs, UpArgs,
+    LocalExportArgs, LocalImportArgs, LogsArgs, McpArgs, OpenArgs, PsArgs, PullArgs, RestartArgs,
+    StatusArgs, UpArgs,
 };
 use crate::compose::{
     ComposeProject, MAIN_SERVICE_NAME, ServiceInspect, compose_project_from_state,
@@ -110,6 +111,8 @@ async fn cmd_local(paths: &PreviaPaths, http: &Client, args: LocalArgs) -> Resul
     match args.command {
         LocalCommands::Up(args) => cmd_up(paths, http, args).await,
         LocalCommands::Push(args) => cmd_local_push(paths, http, args).await,
+        LocalCommands::Import(args) => cmd_local_import(paths, args).await,
+        LocalCommands::Export(args) => cmd_local_export(paths, args).await,
         LocalCommands::Runner(args) => run_runner_cli(paths, http, args).await,
         LocalCommands::Down(args) => cmd_down(paths, args).await,
         LocalCommands::Status(args) => cmd_status(paths, http, args).await,
@@ -152,6 +155,136 @@ async fn cmd_local_push(
         outcome.load_history_imported
     );
     Ok(())
+}
+
+async fn cmd_local_import(paths: &PreviaPaths, args: LocalImportArgs) -> Result<()> {
+    let stack_name = parse_stack_name(&args.context)?;
+    let stack_paths = paths.stack(&stack_name);
+    let state = read_required_state(&stack_paths)?;
+    let local_base_url = crate::browser::main_url(&state.main.address, state.main.port);
+    let bytes = std::fs::read(&args.path)
+        .with_context(|| format!("failed to read sqlite import '{}'", args.path.display()))?;
+    let http = Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .context("failed to build HTTP client")?;
+    let include_history = !args.no_history;
+    let url = format!("{local_base_url}/api/v1/projects/import?includeHistory={include_history}");
+    let response = http
+        .post(&url)
+        .header("content-type", "application/vnd.sqlite3")
+        .body(bytes)
+        .send()
+        .await
+        .with_context(|| format!("failed to import sqlite into local context at '{url}'"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let message = decode_api_error(response).await;
+        bail!("failed to import sqlite projects: {} ({status})", message);
+    }
+
+    let payload = response
+        .json::<serde_json::Value>()
+        .await
+        .context("failed to decode sqlite import response")?;
+    let imported = payload
+        .get("projectsImported")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    println!(
+        "imported {imported} project(s) from '{}'",
+        args.path.display()
+    );
+    if let Some(projects) = payload.get("projects").and_then(|value| value.as_array()) {
+        for project in projects {
+            let name = project
+                .get("projectName")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            let id = project
+                .get("projectId")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            println!("{name} ({id})");
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_local_export(paths: &PreviaPaths, args: LocalExportArgs) -> Result<()> {
+    if !args.all && args.projects.is_empty() {
+        bail!("use --all or at least one --project <PROJECT_ID>");
+    }
+    if args.output.exists() && !args.overwrite {
+        bail!(
+            "output '{}' already exists; pass --overwrite to replace it",
+            args.output.display()
+        );
+    }
+    if let Some(parent) = args
+        .output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create output directory '{}'", parent.display()))?;
+    }
+
+    let stack_name = parse_stack_name(&args.context)?;
+    let stack_paths = paths.stack(&stack_name);
+    let state = read_required_state(&stack_paths)?;
+    let local_base_url = crate::browser::main_url(&state.main.address, state.main.port);
+    let include_history = !args.no_history;
+    let body = serde_json::json!({
+        "all": args.all,
+        "projectIds": args.projects,
+        "includeHistory": include_history,
+    });
+    let http = Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .context("failed to build HTTP client")?;
+    let url = format!("{local_base_url}/api/v1/projects/export");
+    let response = http
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .with_context(|| format!("failed to export sqlite from local context at '{url}'"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let message = decode_api_error(response).await;
+        bail!("failed to export sqlite projects: {} ({status})", message);
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .context("failed to read sqlite export response")?;
+    std::fs::write(&args.output, &bytes)
+        .with_context(|| format!("failed to write sqlite export '{}'", args.output.display()))?;
+    println!(
+        "exported {} byte(s) to '{}'",
+        bytes.len(),
+        args.output.display()
+    );
+    Ok(())
+}
+
+async fn decode_api_error(response: reqwest::Response) -> String {
+    let body = response.text().await.unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|payload| {
+            payload
+                .get("message")
+                .and_then(|message| message.as_str())
+                .map(str::to_owned)
+        })
+        .filter(|message| !message.trim().is_empty())
+        .unwrap_or_else(|| body.trim().to_owned())
 }
 
 fn cmd_init(args: InitArgs) -> Result<()> {

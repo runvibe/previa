@@ -82,7 +82,25 @@ curl -sS http://127.0.0.1:5588/api/v1/projects/import?includeHistory=true \
   -d @project-export.json
 ```
 
-## 9. Probe a Live Endpoint
+The same import endpoint also accepts a SQLite database and imports every
+project inside it:
+
+```bash
+curl -sS http://127.0.0.1:5588/api/v1/projects/import?includeHistory=true \
+  -H 'content-type: application/vnd.sqlite3' \
+  --data-binary @previa-projects.sqlite3
+```
+
+## 9. Export Selected Projects as SQLite
+
+```bash
+curl -sS http://127.0.0.1:5588/api/v1/projects/export \
+  -H 'content-type: application/json' \
+  -d '{"all":true,"projectIds":[],"includeHistory":true}' \
+  -o previa-projects.sqlite3
+```
+
+## 10. Probe a Live Endpoint
 
 ```bash
 curl -sS http://127.0.0.1:5588/proxy \

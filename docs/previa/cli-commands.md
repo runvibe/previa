@@ -148,6 +148,53 @@ previa local push --project my_app --to https://previa.example.com --overwrite -
 previa local push --project my_app --to https://previa.example.com --remote-project-id prj_123 --overwrite
 ```
 
+### `previa local export`
+
+Exports selected projects from the project-local context to a SQLite database.
+
+```text
+previa local export (--all | --project <PROJECT_ID>...) --output <DB_SQLITE3> [OPTIONS]
+```
+
+Important options:
+
+- `--all`: export every project in the local context
+- `--project <PROJECT_ID>`: export one selected project; repeat for multiple projects
+- `--output <DB_SQLITE3>`: destination SQLite file
+- `--overwrite`: replace an existing destination file
+- `--no-history`: omit E2E and load history from the export
+
+Examples:
+
+```bash
+previa local export --all --output ./previa-projects.sqlite3
+previa local export --project project_a --project project_b --output ./selected.sqlite3
+previa local export --all --output ./previa-projects.sqlite3 --overwrite --no-history
+```
+
+### `previa local import`
+
+Imports every project from a SQLite database into the project-local context.
+
+```text
+previa local import <DB_SQLITE3> [OPTIONS]
+```
+
+If an imported project name already exists, Previa keeps both projects and
+renames the imported project with `-imported`, `-imported-2`, and so on.
+
+Important options:
+
+- `--no-history`: omit E2E and load history while importing
+- `--context <CONTEXT>`: import into a specific local context
+
+Examples:
+
+```bash
+previa local import ./previa-projects.sqlite3
+previa local import ./previa-projects.sqlite3 --no-history
+```
+
 ## `previa init`
 
 Creates a starter `previa-compose.yaml` in the current directory.

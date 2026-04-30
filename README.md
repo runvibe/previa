@@ -124,6 +124,14 @@ previa local push --project my_app --to https://previa.example.com
 previa local push --project my_app --to https://previa.example.com --overwrite
 ```
 
+Move one or more project-local projects as a SQLite database:
+
+```bash
+previa local export --all --output ./previa-projects.sqlite3
+previa local export --project project_id --output ./project.sqlite3
+previa local import ./previa-projects.sqlite3
+```
+
 `previa open` launches:
 
 ```text
