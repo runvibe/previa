@@ -465,7 +465,7 @@ export function ContextSwitcher() {
       </Popover>
 
       {detectedLocalContext && !hasLocalContext && !open && (
-        <div className="absolute right-0 top-full z-50 mt-3 w-[320px] rounded-xl border border-border bg-card p-4 shadow-lg">
+        <div className="absolute right-0 top-full z-[1000] mt-3 w-[320px] rounded-xl border border-border bg-card p-4 shadow-lg">
           <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 border-l border-t border-border bg-card" />
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">

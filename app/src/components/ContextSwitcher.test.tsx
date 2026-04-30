@@ -99,7 +99,8 @@ describe("ContextSwitcher", () => {
 
     render(<ContextSwitcher />);
 
-    await screen.findByText("Contexto local encontrado");
+    const prompt = await screen.findByText("Contexto local encontrado");
+    expect(prompt.closest(".z-\\[1000\\]")).toBeTruthy();
     expect(useOrchestratorStore.getState().contexts).toEqual([]);
   });
 });
