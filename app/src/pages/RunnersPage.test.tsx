@@ -197,6 +197,8 @@ describe("RunnersPage", () => {
     expect(await screen.findByDisplayValue("Local runner")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:55880")).toBeInTheDocument();
     expect(screen.getByText("healthy")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Status" })).toHaveClass("text-center");
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toHaveClass("text-center");
   });
 
   it("adds a runner and updates the list", async () => {

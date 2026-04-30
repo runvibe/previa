@@ -278,14 +278,22 @@ export default function RunnersPage() {
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border/70">
             <Table>
+              <colgroup>
+                <col className="min-w-52" />
+                <col className="min-w-64" />
+                <col className="w-36" />
+                <col className="min-w-44" />
+                <col className="min-w-40" />
+                <col className="w-36" />
+              </colgroup>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("runners.name")}</TableHead>
-                  <TableHead>{t("runners.endpoint")}</TableHead>
-                  <TableHead>{t("runners.status")}</TableHead>
-                  <TableHead>{t("runners.runtime")}</TableHead>
-                  <TableHead>{t("runners.lastSeen")}</TableHead>
-                  <TableHead className="text-right">{t("runners.actions")}</TableHead>
+                  <TableHead className="min-w-52">{t("runners.name")}</TableHead>
+                  <TableHead className="min-w-64">{t("runners.endpoint")}</TableHead>
+                  <TableHead className="w-36 text-center">{t("runners.status")}</TableHead>
+                  <TableHead className="min-w-44">{t("runners.runtime")}</TableHead>
+                  <TableHead className="min-w-40">{t("runners.lastSeen")}</TableHead>
+                  <TableHead className="w-36 text-center">{t("runners.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -323,7 +331,7 @@ export default function RunnersPage() {
                       <TableCell className="min-w-64">
                         <div className="font-mono text-xs">{runner.endpoint}</div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="w-36 text-center">
                         <Badge variant="outline" className={cn("capitalize", healthClass(runner.healthStatus))}>
                           <Activity className="h-3 w-3" />
                           {runner.healthStatus}
@@ -341,8 +349,8 @@ export default function RunnersPage() {
                       <TableCell className="min-w-40 text-xs text-muted-foreground">
                         {formatDate(runner.lastSeenAt)}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
+                      <TableCell className="w-36">
+                        <div className="flex justify-center gap-2">
                           <Switch
                             aria-label={runner.enabled ? t("runners.disableRunner") : t("runners.enableRunner")}
                             checked={runner.enabled}
