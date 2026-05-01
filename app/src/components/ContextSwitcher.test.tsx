@@ -103,6 +103,7 @@ describe("ContextSwitcher", () => {
     const promptCard = prompt.closest(".z-\\[9999\\]");
     expect(promptCard).toBeTruthy();
     expect(promptCard).toHaveClass("fixed");
+    expect(promptCard).toHaveClass("pointer-events-auto");
     expect(promptCard?.parentElement).toBe(document.body);
     expect(useOrchestratorStore.getState().contexts).toEqual([]);
   });

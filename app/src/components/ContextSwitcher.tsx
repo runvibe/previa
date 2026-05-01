@@ -494,7 +494,7 @@ export function ContextSwitcher() {
 
       {showDetectedLocalPrompt && detectedLocalContext && createPortal(
         <div
-          className="fixed z-[9999] w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-border p-4 shadow-lg"
+          className="pointer-events-auto fixed z-[9999] w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-border p-4 shadow-lg"
           style={{
             backgroundColor: SOLID_CARD_BACKGROUND,
             top: localPromptPosition.top,
