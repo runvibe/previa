@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, History, BarChart3, LayoutGrid, ListOrdered } from "lucide-react";
+import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, History, LayoutGrid, ListOrdered } from "lucide-react";
 import { useStepAutoScroll, useStepVisibility } from "@/hooks/useStepAutoScroll";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPipelineOrder, savePipelineOrder, applyOrder } from "@/lib/pipeline-order";
@@ -61,7 +61,6 @@ interface TestExecutionPageProps {
   onDeleteEnvGroup?: (id: string) => Promise<void>;
   selectedPipelineId?: string;
   initialSelectedIndex?: number;
-  onViewDashboard?: (pipelineId: string) => void;
   onSelectPipeline?: (index: number) => void;
   initialTab?: "integration" | "loadtest";
   onTabChange?: (tab: "integration" | "loadtest") => void;
@@ -260,7 +259,7 @@ function SidebarContent({
   );
 }
 
-export default function TestExecutionPage({ pipelines, spec, specs, envGroups = [], projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onImportSpec, onEditSpec, onDeleteSpec, onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup, selectedPipelineId, initialSelectedIndex, onViewDashboard, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
+export default function TestExecutionPage({ pipelines, spec, specs, envGroups = [], projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onImportSpec, onEditSpec, onDeleteSpec, onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup, selectedPipelineId, initialSelectedIndex, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const stepViewMode = useStepViewStore((s) => s.mode);
@@ -1086,17 +1085,6 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                   title={stepViewMode === "graph" ? "List view" : "Grid view"}
                 >
                   {stepViewMode === "graph" ? <ListOrdered className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-                </Button>
-              )}
-              {onViewDashboard && selectedPipeline.id && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => onViewDashboard(selectedPipeline.id!)}
-                  title={t("dashboard.title")}
-                >
-                  <BarChart3 className="h-3.5 w-3.5" />
                 </Button>
               )}
               {envGroups.length > 0 && (

@@ -110,24 +110,10 @@ export default function ProjectFlowPage() {
     navigate("/");
   }, [navigate]);
 
-  const handleDashboardToggle = useCallback(() => {
+  const handleStackDashboardOpen = useCallback(() => {
     if (!id) return;
-    if (isDashboardRoute) {
-      if (pipelineId) {
-        navigate(`${basePath}/pipeline/${pipelineId}/integration-test`);
-        return;
-      }
-      navigate(basePath);
-      return;
-    }
-
-    if (pipelineId) {
-      navigate(`${basePath}/pipeline/${pipelineId}/dashboard`);
-      return;
-    }
-
     navigate(`${basePath}/dashboard`);
-  }, [basePath, id, isDashboardRoute, navigate, pipelineId]);
+  }, [basePath, id, navigate]);
 
   const headerActions = useMemo(() => <ProjectSettingsDialog />, []);
 
@@ -135,7 +121,7 @@ export default function ProjectFlowPage() {
     projectName: project?.name,
     pipelineName: selectedPipelineName,
     onBackToProjects: handleBackToProjects,
-    onDashboard: id ? handleDashboardToggle : undefined,
+    onDashboard: id ? handleStackDashboardOpen : undefined,
     isDashboardActive: isDashboardRoute,
     headerActions,
   });
@@ -462,7 +448,6 @@ export default function ProjectFlowPage() {
         onDeleteEnvGroup={(envGroupId) => deleteEnvGroup(project.id, envGroupId)}
         selectedPipelineId={pipelineId}
         initialSelectedIndex={selectedIndex !== null && selectedIndex >= 0 ? selectedIndex : undefined}
-        onViewDashboard={(selectedPipelineRuntimeId) => navigate(`${basePath}/pipeline/${selectedPipelineRuntimeId}/dashboard`)}
         onSelectPipeline={handleSelectPipeline}
         initialTab={initialTab}
         onTabChange={handleTabChange}

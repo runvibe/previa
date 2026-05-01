@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PreviaLogo } from "./PreviaLogo";
 import { ContextSwitcher } from "./ContextSwitcher";
 import { EventsPanel } from "./EventsPanel";
-import { Button } from "@/components/ui/button";
+import { BarChart3, FolderOpen } from "lucide-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,6 +13,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface AppHeaderProps {
   projectName?: string;
@@ -104,11 +110,39 @@ export function AppHeader({ projectName, pipelineName, onBackToProjects, onDashb
             <BreadcrumbList>
               {crumbs.map((crumb, i) => {
                 const isLast = i === crumbs.length - 1;
+                const isStackCrumb = i === 0;
                 return (
                   <span key={`${crumb.label}-${crumb.path ?? i}`} className="contents">
                     <BreadcrumbSeparator>/</BreadcrumbSeparator>
                     <BreadcrumbItem>
-                      {isLast || !crumb.path ? (
+                      {isStackCrumb && onDashboard ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="cursor-pointer truncate max-w-[120px] transition-colors hover:text-foreground"
+                              aria-label={`${crumb.label} actions`}
+                            >
+                              {crumb.label}
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-44">
+                            {crumb.path ? (
+                              <DropdownMenuItem className="gap-2.5" onClick={() => navigate(crumb.path!)}>
+                                <FolderOpen className="h-4 w-4" />
+                                Open Stack
+                              </DropdownMenuItem>
+                            ) : null}
+                            <DropdownMenuItem
+                              className={isDashboardActive ? "gap-2.5 text-primary focus:text-primary" : "gap-2.5"}
+                              onClick={onDashboard}
+                            >
+                              <BarChart3 className="h-4 w-4" />
+                              Dashboard
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : isLast || !crumb.path ? (
                         <BreadcrumbPage className="truncate max-w-[120px]">{crumb.label}</BreadcrumbPage>
                       ) : (
                         <BreadcrumbLink

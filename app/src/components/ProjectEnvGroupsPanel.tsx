@@ -110,7 +110,7 @@ export function ProjectEnvGroupsPanel({ envGroups, onCreate, onUpdate, onDelete 
         </Button>
       </SectionHeader>
 
-      <div className="mt-1 space-y-1">
+      <div className="mt-1 max-h-36 space-y-1 overflow-y-auto pr-1" aria-label="Env groups list">
         {envGroups.length === 0 ? (
           <p className="px-1.5 py-1 text-xs text-muted-foreground">Nenhum env group</p>
         ) : envGroups.map((group) => (
