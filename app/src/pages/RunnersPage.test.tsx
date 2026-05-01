@@ -29,6 +29,9 @@ const translateMock = vi.hoisted(() => (key: string, params?: Record<string, str
     "runners.disabled": "Disabled",
     "runners.empty.description": "Add a runner endpoint to make it available for executions.",
     "runners.empty.title": "No runners registered",
+    "runners.unavailable.description": "You need at least one healthy runner to execute tests.",
+    "runners.unavailable.docs": "Read runner docs",
+    "runners.unavailable.title": "No runners available",
     "runners.enableRunner": "Enable runner",
     "runners.enabled": "Enabled",
     "runners.endpoint": "Endpoint",
@@ -199,6 +202,19 @@ describe("RunnersPage", () => {
     expect(screen.getByText("healthy")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Status" })).toHaveClass("text-center");
     expect(screen.getByRole("columnheader", { name: "Actions" })).toHaveClass("text-center");
+  });
+
+  it("shows documentation guidance when no runner is available", async () => {
+    mockFetch([runnerB]);
+
+    renderPage();
+
+    expect(await screen.findByText("No runners available")).toBeInTheDocument();
+    expect(screen.getByText("You need at least one healthy runner to execute tests.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Read runner docs" })).toHaveAttribute(
+      "href",
+      "https://github.com/runvibe/previa/blob/main/docs/previa/remote-runners.md",
+    );
   });
 
   it("adds a runner and updates the list", async () => {

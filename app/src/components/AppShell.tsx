@@ -8,6 +8,7 @@ import { EventsPanel } from "@/components/EventsPanel";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { Button } from "@/components/ui/button";
+import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,11 +49,43 @@ function MobileHeaderActionRow({ label, children }: { label: string; children: R
   );
 }
 
+export function RunnerNavButton({
+  hasUnavailableRunners,
+  onClick,
+}: {
+  hasUnavailableRunners?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="relative h-9 w-9 rounded-full"
+      onClick={onClick}
+      aria-label="Gerenciar runners"
+      title="Runners"
+    >
+      <Server className="h-4 w-4" />
+      {hasUnavailableRunners ? (
+        <span
+          aria-label="Runners indisponíveis"
+          className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-background bg-destructive text-[10px] font-bold leading-none text-destructive-foreground"
+        >
+          !
+        </span>
+      ) : null}
+    </Button>
+  );
+}
+
 export function AppShell() {
   const navigate = useNavigate();
+  const orchestratorInfo = useOrchestratorStore((state) => state.info);
   const [headerConfig, setHeaderConfigState] = useState<AppHeaderConfig>({});
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
+  const hasUnavailableRunners = orchestratorInfo !== null && orchestratorInfo.activeRunners === 0;
 
   const setHeaderConfig = useCallback((nextConfig: AppHeaderConfig) => {
     setHeaderConfigState((currentConfig) => (
@@ -90,20 +123,13 @@ export function AppShell() {
           <Github className="h-4 w-4" />
         </a>
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-9 w-9 rounded-full"
+      <RunnerNavButton
+        hasUnavailableRunners={hasUnavailableRunners}
         onClick={() => navigate("/runners")}
-        aria-label="Gerenciar runners"
-        title="Runners"
-      >
-        <Server className="h-4 w-4" />
-      </Button>
+      />
       {headerConfig.headerActions}
     </>
-  ), [handleOpenOnboarding, headerConfig.headerActions, navigate]);
+  ), [handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, navigate]);
 
   const mobileHeaderActions = useMemo(() => (
     <DropdownMenu open={isMobileActionsOpen} onOpenChange={setIsMobileActionsOpen}>
@@ -155,20 +181,13 @@ export function AppShell() {
             </Button>
           </MobileHeaderActionRow>
           <MobileHeaderActionRow label="Runners">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full"
+            <RunnerNavButton
+              hasUnavailableRunners={hasUnavailableRunners}
               onClick={() => {
                 navigate("/runners");
                 setIsMobileActionsOpen(false);
               }}
-              aria-label="Gerenciar runners"
-              title="Runners"
-            >
-              <Server className="h-4 w-4" />
-            </Button>
+            />
           </MobileHeaderActionRow>
           <MobileHeaderActionRow label="Eventos">
             <EventsPanel />
@@ -184,7 +203,7 @@ export function AppShell() {
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
-  ), [handleOpenOnboarding, headerConfig.headerActions, isMobileActionsOpen, navigate]);
+  ), [handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, isMobileActionsOpen, navigate]);
 
   return (
     <AppHeaderContext.Provider value={setHeaderConfig}>

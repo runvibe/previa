@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  Activity, Loader2, Plus, RefreshCw, Server, Trash2,
+  Activity, AlertCircle, ExternalLink, Loader2, Plus, RefreshCw, Server, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,6 +23,8 @@ import {
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { getApiUrl, useOrchestratorStore } from "@/stores/useOrchestratorStore";
+
+const RUNNERS_DOCS_URL = "https://github.com/runvibe/previa/blob/main/docs/previa/remote-runners.md";
 
 function formatBytes(value?: number | null): string {
   if (!value || value <= 0) return "-";
@@ -261,6 +263,26 @@ export default function RunnersPage() {
             </div>
           </CardContent>
         </Card>
+
+        {!loading && healthyCount === 0 && (
+          <Card className="border-destructive/30 bg-destructive/10">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-foreground">{t("runners.unavailable.title")}</h3>
+                  <p className="max-w-2xl text-sm text-muted-foreground">{t("runners.unavailable.description")}</p>
+                </div>
+              </div>
+              <Button asChild variant="outline" className="shrink-0">
+                <a href={RUNNERS_DOCS_URL} target="_blank" rel="noreferrer">
+                  {t("runners.unavailable.docs")}
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
