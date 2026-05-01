@@ -115,7 +115,7 @@ function SidebarContent({
   return (
     <>
       <div className="border-border/50 px-4 py-3">
-        <SectionHeader title="OpenAPI Specs">
+        <SectionHeader title="API Specs">
           {onEditSpec && (
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEditSpec()} title={t("testExecution.addSpec")}>
               <Plus className="h-3.5 w-3.5" />
