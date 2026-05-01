@@ -143,7 +143,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
       {/* Progress */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Progress value={progressPercent} className="h-2 flex-1" />
+          <Progress value={progressPercent} className="h-3.5 flex-1" />
           <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
             {metrics.totalSent}/{totalRequests}
           </span>
@@ -156,8 +156,13 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         <MetricCard icon={CheckCircle2} label={t("loadTestResults.success")} value={metrics.totalSuccess} color="text-success" />
         <MetricCard icon={AlertCircle} label={t("loadTestResults.error")} value={metrics.totalError} color="text-destructive" />
       </div>
-      <div className={`grid gap-2 ${metrics.avgLatency > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1'}`}>
+      <div className={`grid gap-2 ${metrics.avgLatency > 0 ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5' : 'grid-cols-2'}`}>
         <MetricCard icon={TrendingUp} label="RPS" value={metrics.rps} color="text-primary" />
+        <MetricCard
+          icon={Clock}
+          label={t("loadTestResults.elapsedLabel", "Time")}
+          value={`${Math.round(metrics.elapsedMs / 1000)}s`}
+        />
         {metrics.avgLatency > 0 && (
           <>
             <MetricCard icon={Clock} label={t("loadTestResults.avg")} value={`${metrics.avgLatency}ms`} />
@@ -331,12 +336,6 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
 
-      {/* Elapsed time */}
-      <div className="text-center">
-        <span className="text-sm text-muted-foreground">
-          {t("loadTestResults.elapsed", { seconds: Math.round(metrics.elapsedMs / 1000) })}
-        </span>
-      </div>
     </div>
   );
 }

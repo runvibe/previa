@@ -192,6 +192,7 @@
   "loadTestResults.latency": "Latenz",
   "loadTestResults.rpsOverTime": "RPS im Zeitverlauf",
   "loadTestResults.elapsed": "Verstrichene Zeit: {{seconds}}s",
+  "loadTestResults.elapsedLabel": "Zeit",
   "loadTestResults.nodes": "{{count}} Knoten",
   "loadTestResults.nodes_plural": "{{count}} Knoten",
   "loadTestResults.nodesOf": "von {{count}} verfügbar",

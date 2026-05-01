@@ -192,6 +192,7 @@
   "loadTestResults.latency": "レイテンシー",
   "loadTestResults.rpsOverTime": "時間経過に伴うRPS",
   "loadTestResults.elapsed": "経過時間: {{seconds}}秒",
+  "loadTestResults.elapsedLabel": "時間",
   "loadTestResults.nodes": "{{count}}ノード",
   "loadTestResults.nodes_plural": "{{count}}ノード",
   "loadTestResults.nodesOf": "{{count}}件中",
