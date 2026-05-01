@@ -210,7 +210,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
 
-      {runnerNames.length > 0 && cpuChartData.length > 1 && (
+      {runnerNames.length > 0 && cpuChartData.length > 0 && (
         <div className="glass rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
@@ -248,7 +248,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
                   dataKey={name}
                   stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                   strokeWidth={1.5}
-                  dot={false}
+                  dot={cpuChartData.length === 1}
                   connectNulls
                 />
               ))}
@@ -257,7 +257,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
 
-      {runnerNames.length > 0 && memoryChartData.length > 1 && (
+      {runnerNames.length > 0 && memoryChartData.length > 0 && (
         <div className="glass rounded-lg p-3 space-y-2">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
           <ResponsiveContainer width="100%" height={110}>
@@ -282,7 +282,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
                   dataKey={name}
                   stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                   strokeWidth={1.5}
-                  dot={false}
+                  dot={memoryChartData.length === 1}
                   connectNulls
                 />
               ))}
