@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use previa_runner::{Pipeline, RuntimeSpec};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -11,10 +11,13 @@ pub struct LoadTestRequest {
     pub pipeline: Pipeline,
     pub config: LoadTestConfig,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub project_id: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -22,10 +25,13 @@ pub struct LoadTestRequest {
 pub struct E2eTestRequest {
     pub pipeline: Pipeline,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub project_id: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -34,9 +40,12 @@ pub struct ProjectE2eTestRequest {
     pub pipeline_id: Option<String>,
     pub pipeline: Option<Pipeline>,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -44,8 +53,11 @@ pub struct ProjectE2eTestRequest {
 pub struct ProjectE2eQueueRequest {
     pub pipeline_ids: Vec<String>,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -55,9 +67,12 @@ pub struct ProjectLoadTestRequest {
     pub pipeline: Option<Pipeline>,
     pub config: LoadTestConfig,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
@@ -214,6 +229,35 @@ pub struct SpecUrlEntry {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EnvGroupEntry {
+    pub name: String,
+    pub url: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectEnvGroupUpsertRequest {
+    pub slug: String,
+    pub name: String,
+    #[serde(default)]
+    pub entries: Vec<EnvGroupEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEnvGroupRecord {
+    pub id: String,
+    pub project_id: String,
+    pub slug: String,
+    pub name: String,
+    pub entries: Vec<EnvGroupEntry>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectSpecUpsertRequest {
@@ -268,6 +312,7 @@ pub struct ProjectExportProject {
     pub spec: Option<Value>,
     pub pipelines: Vec<Pipeline>,
     pub specs: Vec<ProjectSpecRecord>,
+    pub env_groups: Vec<ProjectEnvGroupRecord>,
     pub history: ProjectHistoryExport,
 }
 
@@ -287,6 +332,7 @@ pub struct ProjectImportResponse {
     pub include_history: bool,
     pub pipelines_imported: usize,
     pub specs_imported: usize,
+    pub env_groups_imported: usize,
     pub e2e_history_imported: usize,
     pub load_history_imported: usize,
 }

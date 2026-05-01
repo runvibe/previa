@@ -18,7 +18,7 @@ import { RequestSection } from "@/components/RequestItem";
 import { MonacoInput } from "@/components/MonacoInput";
 import { validatePipelineContract, type ContractWarning } from "@/lib/pipeline-contract-validator";
 import type { PipelineStep, OpenAPISpec, OpenAPIRoute, OpenAPIParameter, StepAssertion } from "@/types/pipeline";
-import type { ProjectSpec } from "@/types/project";
+import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import type { TemplateValidationContext, ResponseFieldInfo } from "@/lib/template-validator";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -36,6 +36,7 @@ const ASSERT_OPERATORS = [
 interface StepCreatorPanelProps {
   spec?: OpenAPISpec;
   specs?: ProjectSpec[];
+  envGroups?: ProjectEnvGroup[];
   onAdd: (step: PipelineStep) => void;
   onCancel: () => void;
   initialStep?: PipelineStep;
@@ -54,8 +55,10 @@ function generateStepId(name: string): string {
     .replace(/^_|_$/g, "") || "new_step";
 }
 
-function buildUrlWithPathParams(basePath: string, pathParams: Record<string, string>, specSlug?: string, envKey?: string): string {
-  const prefix = specSlug && envKey ? `{{specs.${specSlug}.url.${envKey}}}` : `{{specs.slug.url.env}}`;
+function buildUrlWithPathParams(basePath: string, pathParams: Record<string, string>, specSlug?: string, envKey?: string, envGroupEntry?: string): string {
+  const prefix = envGroupEntry
+    ? `{{envs.current.${envGroupEntry}}}`
+    : specSlug && envKey ? `{{specs.${specSlug}.url.${envKey}}}` : `{{specs.slug.url.env}}`;
   let url = `${prefix}${basePath}`;
   for (const [name, value] of Object.entries(pathParams)) {
     if (value) {
@@ -143,7 +146,7 @@ function getBodySchemaParams(route: OpenAPIRoute, specRaw?: Record<string, unkno
   return { params, allowAdditional };
 }
 
-export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, existingStepIds, stepResponseFields, onChange, externalStep }: StepCreatorPanelProps) {
+export function StepCreatorPanel({ spec, specs, envGroups = [], onAdd, onCancel, initialStep, existingStepIds, stepResponseFields, onChange, externalStep }: StepCreatorPanelProps) {
   const { t } = useTranslation();
   const [stepId, setStepId] = useState(initialStep?.id ?? "");
   const [idManuallyEdited, setIdManuallyEdited] = useState(!!initialStep?.id);
@@ -223,7 +226,12 @@ export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, ex
       slug: s.slug,
       envs: Object.keys(s.servers),
     })),
-  }), [existingStepIds, stepId, stepResponseFields, specs]);
+    availableEnvGroups: envGroups.map((group) => ({
+      slug: group.slug,
+      entries: group.entries.map((entry) => entry.name),
+    })),
+    selectedEnvGroupSlug: envGroups[0]?.slug ?? null,
+  }), [existingStepIds, stepId, stepResponseFields, specs, envGroups]);
 
   const canonicalize = useCallback((value: unknown): unknown => {
     if (value === null || value === undefined) return value;
@@ -407,7 +415,8 @@ export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, ex
   const handleSelectRoute = useCallback((route: OpenAPIRoute, specSlug?: string, specServers?: Record<string, string>) => {
     setSelectedRoute(route);
     const firstEnv = specServers ? Object.keys(specServers)[0] : undefined;
-    setUrl(buildUrlWithPathParams(route.path, {}, specSlug, firstEnv));
+    const firstEnvGroupEntry = envGroups[0]?.entries[0]?.name;
+    setUrl(buildUrlWithPathParams(route.path, {}, specSlug, firstEnv, firstEnvGroupEntry));
     setMethod(route.method.toUpperCase() as PipelineStep["method"]);
     if (route.summary || route.operationId) setName(route.summary || route.operationId || "");
     if (route.description) setDescription(route.description);
@@ -416,7 +425,7 @@ export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, ex
     setHeaderParamValues({});
     setBodyParamValues({});
     setCustomBodyParams([]);
-  }, []);
+  }, [envGroups]);
 
   const handleClearRoute = useCallback(() => {
     setSelectedRoute(null);
@@ -430,8 +439,8 @@ export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, ex
       const next = { ...prev, [paramName]: value };
       // Rebuild URL - extract current prefix from url
       if (selectedRoute) {
-        const prefixMatch = url.match(/^\{\{specs\.[^}]+\}\}/) ?? url.match(/^\{\{url\.[^}]+\}\}/);
-        const prefix = prefixMatch ? prefixMatch[0] : "{{specs.slug.url.env}}";
+        const prefixMatch = url.match(/^\{\{envs\.[^}]+\}\}/) ?? url.match(/^\{\{specs\.[^}]+\}\}/) ?? url.match(/^\{\{url\.[^}]+\}\}/);
+        const prefix = prefixMatch ? prefixMatch[0] : (envGroups[0]?.entries[0]?.name ? `{{envs.current.${envGroups[0].entries[0].name}}}` : "{{specs.slug.url.env}}");
         let newUrl = `${prefix}${selectedRoute.path}`;
         for (const [n, v] of Object.entries(next)) {
           if (v) newUrl = newUrl.replace(`{${n}}`, v);
@@ -440,7 +449,7 @@ export function StepCreatorPanel({ spec, specs, onAdd, onCancel, initialStep, ex
       }
       return next;
     });
-  }, [selectedRoute, url]);
+  }, [selectedRoute, url, envGroups]);
 
   const handleHeaderParamChange = useCallback((paramName: string, value: string) => {
     setHeaderParamValues((prev) => ({ ...prev, [paramName]: value }));

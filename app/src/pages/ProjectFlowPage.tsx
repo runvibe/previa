@@ -41,7 +41,7 @@ export default function ProjectFlowPage() {
 
   const view = isPipelineEditorRoute ? "create-pipeline" : isSpecEditorRoute ? "routes" : "execute";
 
-  const { currentProject: project, setCurrentProject, updateProject: storeUpdateProject, loadProject, saveProjectSpec, saveProjectPipelines, addSpec, updateSpec: storeUpdateSpec, removeSpec } = useProjectStore();
+  const { currentProject: project, setCurrentProject, updateProject: storeUpdateProject, loadProject, saveProjectSpec, saveProjectPipelines, addSpec, updateSpec: storeUpdateSpec, removeSpec, createEnvGroup, updateEnvGroup, deleteEnvGroup } = useProjectStore();
   const orchUrl = useOrchestratorStore((s) => s.url);
   const isDark = useThemeStore((s) => s.theme === "dark");
   const deleteLocalRunsForPipeline = useExecutionHistoryStore((s) => s.deleteLocalRunsForPipeline);
@@ -417,6 +417,7 @@ export default function ProjectFlowPage() {
           onCancel={() => { setEditingPipelineIndex(null); navigate(basePath); }}
           spec={getMergedSpec(project.specs)}
           specs={project.specs}
+          envGroups={project.envGroups}
           initialPipeline={pipelineId ? project.pipelines.find(p => p.id === pipelineId) ?? newPipelineTemplate ?? undefined : newPipelineTemplate ?? undefined}
         />
       );
@@ -446,6 +447,7 @@ export default function ProjectFlowPage() {
         pipelines={project.pipelines}
         spec={project.spec}
         specs={project.specs}
+        envGroups={project.envGroups}
         projectId={project.id}
         onDeletePipeline={handleDeletePipeline}
         onCreatePipeline={handleCreatePipeline}
@@ -455,6 +457,9 @@ export default function ProjectFlowPage() {
         onImportSpec={handleImportSpec}
         onEditSpec={handleOpenRouteEditor}
         onDeleteSpec={handleDeleteSpec}
+        onCreateEnvGroup={(data) => createEnvGroup(project.id, data)}
+        onUpdateEnvGroup={(envGroupId, data) => updateEnvGroup(project.id, envGroupId, data)}
+        onDeleteEnvGroup={(envGroupId) => deleteEnvGroup(project.id, envGroupId)}
         selectedPipelineId={pipelineId}
         initialSelectedIndex={selectedIndex !== null && selectedIndex >= 0 ? selectedIndex : undefined}
         onViewDashboard={(selectedPipelineRuntimeId) => navigate(`${basePath}/pipeline/${selectedPipelineRuntimeId}/dashboard`)}
@@ -490,6 +495,7 @@ export default function ProjectFlowPage() {
       ref={chatRef}
       projectId={project.id}
       specs={project.specs}
+      envGroups={project.envGroups}
       pipelines={project.pipelines}
     />
   );

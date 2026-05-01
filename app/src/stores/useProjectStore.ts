@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Project, ProjectSpec } from "@/types/project";
+import type { Project, ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import { getMergedSpec, migrateProjectSpecs } from "@/types/project";
 import { generateUUID } from "@/lib/uuid";
 import type { OpenAPISpec, Pipeline } from "@/types/pipeline";
@@ -37,7 +37,18 @@ interface ProjectState {
   addSpec: (projectId: string, spec: OpenAPISpec, url?: string, sync?: boolean, slug?: string, servers?: Record<string, string>) => Promise<ProjectSpec | null>;
   updateSpec: (projectId: string, specId: string, spec: OpenAPISpec, url?: string, sync?: boolean, slug?: string, servers?: Record<string, string>) => Promise<void>;
   removeSpec: (projectId: string, specId: string) => Promise<void>;
+  createEnvGroup: (projectId: string, data: api.ProjectEnvGroupUpsertRequest) => Promise<ProjectEnvGroup | null>;
+  updateEnvGroup: (projectId: string, envGroupId: string, data: api.ProjectEnvGroupUpsertRequest) => Promise<void>;
+  deleteEnvGroup: (projectId: string, envGroupId: string) => Promise<void>;
   createPipeline: (projectId: string, pipeline: Pipeline) => Promise<Pipeline>;
+}
+
+function updateEnvGroupsInProject(project: Project, envGroups: ProjectEnvGroup[]): Project {
+  return {
+    ...project,
+    envGroups,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -175,6 +186,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           }
         }
 
+        const createdEnvGroups: ProjectEnvGroup[] = [];
+        if (data.envGroups?.length) {
+          for (const group of data.envGroups) {
+            try {
+              const created = await api.createProjectEnvGroup(apiUrl, projectId, {
+                slug: group.slug,
+                name: group.name,
+                entries: group.entries,
+              });
+              createdEnvGroups.push(created);
+            } catch (err) {
+              console.warn("Failed to create env group:", err);
+            }
+          }
+        }
+
         const project: Project = {
           id: projectId,
           name: record.name,
@@ -184,6 +211,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           pipelines: createdPipelines,
           spec,
           specs: data.specs || [],
+          envGroups: createdEnvGroups,
         };
 
         set((state) => ({ projects: [...state.projects, project] }));
@@ -206,7 +234,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       pipelines: data.pipelines || [],
       spec: data.spec,
       specs: data.specs || [],
-      
+      envGroups: data.envGroups || [],
     };
     await persistProject(newProject);
     set((state) => ({ projects: [...state.projects, newProject] }));
@@ -313,6 +341,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           }
         }
 
+        const createdEnvGroups: ProjectEnvGroup[] = [];
+        for (const group of source.envGroups ?? []) {
+          try {
+            const created = await api.createProjectEnvGroup(apiUrl, projectId, {
+              slug: group.slug,
+              name: group.name,
+              entries: group.entries,
+            });
+            createdEnvGroups.push(created);
+          } catch (err) {
+            console.warn("Failed to duplicate env group:", err);
+          }
+        }
+
         const project: Project = {
           id: projectId,
           name: record.name,
@@ -322,7 +364,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           pipelines: createdPipelines,
           spec: source.spec,
           specs: source.specs || [],
-          
+          envGroups: createdEnvGroups,
         };
 
         set((state) => ({ projects: [...state.projects, project] }));
@@ -566,6 +608,105 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         projects: state.projects.map((p) => (
           p.id === projectId ? { ...p, specs: updatedSpecs, spec: merged, updatedAt: updated.updatedAt } : p
         )),
+      }));
+    }
+  },
+
+  createEnvGroup: async (projectId, data) => {
+    const apiUrl = getApiUrl();
+    let envGroup: ProjectEnvGroup;
+
+    if (apiUrl) {
+      try {
+        envGroup = await api.createProjectEnvGroup(apiUrl, projectId, data);
+      } catch (err) {
+        console.warn("Failed to create env group:", err);
+        toast.error("Erro ao criar env group");
+        return null;
+      }
+    } else {
+      const now = new Date().toISOString();
+      envGroup = {
+        id: generateUUID(),
+        projectId,
+        slug: data.slug,
+        name: data.name,
+        entries: data.entries,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    const current = get().currentProject;
+    if (current?.id === projectId) {
+      const updated = updateEnvGroupsInProject(current, [...(current.envGroups ?? []), envGroup]);
+      if (!apiUrl) {
+        await persistProject(updated);
+      }
+      set((state) => ({
+        currentProject: updated,
+        projects: state.projects.map((p) => (p.id === projectId ? { ...p, envGroups: updated.envGroups, updatedAt: updated.updatedAt } : p)),
+      }));
+    }
+
+    return envGroup;
+  },
+
+  updateEnvGroup: async (projectId, envGroupId, data) => {
+    const apiUrl = getApiUrl();
+    let envGroup: ProjectEnvGroup | null = null;
+
+    if (apiUrl) {
+      try {
+        envGroup = await api.updateProjectEnvGroup(apiUrl, projectId, envGroupId, data);
+      } catch (err) {
+        console.warn("Failed to update env group:", err);
+        toast.error("Erro ao atualizar env group");
+        return;
+      }
+    }
+
+    const current = get().currentProject;
+    if (current?.id === projectId) {
+      const now = new Date().toISOString();
+      const updatedEnvGroups = (current.envGroups ?? []).map((group) =>
+        group.id === envGroupId
+          ? envGroup ?? { ...group, slug: data.slug, name: data.name, entries: data.entries, updatedAt: now }
+          : group
+      );
+      const updated = updateEnvGroupsInProject(current, updatedEnvGroups);
+      if (!apiUrl) {
+        await persistProject(updated);
+      }
+      set((state) => ({
+        currentProject: updated,
+        projects: state.projects.map((p) => (p.id === projectId ? { ...p, envGroups: updated.envGroups, updatedAt: updated.updatedAt } : p)),
+      }));
+    }
+  },
+
+  deleteEnvGroup: async (projectId, envGroupId) => {
+    const apiUrl = getApiUrl();
+
+    if (apiUrl) {
+      try {
+        await api.deleteProjectEnvGroup(apiUrl, projectId, envGroupId);
+      } catch (err) {
+        console.warn("Failed to delete env group:", err);
+        toast.error("Erro ao remover env group");
+        return;
+      }
+    }
+
+    const current = get().currentProject;
+    if (current?.id === projectId) {
+      const updated = updateEnvGroupsInProject(current, (current.envGroups ?? []).filter((group) => group.id !== envGroupId));
+      if (!apiUrl) {
+        await persistProject(updated);
+      }
+      set((state) => ({
+        currentProject: updated,
+        projects: state.projects.map((p) => (p.id === projectId ? { ...p, envGroups: updated.envGroups, updatedAt: updated.updatedAt } : p)),
       }));
     }
   },

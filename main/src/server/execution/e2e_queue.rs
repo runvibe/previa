@@ -70,7 +70,9 @@ pub async fn create_e2e_queue(
     let request_json = queue_request_json(
         &pipeline_ids,
         request.selected_base_url_key.as_deref(),
+        request.selected_env_group_slug.as_deref(),
         &request.specs,
+        &request.env_groups,
     );
     let snapshot = insert_e2e_queue(
         &state.db,
@@ -304,9 +306,11 @@ async fn run_e2e_queue(
             E2eTestRequest {
                 pipeline: pipeline.0,
                 selected_base_url_key: request.selected_base_url_key.clone(),
+                selected_env_group_slug: request.selected_env_group_slug.clone(),
                 project_id: Some(project_id.clone()),
                 pipeline_index: Some(pipeline.1),
                 specs: request.specs.clone(),
+                env_groups: request.env_groups.clone(),
             },
             None,
         )

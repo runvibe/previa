@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Zap, AlertTriangle, HelpCircle, Pencil } from "lucide-react";
 import type { LoadTestConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
+import type { ProjectEnvGroup } from "@/types/project";
 
 interface LoadTestConfigPanelProps {
   pipeline: Pipeline;
@@ -16,6 +17,8 @@ interface LoadTestConfigPanelProps {
   onConfigChange?: (config: LoadTestConfig, selectedBaseUrlKey?: string) => void;
   lastAvgLatencyMs?: number;
   initialConfig?: LoadTestConfig | null;
+  envGroups?: ProjectEnvGroup[];
+  selectedEnvGroupSlug?: string | null;
 }
 
 function HelpPopover({ text }: { text: string }) {
@@ -91,7 +94,7 @@ function SliderWithManual({
   );
 }
 
-export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig }: LoadTestConfigPanelProps) {
+export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, envGroups = [], selectedEnvGroupSlug }: LoadTestConfigPanelProps) {
   const { t } = useTranslation();
   const [totalRequests, setTotalRequests] = useState(initialConfig?.totalRequests ?? 50);
   const [concurrency, setConcurrency] = useState(initialConfig?.concurrency ?? 10);
@@ -99,6 +102,7 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const [selectedEnv, setSelectedEnv] = useState<string | undefined>(undefined);
 
   const hasMultipleEnvs = false;
+  const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
   const avgLatencySec = (lastAvgLatencyMs ?? 300) / 1000;
   const batches = Math.ceil(totalRequests / concurrency);
   const estimatedTime = (batches * avgLatencySec) + rampUpSeconds;
@@ -141,6 +145,13 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
         </div>
         <SliderWithManual value={rampUpSeconds} onChange={setRampUpSeconds} min={0} max={60} step={1} suffix="s" />
       </div>
+
+      {selectedEnvGroup && (
+        <div className="rounded-md border border-border/60 px-3 py-2">
+          <p className="text-[10px] text-muted-foreground">Env group</p>
+          <p className="truncate text-xs font-medium">{selectedEnvGroup.name}</p>
+        </div>
+      )}
 
       <div className="rounded-lg p-3 text-center">
         <p className="text-[10px] text-muted-foreground">{t("loadTest.estimatedTime")}</p>

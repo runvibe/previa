@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use previa_runner::execute_pipeline_with_specs_hooks;
+use previa_runner::execute_pipeline_with_runtime_hooks;
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::middleware::transaction::{extract_transaction_id, with_transaction_header};
@@ -67,7 +67,9 @@ pub async fn run_e2e_test(
 
     let (tx, rx) = mpsc::unbounded_channel::<SseMessage>();
     let selected_key = payload.selected_base_url_key.clone();
+    let selected_env_group_slug = payload.selected_env_group_slug.clone();
     let specs = payload.specs.clone();
+    let env_groups = payload.env_groups.clone();
     let transaction_id = extract_transaction_id(&headers);
     let pipeline = with_transaction_header(payload.pipeline, transaction_id.as_deref());
     let state_clone = state.clone();
@@ -101,10 +103,12 @@ pub async fn run_e2e_test(
             return;
         }
 
-        let results = execute_pipeline_with_specs_hooks(
+        let results = execute_pipeline_with_runtime_hooks(
             &pipeline,
             selected_key.as_deref(),
             Some(specs.as_slice()),
+            Some(env_groups.as_slice()),
+            selected_env_group_slug.as_deref(),
             |step_id| {
                 let _ = send_sse_or_cancel(&tx, "step:start", json!({ "stepId": step_id }), &token);
             },

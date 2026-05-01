@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tracing::error;
 use uuid::Uuid;
 
-use previa_runner::execute_pipeline_with_specs_hooks;
+use previa_runner::execute_pipeline_with_runtime_hooks;
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::metrics::{MetricsAccumulator, estimate_results_network_bytes};
@@ -73,7 +73,9 @@ pub async fn run_load_test(
 
     let (tx, rx) = mpsc::unbounded_channel::<SseMessage>();
     let selected_key = payload.selected_base_url_key.clone();
+    let selected_env_group_slug = payload.selected_env_group_slug.clone();
     let specs = payload.specs.clone();
+    let env_groups = payload.env_groups.clone();
     let transaction_id = extract_transaction_id(&headers);
     let pipeline = with_transaction_header(payload.pipeline, transaction_id.as_deref());
     let config = payload.config;
@@ -138,7 +140,9 @@ pub async fn run_load_test(
             let token = token.clone();
             let pipeline = pipeline.clone();
             let selected_key = selected_key.clone();
+            let selected_env_group_slug = selected_env_group_slug.clone();
             let specs = specs.clone();
+            let env_groups = env_groups.clone();
 
             handles.push(tokio::spawn(async move {
                 loop {
@@ -152,10 +156,12 @@ pub async fn run_load_test(
                     }
 
                     let start = Instant::now();
-                    let results = execute_pipeline_with_specs_hooks(
+                    let results = execute_pipeline_with_runtime_hooks(
                         &pipeline,
                         selected_key.as_deref(),
                         Some(specs.as_slice()),
+                        Some(env_groups.as_slice()),
+                        selected_env_group_slug.as_deref(),
                         |_| {},
                         |_| {},
                         || token.is_cancelled(),

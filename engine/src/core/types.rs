@@ -11,6 +11,13 @@ pub struct RuntimeSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RuntimeEnvGroup {
+    pub slug: String,
+    #[serde(default)]
+    pub urls: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Pipeline {
     #[serde(default)]
     pub id: Option<String>,

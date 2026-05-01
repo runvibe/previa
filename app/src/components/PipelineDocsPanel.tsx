@@ -56,7 +56,7 @@ const FULL_EXAMPLE = {
       operationId: "createUser",
       description: "Cria um novo usuário com dados aleatórios",
       method: "POST",
-      url: "{{specs.users-api.url.hml}}/users",
+      url: "{{envs.current.api}}/users",
       headers: { "Content-Type": "application/json" },
       body: {
         id: "{{helpers.uuid}}",
@@ -77,7 +77,7 @@ const FULL_EXAMPLE = {
       name: "Enviar Email de Boas-Vindas",
       description: "Envia email usando dados do step anterior",
       method: "POST",
-      url: "{{specs.users-api.url.hml}}/emails/welcome",
+      url: "{{envs.current.api}}/emails/welcome",
       headers: { "Content-Type": "application/json" },
       body: {
         to: "{{steps.create_user.email}}",
@@ -100,7 +100,7 @@ const MULTI_ENV_EXAMPLE = {
       name: "Health Check HML",
       description: "Verifica se a API de homologação está respondendo",
       method: "GET",
-      url: "{{specs.users-api.url.hml}}/health",
+      url: "{{envs.current.api}}/health",
       headers: {}
     },
     {
@@ -108,7 +108,7 @@ const MULTI_ENV_EXAMPLE = {
       name: "Health Check PRD",
       description: "Verifica se a API de produção está respondendo",
       method: "GET",
-      url: "{{specs.users-api.url.prd}}/health",
+      url: "{{envs.prd.api}}/health",
       headers: {}
     }
   ]
@@ -360,6 +360,23 @@ export default function PipelineDocsPanel({ isDark = false, format, onFormatChan
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
+                <Badge variant="outline" className="font-mono">{`envs.current.<entry>`}</Badge>
+                URL do Env Group
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-2">
+              <p className="text-muted-foreground">
+                Referencia uma entrada do env group selecionado na execução.
+              </p>
+              <pre className="bg-muted p-2 rounded-md text-xs overflow-x-auto">
+{`"url": "{{envs.current.api}}/users"`}
+              </pre>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
                 <Badge variant="outline" className="font-mono">{`specs.<slug>.url.<env>`}</Badge>
                 URL do Ambiente (via Spec)
               </CardTitle>
@@ -454,7 +471,7 @@ export default function PipelineDocsPanel({ isDark = false, format, onFormatChan
         <section className="space-y-3">
           <h3 className="text-lg font-semibold">Múltiplos Ambientes</h3>
           <p className="text-sm text-muted-foreground">
-            Use <code className="bg-muted px-1 rounded-sm text-xs">{`{{specs.<slug>.url.<env>}}`}</code> para apontar para ambientes diferentes. Os ambientes são definidos nos servers de cada spec OpenAPI do projeto.
+            Use <code className="bg-muted px-1 rounded-sm text-xs">{`{{envs.current.<entry>}}`}</code> para seguir o env group selecionado na execução, ou <code className="bg-muted px-1 rounded-sm text-xs">{`{{envs.<group>.<entry>}}`}</code> para fixar um grupo específico.
           </p>
           
           <CodeExample json={MULTI_ENV_EXAMPLE} isDark={isDark} height="280px" format={format} onFormatChange={onFormatChange} />

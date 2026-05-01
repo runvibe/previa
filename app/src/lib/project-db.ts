@@ -4,13 +4,13 @@
  *   - "projects": id, name, description, createdAt, updatedAt, specJson, executionBackendUrl
  *   - "pipelines": id, projectId, position, name, description, createdAt, updatedAt, pipelineJson
  */
-import type { Project, ProjectSpec } from "@/types/project";
+import type { Project, ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import { migrateProjectSpecs } from "@/types/project";
 import type { Pipeline, OpenAPISpec } from "@/types/pipeline";
 import { generateUUID } from "@/lib/uuid";
 
 const DB_NAME = "previa-db-v1";
-const DB_VERSION = 2; // bump from v1 (execution-only) to v2 (add projects+pipelines)
+const DB_VERSION = 3; // bump from v2 to v3 to persist project env groups
 
 // ─── helpers ───────────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ interface ProjectRow {
   createdAtMs: number;
   updatedAtMs: number;
   specJson: string | null;
-  
+  envGroupsJson?: string | null;
 }
 
 interface PipelineRow {
@@ -55,12 +55,13 @@ function toProjectRow(p: Project): ProjectRow {
     createdAtMs: new Date(p.createdAt).getTime(),
     updatedAtMs: new Date(p.updatedAt).getTime(),
     specJson,
-    
+    envGroupsJson: JSON.stringify(p.envGroups ?? []),
   };
 }
 
 function fromProjectRow(row: ProjectRow, pipelines: Pipeline[]): Project {
   let specs: ProjectSpec[] = [];
+  let envGroups: ProjectEnvGroup[] = [];
   let legacySpec: OpenAPISpec | undefined;
 
   if (row.specJson) {
@@ -75,6 +76,13 @@ function fromProjectRow(row: ProjectRow, pipelines: Pipeline[]): Project {
     } catch { /* ignore parse errors */ }
   }
 
+  if (row.envGroupsJson) {
+    try {
+      const parsed = JSON.parse(row.envGroupsJson);
+      envGroups = Array.isArray(parsed) ? parsed as ProjectEnvGroup[] : [];
+    } catch { /* ignore parse errors */ }
+  }
+
   const project: Project = {
     id: row.id,
     name: row.name,
@@ -84,7 +92,7 @@ function fromProjectRow(row: ProjectRow, pipelines: Pipeline[]): Project {
     spec: legacySpec,
     specs,
     pipelines,
-    
+    envGroups,
   };
 
   return migrateProjectSpecs(project);
@@ -282,6 +290,13 @@ export async function duplicateProject(id: string): Promise<Project | null> {
     createdAt: now,
     updatedAt: now,
   };
+  newProject.envGroups = (project.envGroups ?? []).map((group) => ({
+    ...group,
+    id: generateUUID(),
+    projectId: newProject.id,
+    createdAt: now,
+    updatedAt: now,
+  }));
 
   await saveProject(newProject);
   return newProject;

@@ -1,7 +1,9 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::core::types::{AssertionResult, PipelineStep, RuntimeSpec, StepExecutionResult};
+use crate::core::types::{
+    AssertionResult, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult,
+};
 use crate::template::resolve::{resolve_template_variables, value_to_string};
 
 pub(crate) fn has_status_assertion(step: &PipelineStep) -> bool {
@@ -52,16 +54,24 @@ pub(crate) fn evaluate_assertions(
     result: &StepExecutionResult,
     context: &HashMap<String, StepExecutionResult>,
     specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
 ) -> Vec<AssertionResult> {
     step.asserts
         .iter()
         .map(|assertion| {
             let actual = resolve_assert_field(&assertion.field, result);
             let expected = assertion.expected.as_ref().map(|exp| {
-                resolve_template_variables(&Value::String(exp.clone()), context, specs)
-                    .as_str()
-                    .unwrap_or(exp)
-                    .to_owned()
+                resolve_template_variables(
+                    &Value::String(exp.clone()),
+                    context,
+                    specs,
+                    env_groups,
+                    selected_env_group_slug,
+                )
+                .as_str()
+                .unwrap_or(exp)
+                .to_owned()
             });
 
             let passed = match assertion.operator.as_str() {

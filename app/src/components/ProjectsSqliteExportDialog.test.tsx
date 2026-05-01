@@ -44,6 +44,7 @@ const projects: Project[] = [
     createdAt: "2026-04-30T00:00:00Z",
     updatedAt: "2026-04-30T00:00:00Z",
     specs: [],
+    envGroups: [],
     pipelines: [],
   },
   {
@@ -52,6 +53,7 @@ const projects: Project[] = [
     createdAt: "2026-04-30T00:00:00Z",
     updatedAt: "2026-04-30T00:00:00Z",
     specs: [],
+    envGroups: [],
     pipelines: [],
   },
 ];

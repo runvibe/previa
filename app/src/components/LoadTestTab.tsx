@@ -13,7 +13,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { AlertTriangle, X } from "lucide-react";
 import type { Pipeline } from "@/types/pipeline";
 import type { LoadTestConfig, LoadTestState } from "@/types/load-test";
-import type { ProjectSpec } from "@/types/project";
+import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 
 interface LoadTestTabProps {
   pipeline: Pipeline;
@@ -25,9 +25,11 @@ interface LoadTestTabProps {
   onStartRef?: React.MutableRefObject<(() => void) | null>;
   executionBackendUrl?: string;
   specs?: ProjectSpec[];
+  envGroups?: ProjectEnvGroup[];
+  selectedEnvGroupSlug?: string | null;
 }
 
-export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange, onResetRef, onCancelRef, onStartRef, executionBackendUrl, specs }: LoadTestTabProps) {
+export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange, onResetRef, onCancelRef, onStartRef, executionBackendUrl, specs, envGroups = [], selectedEnvGroupSlug = null }: LoadTestTabProps) {
   const { t } = useTranslation();
   const store = useLoadTestHistoryStore();
   const isMobile = useIsMobile();
@@ -56,7 +58,9 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
           pendingConfigRef.current.config,
           executionBackendUrl,
           pendingConfigRef.current.selectedBaseUrlKey,
-          specs
+          specs,
+          envGroups,
+          selectedEnvGroupSlug
         );
       }
     };
@@ -69,8 +73,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
 
 
   const handleStart = useCallback((cfg: LoadTestConfig, selectedBaseUrlKey?: string) => {
-    store.runTest(pipeline, pipelineIndex, projectId, cfg, executionBackendUrl, selectedBaseUrlKey, specs);
-  }, [pipeline, pipelineIndex, projectId, executionBackendUrl, specs]);
+    store.runTest(pipeline, pipelineIndex, projectId, cfg, executionBackendUrl, selectedBaseUrlKey, specs, envGroups, selectedEnvGroupSlug);
+  }, [pipeline, pipelineIndex, projectId, executionBackendUrl, specs, envGroups, selectedEnvGroupSlug]);
 
   const handleClearHistory = useCallback(async () => {
     await store.clearHistory(projectId, pipelineIndex, executionBackendUrl);
@@ -117,6 +121,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
             }}
             lastAvgLatencyMs={lastAvgLatencyMs}
             initialConfig={config}
+            envGroups={envGroups}
+            selectedEnvGroupSlug={selectedEnvGroupSlug}
           />
         </div>
       </div>

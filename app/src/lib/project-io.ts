@@ -88,6 +88,7 @@ export async function importProject(fileContent: string): Promise<Project> {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     specs: parsed.project?.specs || [],
+    envGroups: parsed.project?.envGroups || [],
     pipelines: parsed.project?.pipelines || [],
   };
 }

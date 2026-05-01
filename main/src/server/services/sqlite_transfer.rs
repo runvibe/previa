@@ -5,7 +5,9 @@ use crate::server::db::{
     DbPool, import_project_bundle, load_e2e_history_for_export, load_load_history_for_export,
     load_project_export, project_name_exists,
 };
-use crate::server::models::{ProjectExportProject, ProjectImportResponse, ProjectSpecRecord};
+use crate::server::models::{
+    ProjectEnvGroupRecord, ProjectExportProject, ProjectImportResponse, ProjectSpecRecord,
+};
 use crate::server::utils::new_uuid_v7;
 use serde::Serialize;
 use sqlx::Row;
@@ -18,6 +20,7 @@ pub struct SqliteProjectImportItem {
     pub project_name: String,
     pub pipelines_imported: usize,
     pub specs_imported: usize,
+    pub env_groups_imported: usize,
     pub e2e_history_imported: usize,
     pub load_history_imported: usize,
 }
@@ -142,6 +145,17 @@ async fn rewrite_imported_project(
         })
         .collect::<Vec<ProjectSpecRecord>>();
 
+    project.env_groups = project
+        .env_groups
+        .iter()
+        .cloned()
+        .map(|mut group| {
+            group.id = new_uuid_v7();
+            group.project_id = new_project_id.clone();
+            group
+        })
+        .collect::<Vec<ProjectEnvGroupRecord>>();
+
     for record in &mut project.history.e2e {
         record.id = new_uuid_v7();
         record.execution_id = new_uuid_v7();
@@ -209,6 +223,7 @@ fn import_item(
         project_name,
         pipelines_imported: response.pipelines_imported,
         specs_imported: response.specs_imported,
+        env_groups_imported: response.env_groups_imported,
         e2e_history_imported: response.e2e_history_imported,
         load_history_imported: response.load_history_imported,
     }
@@ -319,6 +334,32 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(names.contains(&"Project A".to_owned()));
         assert!(names.contains(&"Project A-imported".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn imports_legacy_sqlite_projects_without_env_groups_table() {
+        let source_path = std::env::temp_dir().join(format!(
+            "previa-import-legacy-source-{}.sqlite3",
+            crate::server::utils::new_uuid_v7()
+        ));
+        let _source_cleanup = TempFileCleanup(source_path.clone());
+        let source = migrated_db(&sqlite_url(&source_path)).await;
+        add_project(&source, "source-project", "Legacy Project").await;
+        source
+            .query("DROP TABLE project_env_groups")
+            .execute(&source)
+            .await
+            .expect("drop env groups table");
+        drop(source);
+
+        let target = migrated_db("sqlite::memory:").await;
+        let result = super::import_projects_from_sqlite(&target, &source_path, true)
+            .await
+            .expect("import legacy sqlite");
+
+        assert_eq!(result.projects_imported, 1);
+        assert_eq!(result.projects[0].project_name, "Legacy Project");
+        assert_eq!(result.projects[0].env_groups_imported, 0);
     }
 
     struct TempFileCleanup(std::path::PathBuf);

@@ -6,6 +6,10 @@ use axum::routing::{get, post, put};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::server::handlers::app::app_fallback;
+use crate::server::handlers::env_groups::{
+    create_project_env_group, delete_project_env_group, get_project_env_group,
+    list_project_env_groups, upsert_project_env_group,
+};
 use crate::server::handlers::executions::{cancel_execution, stream_execution};
 use crate::server::handlers::health::{get_info, health, openapi_json};
 use crate::server::handlers::history_e2e::{
@@ -118,6 +122,16 @@ pub fn build_app_with_config(
             get(get_project_spec)
                 .put(upsert_project_spec)
                 .delete(delete_project_spec),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/env-groups",
+            get(list_project_env_groups).post(create_project_env_group),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/env-groups/{envGroupId}",
+            get(get_project_env_group)
+                .put(upsert_project_env_group)
+                .delete(delete_project_env_group),
         )
         .route(
             "/api/v1/projects/{projectId}/pipelines",

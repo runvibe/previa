@@ -11,7 +11,7 @@ import { DotsLoader } from "@/components/DotsLoader";
 import { useOpenAIKeyStore } from "@/stores/useOpenAIKeyStore";
 import { generateUUID } from "@/lib/uuid";
 import type { Pipeline } from "@/types/pipeline";
-import type { ProjectSpec } from "@/types/project";
+import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { ScenarioSelector, type Scenario } from "./ScenarioSelector";
@@ -46,6 +46,7 @@ export interface AIChatRef {
 interface AIPipelineChatProps {
   projectId: string;
   specs: ProjectSpec[];
+  envGroups?: ProjectEnvGroup[];
   pipelines: Pipeline[];
 }
 
@@ -102,7 +103,7 @@ function getLanguageLabel(): string {
   return "English";
 }
 
-function buildSystemPrompt(projectId: string, specs: ProjectSpec[], pipelines: Pipeline[]): string {
+function buildSystemPrompt(projectId: string, specs: ProjectSpec[], envGroups: ProjectEnvGroup[], pipelines: Pipeline[]): string {
   const specSummaries = specs.map((s) => {
     const routes = s.spec?.routes?.map((r) => ({
       method: r.method,
@@ -122,6 +123,11 @@ function buildSystemPrompt(projectId: string, specs: ProjectSpec[], pipelines: P
     description: p.description,
     stepsCount: p.steps.length,
     steps: p.steps.map((s) => ({ name: s.name, method: s.method, url: s.url })),
+  }));
+  const envGroupSummaries = envGroups.map((group) => ({
+    name: group.name,
+    slug: group.slug,
+    entries: group.entries.map((entry) => ({ name: entry.name, url: entry.url })),
   }));
 
   return `You are a specialized REST API test assistant. You have THREE core responsibilities:
@@ -150,9 +156,10 @@ These steps are INTERNAL. Never mention them to the user.
 - To CREATE a new pipeline, use "create_project_pipeline".
 - To UPDATE an existing pipeline, use "update_project_pipeline".
 - These are the ONLY two tools for saving pipelines. No other save/write tool exists.
-- When building step URLs, ALWAYS use {{specs.<slug>.url.<env>}}/path. NEVER use literal or made-up URLs.
+- When building step URLs, prefer {{envs.current.<entry>}}/path when project env groups are available. Use {{specs.<slug>.url.<env>}}/path only when the pipeline must target a spec server directly.
+  - <entry> = env group entry name (e.g. api, auth, payments). The selected env group is chosen at execution time.
   - <slug> = spec slug (e.g. users-api). <env> = key from the spec's "servers" field (e.g. hml, prd, local).
-  - If a spec has NO servers configured (empty {}), ASK the user for the base URL and environment name, then call the appropriate tool to configure servers BEFORE creating the pipeline.
+  - If neither env groups nor spec servers are configured, ASK the user for the base URL and environment name before creating the pipeline.
 - Assertion operators: equals, not_equals, contains, exists, not_exists, gt, lt.
 - Assertion fields: "status", "body.field", "headers.field".
 - Templates: {{steps.STEP_ID.response.body.field}} to chain data between steps.
@@ -178,6 +185,9 @@ These steps are INTERNAL. Never mention them to the user.
 ── CONTEXT ──
 Available OpenAPI specs:
 ${JSON.stringify(specSummaries, null, 2)}
+
+Available env groups:
+${JSON.stringify(envGroupSummaries, null, 2)}
 
 Existing pipelines:
 ${JSON.stringify(pipelineSummaries, null, 2)}
@@ -273,7 +283,7 @@ async function streamOpenAISinglePass(
 // --- Main component ---
 
 export const AIPipelineChat = forwardRef<AIChatRef, AIPipelineChatProps>(function AIPipelineChat(
-  { projectId, specs, pipelines },
+  { projectId, specs, envGroups = [], pipelines },
   ref
 ) {
   const location = useLocation();
@@ -578,6 +588,11 @@ export const AIPipelineChat = forwardRef<AIChatRef, AIPipelineChatProps>(functio
         id: p.id, name: p.name, stepsCount: p.steps.length,
         steps: p.steps.map((s) => ({ name: s.name, method: s.method, url: s.url })),
       }));
+      const envGroupSummaries = envGroups.map((group) => ({
+        name: group.name,
+        slug: group.slug,
+        entries: group.entries.map((entry) => ({ name: entry.name, url: entry.url })),
+      }));
       systemPrompt.current = `${mcpPromptRef.current}
 
 ── ADDITIONAL FRONTEND CONTRACT ──
@@ -589,15 +604,18 @@ Use "get_current_spec" when the user refers to the current spec.
 Available OpenAPI specs:
 ${JSON.stringify(specSummaries, null, 2)}
 
+Available env groups:
+${JSON.stringify(envGroupSummaries, null, 2)}
+
 Existing pipelines:
 ${JSON.stringify(pipelineSummaries, null, 2)}
 
 ── LANGUAGE ──
 Always respond to the user in ${getLanguageLabel()}. All explanations, questions, and conversation must be in this language.`;
     } else {
-      systemPrompt.current = buildSystemPrompt(projectId, specs, pipelines);
+      systemPrompt.current = buildSystemPrompt(projectId, specs, envGroups, pipelines);
     }
-  }, [projectId, specs, pipelines]);
+  }, [projectId, specs, envGroups, pipelines]);
 
   useEffect(() => {
     const onLangChange = () => {

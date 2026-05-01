@@ -15,6 +15,10 @@ export interface TemplateValidationContext {
   stepResponseFields?: Record<string, ResponseFieldInfo[]>;
   /** Slugs de specs disponíveis com suas envs */
   availableSpecs?: Array<{ slug: string; envs: string[] }>;
+  /** Env groups disponíveis com seus nomes de entradas */
+  availableEnvGroups?: Array<{ slug: string; entries: string[] }>;
+  /** Env group selecionado para resolver envs.current.* */
+  selectedEnvGroupSlug?: string | null;
 }
 
 export interface TemplateDiagnostic {
@@ -24,7 +28,7 @@ export interface TemplateDiagnostic {
   severity: "error" | "warning";
 }
 
-const VALID_NAMESPACES = ["steps", "helpers", "specs", "url"];
+const VALID_NAMESPACES = ["steps", "helpers", "specs", "envs", "url"];
 const helperNames = new Set(Object.keys(templateHelpers));
 
 /**
@@ -112,6 +116,61 @@ export function validateInterpolations(
         } else if (!specInfo.envs.includes(env)) {
           diagnostics.push({
             message: `Ambiente '${env}' não encontrado na spec '${slug}'. Disponíveis: ${specInfo.envs.join(", ") || "(nenhum)"}`,
+            offset,
+            length,
+            severity: "warning",
+          });
+        }
+      }
+      continue;
+    }
+
+    if (root === "envs") {
+      if (segments.length < 3) {
+        diagnostics.push({
+          message: "envs requer formato envs.<group>.<entrada> ou envs.current.<entrada>. Ex: {{envs.current.api}}",
+          offset,
+          length,
+          severity: "error",
+        });
+        continue;
+      }
+
+      const groupSlug = segments[1];
+      const entryName = segments[2];
+      if (!groupSlug || !entryName) {
+        diagnostics.push({
+          message: "envs requer formato envs.<group>.<entrada> ou envs.current.<entrada>. Ex: {{envs.hml.api}}",
+          offset,
+          length,
+          severity: "error",
+        });
+        continue;
+      }
+
+      if (groupSlug === "current" && !context?.selectedEnvGroupSlug) {
+        diagnostics.push({
+          message: "Selecione um env group para validar {{envs.current.*}}.",
+          offset,
+          length,
+          severity: "warning",
+        });
+        continue;
+      }
+
+      if (context?.availableEnvGroups) {
+        const resolvedSlug = groupSlug === "current" ? context.selectedEnvGroupSlug : groupSlug;
+        const groupInfo = context.availableEnvGroups.find((group) => group.slug === resolvedSlug);
+        if (!groupInfo) {
+          diagnostics.push({
+            message: `Env group '${resolvedSlug || groupSlug}' não encontrado. Disponíveis: ${context.availableEnvGroups.map((group) => group.slug).join(", ") || "(nenhum)"}`,
+            offset,
+            length,
+            severity: "warning",
+          });
+        } else if (!groupInfo.entries.includes(entryName)) {
+          diagnostics.push({
+            message: `Entrada '${entryName}' não encontrada no env group '${groupInfo.slug}'. Disponíveis: ${groupInfo.entries.join(", ") || "(nenhuma)"}`,
             offset,
             length,
             severity: "warning",

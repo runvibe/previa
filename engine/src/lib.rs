@@ -8,12 +8,13 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 pub use core::types::{
-    AssertionResult, Pipeline, PipelineStep, RuntimeSpec, StepAssertion, StepExecutionResult,
-    StepRequest, StepResponse,
+    AssertionResult, Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepAssertion,
+    StepExecutionResult, StepRequest, StepResponse,
 };
 pub use execution::{
     execute_pipeline, execute_pipeline_with_client, execute_pipeline_with_client_hooks,
-    execute_pipeline_with_hooks, execute_pipeline_with_specs_hooks,
+    execute_pipeline_with_hooks, execute_pipeline_with_runtime_hooks,
+    execute_pipeline_with_specs_hooks,
 };
 
 pub fn render_template_value(
@@ -21,7 +22,23 @@ pub fn render_template_value(
     context: &HashMap<String, StepExecutionResult>,
     specs: Option<&[RuntimeSpec]>,
 ) -> Value {
-    template::resolve::resolve_template_variables(value, context, specs)
+    template::resolve::resolve_template_variables(value, context, specs, None, None)
+}
+
+pub fn render_template_value_with_runtime(
+    value: &Value,
+    context: &HashMap<String, StepExecutionResult>,
+    specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
+) -> Value {
+    template::resolve::resolve_template_variables(
+        value,
+        context,
+        specs,
+        env_groups,
+        selected_env_group_slug,
+    )
 }
 
 pub fn render_template_value_simple(value: &Value) -> Value {

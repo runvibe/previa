@@ -2,6 +2,8 @@
 
 ## Release and Install Workflow
 
+- Treat project env groups as runtime configuration for executions. OpenAPI specs remain contract metadata; new pipelines should prefer `{{envs.current.<entry>}}` for selectable runtime URLs and reserve `{{specs.<slug>.url.<env>}}` for spec-bound server references.
+
 - Keep GitHub Release asset names aligned with installer platform slugs:
   - Linux: `previa-linux-amd64`, `previa-linux-arm64`
   - macOS: `previa-macos-amd64`, `previa-macos-arm64`

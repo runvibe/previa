@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use crate::assertions::{evaluate_assertions, has_status_assertion};
-use crate::core::types::{Pipeline, RuntimeSpec, StepExecutionResult, StepRequest, StepResponse};
+use crate::core::types::{
+    Pipeline, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult, StepRequest, StepResponse,
+};
 use crate::execution::cancel::await_with_cancel;
 use crate::execution::http::{parse_absolute_http_url, parse_method};
 use crate::execution::logging::{log_step_request, log_step_response};
@@ -15,10 +17,13 @@ pub async fn execute_pipeline(
     selected_base_url_key: Option<&str>,
 ) -> Vec<StepExecutionResult> {
     let client = Client::new();
-    execute_pipeline_with_client_hooks(
+    execute_pipeline_with_client_runtime_hooks(
         &client,
         pipeline,
         selected_base_url_key,
+        None,
+        None,
+        None,
         |_| {},
         |_| {},
         || false,
@@ -31,10 +36,13 @@ pub async fn execute_pipeline_with_client(
     pipeline: &Pipeline,
     selected_base_url_key: Option<&str>,
 ) -> Vec<StepExecutionResult> {
-    execute_pipeline_with_client_hooks(
+    execute_pipeline_with_client_runtime_hooks(
         client,
         pipeline,
         selected_base_url_key,
+        None,
+        None,
+        None,
         |_| {},
         |_| {},
         || false,
@@ -55,10 +63,13 @@ where
     FCancel: FnMut() -> bool,
 {
     let client = Client::new();
-    execute_pipeline_with_client_hooks(
+    execute_pipeline_with_client_runtime_hooks(
         &client,
         pipeline,
         selected_base_url_key,
+        None,
+        None,
+        None,
         on_step_start,
         on_step_result,
         should_cancel,
@@ -80,11 +91,43 @@ where
     FCancel: FnMut() -> bool,
 {
     let client = Client::new();
-    execute_pipeline_with_client_specs_hooks(
+    execute_pipeline_with_client_runtime_hooks(
         &client,
         pipeline,
         selected_base_url_key,
         specs,
+        None,
+        None,
+        on_step_start,
+        on_step_result,
+        should_cancel,
+    )
+    .await
+}
+
+pub async fn execute_pipeline_with_runtime_hooks<FStart, FResult, FCancel>(
+    pipeline: &Pipeline,
+    selected_base_url_key: Option<&str>,
+    specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
+    on_step_start: FStart,
+    on_step_result: FResult,
+    should_cancel: FCancel,
+) -> Vec<StepExecutionResult>
+where
+    FStart: FnMut(&str),
+    FResult: FnMut(&StepExecutionResult),
+    FCancel: FnMut() -> bool,
+{
+    let client = Client::new();
+    execute_pipeline_with_client_runtime_hooks(
+        &client,
+        pipeline,
+        selected_base_url_key,
+        specs,
+        env_groups,
+        selected_env_group_slug,
         on_step_start,
         on_step_result,
         should_cancel,
@@ -105,10 +148,12 @@ where
     FResult: FnMut(&StepExecutionResult),
     FCancel: FnMut() -> bool,
 {
-    execute_pipeline_with_client_specs_hooks(
+    execute_pipeline_with_client_runtime_hooks(
         client,
         pipeline,
         selected_base_url_key,
+        None,
+        None,
         None,
         on_step_start,
         on_step_result,
@@ -134,11 +179,13 @@ where
     should_stop_pipeline
 }
 
-async fn execute_pipeline_with_client_specs_hooks<FStart, FResult, FCancel>(
+async fn execute_pipeline_with_client_runtime_hooks<FStart, FResult, FCancel>(
     client: &Client,
     pipeline: &Pipeline,
     _selected_base_url_key: Option<&str>,
     specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
     mut on_step_start: FStart,
     mut on_step_result: FResult,
     mut should_cancel: FCancel,
@@ -178,16 +225,23 @@ where
             on_step_start(&step.id);
             let start = Instant::now();
 
-            let resolved_url =
-                resolve_template_variables(&Value::String(step.url.clone()), &context, specs)
-                    .as_str()
-                    .unwrap_or(step.url.as_str())
-                    .to_owned();
+            let resolved_url = resolve_template_variables(
+                &Value::String(step.url.clone()),
+                &context,
+                specs,
+                env_groups,
+                selected_env_group_slug,
+            )
+            .as_str()
+            .unwrap_or(step.url.as_str())
+            .to_owned();
 
             let resolved_headers = resolve_template_variables(
                 &serde_json::to_value(&step.headers).unwrap_or(Value::Object(Map::new())),
                 &context,
                 specs,
+                env_groups,
+                selected_env_group_slug,
             )
             .as_object()
             .map(|m| {
@@ -197,10 +251,15 @@ where
             })
             .unwrap_or_default();
 
-            let resolved_body = step
-                .body
-                .as_ref()
-                .map(|body| resolve_template_variables(body, &context, specs));
+            let resolved_body = step.body.as_ref().map(|body| {
+                resolve_template_variables(
+                    body,
+                    &context,
+                    specs,
+                    env_groups,
+                    selected_env_group_slug,
+                )
+            });
 
             let method = match parse_method(&step.method) {
                 Ok(method) => method,
@@ -408,7 +467,14 @@ where
                     };
 
                     let has_status_assert = has_status_assertion(step);
-                    let assert_results = evaluate_assertions(step, &result, &context, specs);
+                    let assert_results = evaluate_assertions(
+                        step,
+                        &result,
+                        &context,
+                        specs,
+                        env_groups,
+                        selected_env_group_slug,
+                    );
                     let assertion_failed = assert_results.iter().any(|r| !r.passed);
                     if !assert_results.is_empty() {
                         if assertion_failed {

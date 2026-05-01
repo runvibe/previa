@@ -153,7 +153,8 @@ pub async fn create_project_pipeline(
                 ));
             }
         };
-    let template_errors = validate_pipeline_templates(&pipeline, runtime_specs.as_deref());
+    let template_errors =
+        validate_pipeline_templates(&pipeline, runtime_specs.as_deref(), None, None);
     if !template_errors.is_empty() {
         return bad_request_message_response(&template_errors.join("; "));
     }
@@ -227,7 +228,8 @@ pub async fn upsert_project_pipeline(
                 ));
             }
         };
-    let template_errors = validate_pipeline_templates(&pipeline, runtime_specs.as_deref());
+    let template_errors =
+        validate_pipeline_templates(&pipeline, runtime_specs.as_deref(), None, None);
     if !template_errors.is_empty() {
         return bad_request_message_response(&template_errors.join("; "));
     }

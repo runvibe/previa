@@ -46,6 +46,8 @@ For each step:
 Supported expressions:
 
 - `{{steps.<step_id>.<field>}}`
+- `{{envs.current.<name>}}`
+- `{{envs.<group_slug>.<name>}}`
 - `{{specs.<slug>.url.<name>}}`
 - legacy: `{{url.<slug>.<name>}}` (normalized)
 

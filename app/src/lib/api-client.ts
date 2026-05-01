@@ -5,7 +5,7 @@
 
 import { useEventStore } from "@/stores/useEventStore";
 import type { Pipeline, OpenAPISpec } from "@/types/pipeline";
-import type { Project, ProjectSpec } from "@/types/project";
+import type { Project, ProjectEnvEntry, ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import { getMergedSpec } from "@/types/project";
 import type { ExecutionRun } from "@/lib/execution-store";
 import type { LoadTestRunRecord } from "@/lib/load-test-store";
@@ -81,6 +81,27 @@ export interface ProjectSpecUpsertRequest {
   url?: string | null;
   slug?: string | null;
   servers?: Record<string, string> | null;
+}
+
+export interface ProjectEnvGroupRecord {
+  id: string;
+  projectId: string;
+  slug: string;
+  name: string;
+  entries: ProjectEnvEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectEnvGroupUpsertRequest {
+  slug: string;
+  name: string;
+  entries: ProjectEnvEntry[];
+}
+
+export interface RuntimeEnvGroup {
+  slug: string;
+  urls: Record<string, string>;
 }
 
 export interface IntegrationHistoryRecord {
@@ -308,6 +329,7 @@ function projectRecordToLocal(
   r: ProjectRecord,
   pipelines: Pipeline[] = [],
   specRecords: ProjectSpecRecord[] = [],
+  envGroups: ProjectEnvGroup[] = [],
 ): Project {
   const specs = specRecords.map(specRecordToProjectSpec);
   // Backward compat: set legacy spec to merged routes from all specs
@@ -326,6 +348,7 @@ function projectRecordToLocal(
     updatedAt: r.updatedAt,
     spec,
     specs,
+    envGroups,
     pipelines,
   };
 }
@@ -339,18 +362,19 @@ export async function listProjects(baseUrl: string, opts?: { limit?: number; off
   );
   console.log("[DEBUG][api] GET /projects END", { count: records.length, timestamp: Date.now() });
   // List returns metadata only — no pipelines or specs
-  return records.map((r) => projectRecordToLocal(r, [], []));
+  return records.map((r) => projectRecordToLocal(r, [], [], []));
 }
 
 export async function getProject(baseUrl: string, id: string): Promise<Project> {
-  console.log("[DEBUG][api] GET /projects/:id START (parallel: project+pipelines+specs)", { id, timestamp: Date.now() });
-  const [record, pipelines, specs] = await Promise.all([
+  console.log("[DEBUG][api] GET /projects/:id START (parallel: project+pipelines+specs+envGroups)", { id, timestamp: Date.now() });
+  const [record, pipelines, specs, envGroups] = await Promise.all([
     request<ProjectRecord>(`${baseUrl}/projects/${id}`),
     listPipelines(baseUrl, id).catch(() => []),
     listSpecs(baseUrl, id).catch(() => []),
+    listProjectEnvGroups(baseUrl, id).catch(() => []),
   ]);
-  console.log("[DEBUG][api] GET /projects/:id END", { id, pipelinesCount: pipelines.length, specsCount: specs.length, timestamp: Date.now() });
-  return projectRecordToLocal(record, pipelines, specs);
+  console.log("[DEBUG][api] GET /projects/:id END", { id, pipelinesCount: pipelines.length, specsCount: specs.length, envGroupsCount: envGroups.length, timestamp: Date.now() });
+  return projectRecordToLocal(record, pipelines, specs, envGroups);
 }
 
 export async function createProject(baseUrl: string, data: ProjectUpsertRequest): Promise<ProjectRecord> {
@@ -501,6 +525,39 @@ export async function upsertSpec(
 
 export async function deleteSpec(baseUrl: string, projectId: string, specId: string): Promise<void> {
   await request<void>(`${baseUrl}/projects/${projectId}/specs/${specId}`, { method: "DELETE" });
+}
+
+// ============ Env Groups ============
+
+export async function listProjectEnvGroups(baseUrl: string, projectId: string): Promise<ProjectEnvGroup[]> {
+  return request<ProjectEnvGroup[]>(`${ensureApiPrefix(baseUrl)}/projects/${projectId}/env-groups`);
+}
+
+export async function createProjectEnvGroup(baseUrl: string, projectId: string, data: ProjectEnvGroupUpsertRequest): Promise<ProjectEnvGroup> {
+  return request<ProjectEnvGroup>(`${ensureApiPrefix(baseUrl)}/projects/${projectId}/env-groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateProjectEnvGroup(baseUrl: string, projectId: string, envGroupId: string, data: ProjectEnvGroupUpsertRequest): Promise<ProjectEnvGroup> {
+  return request<ProjectEnvGroup>(`${ensureApiPrefix(baseUrl)}/projects/${projectId}/env-groups/${envGroupId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteProjectEnvGroup(baseUrl: string, projectId: string, envGroupId: string): Promise<void> {
+  await request<void>(`${ensureApiPrefix(baseUrl)}/projects/${projectId}/env-groups/${envGroupId}`, { method: "DELETE" });
+}
+
+export function projectEnvGroupsToRuntime(envGroups: ProjectEnvGroup[]): RuntimeEnvGroup[] {
+  return envGroups.map((group) => ({
+    slug: group.slug,
+    urls: Object.fromEntries(group.entries.map((entry) => [entry.name, entry.url])),
+  }));
 }
 
 // ============ Integration History ============
@@ -789,7 +846,9 @@ export interface E2eQueueRecord {
 export interface ProjectE2eQueueRequest {
   pipelineIds: string[];
   selectedBaseUrlKey?: string | null;
+  selectedEnvGroupSlug?: string | null;
   specs?: Array<{ slug: string; servers: Record<string, string> }>;
+  envGroups?: RuntimeEnvGroup[];
 }
 
 export async function createE2eQueue(
@@ -982,6 +1041,7 @@ export interface ProjectExportEnvelope {
 export interface ProjectImportResponse {
   id: string;
   name: string;
+  envGroupsImported?: number;
 }
 
 export interface SqliteProjectImportResponse {
@@ -993,6 +1053,7 @@ export interface SqliteProjectImportResponse {
     projectName: string;
     pipelinesImported: number;
     specsImported: number;
+    envGroupsImported?: number;
     e2eHistoryImported: number;
     loadHistoryImported: number;
   }>;

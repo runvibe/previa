@@ -236,12 +236,16 @@ pub async fn cancel_stale_e2e_queues(db: &DbPool, updated_at: &str) -> Result<u6
 pub fn queue_request_json(
     pipeline_ids: &[String],
     selected_base_url_key: Option<&str>,
+    selected_env_group_slug: Option<&str>,
     specs: &[previa_runner::RuntimeSpec],
+    env_groups: &[previa_runner::RuntimeEnvGroup],
 ) -> Value {
     json!({
         "pipelineIds": pipeline_ids,
         "selectedBaseUrlKey": selected_base_url_key,
-        "specs": specs
+        "selectedEnvGroupSlug": selected_env_group_slug,
+        "specs": specs,
+        "envGroups": env_groups
     })
 }
 

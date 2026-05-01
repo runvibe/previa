@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect, type MutableRefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
-import type { ProjectSpec } from "@/types/project";
+import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import type { OnMount } from "@monaco-editor/react";
 import jsYaml from "js-yaml";
 
@@ -34,10 +34,11 @@ interface PipelineCreatorPageProps {
   onCancel?: () => void;
   spec?: OpenAPISpec;
   specs?: ProjectSpec[];
+  envGroups?: ProjectEnvGroup[];
   initialPipeline?: Pipeline;
 }
 
-export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, spec, specs, initialPipeline }: PipelineCreatorPageProps) {
+export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, spec, specs, envGroups = [], initialPipeline }: PipelineCreatorPageProps) {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [content, setContent] = useState(() => {
@@ -360,7 +361,12 @@ export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, sp
       slug: s.slug,
       envs: Object.keys(s.servers),
     })),
-  }), [existingStepIds, stepResponseFields, specs]);
+    availableEnvGroups: envGroups.map((group) => ({
+      slug: group.slug,
+      entries: group.entries.map((entry) => entry.name),
+    })),
+    selectedEnvGroupSlug: envGroups[0]?.slug ?? null,
+  }), [existingStepIds, stepResponseFields, specs, envGroups]);
 
   const leftPanel = (
     <div className="flex h-full flex-col">
@@ -415,6 +421,7 @@ export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, sp
         key={isEditing ? `edit-${editingStepIndex}` : "new"}
         spec={spec}
         specs={specs}
+        envGroups={envGroups}
         onAdd={isEditing ? handleUpdateStep : handleAddStep}
         onCancel={() => { setShowStepCreator(false); setEditingStepIndex(null); }}
         initialStep={editingStep}

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use previa_runner::Pipeline;
+use previa_runner::RuntimeEnvGroup;
 use previa_runner::RuntimeSpec;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -9,8 +10,11 @@ use previa_runner::RuntimeSpec;
 pub struct E2eTestRequest {
     pub pipeline: Pipeline,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -19,8 +23,11 @@ pub struct LoadTestRequest {
     pub pipeline: Pipeline,
     pub config: LoadTestConfig,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]

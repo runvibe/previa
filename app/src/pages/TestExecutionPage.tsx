@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, History, BarChart3, LayoutGrid, ListOrdered } from "lucide-react";
 import { useStepAutoScroll, useStepVisibility } from "@/hooks/useStepAutoScroll";
@@ -27,7 +28,7 @@ import { useExecutionHistoryStore } from "@/stores/useExecutionHistoryStore";
 import { useLoadTestHistoryStore } from "@/stores/useLoadTestHistoryStore";
 import type { ExecutionRun } from "@/lib/execution-store";
 import type { Pipeline, OpenAPISpec } from "@/types/pipeline";
-import type { ProjectSpec } from "@/types/project";
+import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 
 import { EmptyState } from "@/components/EmptyState";
 import { SectionHeader } from "@/components/SectionHeader";
@@ -39,11 +40,13 @@ import { BatchControls } from "@/components/BatchControls";
 import { PipelineMiniChart } from "@/components/PipelineMiniChart";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { ProjectEnvGroupsPanel } from "@/components/ProjectEnvGroupsPanel";
 
 interface TestExecutionPageProps {
   pipelines: Pipeline[];
   spec?: OpenAPISpec;
   specs?: ProjectSpec[];
+  envGroups?: ProjectEnvGroup[];
   projectId: string;
   onDeletePipeline: (index: number) => void;
   onCreatePipeline: () => void;
@@ -53,6 +56,9 @@ interface TestExecutionPageProps {
   onImportSpec?: (content: string) => void;
   onEditSpec?: (specId?: string) => void;
   onDeleteSpec?: (specId: string) => void;
+  onCreateEnvGroup?: (data: apiClient.ProjectEnvGroupUpsertRequest) => Promise<ProjectEnvGroup | null>;
+  onUpdateEnvGroup?: (id: string, data: apiClient.ProjectEnvGroupUpsertRequest) => Promise<void>;
+  onDeleteEnvGroup?: (id: string) => Promise<void>;
   selectedPipelineId?: string;
   initialSelectedIndex?: number;
   onViewDashboard?: (pipelineId: string) => void;
@@ -69,18 +75,22 @@ type BatchState = "idle" | "running" | "paused";
 
 /* ── Sidebar content (shared between desktop panel & mobile sheet) ── */
 function SidebarContent({
-  spec, specs, pipelines, selectedIndex, pipelineStatuses, running, isBatchActive, batchState,
+  spec, specs, envGroups, pipelines, selectedIndex, pipelineStatuses, running, isBatchActive, batchState,
   batchProgress, batchTotal, onEditSpec, onDeleteSpec, onCreatePipeline, onCreateAIPipeline, onSelect, onEdit, onDuplicate, onDelete,
+  onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup,
   handleRunAll, handleBatchPause, handleBatchResume, handleBatchCancel, executionBackendUrl,
   dragTargetIndex, onDragStart, onDragOver, onDrop,
   selectedForBatch, onToggleBatchCheck, onToggleAllBatchCheck, showBatchCheckboxes,
   queuePipelines, pipelineNames,
 }: {
-  spec?: OpenAPISpec; specs?: ProjectSpec[]; pipelines: Pipeline[]; selectedIndex: number | null;
+  spec?: OpenAPISpec; specs?: ProjectSpec[]; envGroups?: ProjectEnvGroup[]; pipelines: Pipeline[]; selectedIndex: number | null;
   pipelineStatuses: Record<number, "success" | "error" | "running" | "queued">; running: boolean;
   isBatchActive: boolean; batchState: BatchState;
   batchProgress: number; batchTotal: number;
   onEditSpec?: (specId?: string) => void; onDeleteSpec?: (specId: string) => void;
+  onCreateEnvGroup?: (data: apiClient.ProjectEnvGroupUpsertRequest) => Promise<ProjectEnvGroup | null>;
+  onUpdateEnvGroup?: (id: string, data: apiClient.ProjectEnvGroupUpsertRequest) => Promise<void>;
+  onDeleteEnvGroup?: (id: string) => Promise<void>;
   onCreatePipeline: () => void; onCreateAIPipeline?: () => void;
   onSelect: (i: number, event?: React.MouseEvent) => void; onEdit?: (i: number) => void;
   onDuplicate?: (i: number) => void; onDelete: (i: number) => void;
@@ -147,6 +157,15 @@ function SidebarContent({
           <p className="mt-1 text-xs text-muted-foreground">{t("testExecution.noSpecImported")}</p>
         )}
       </div>
+
+      {onCreateEnvGroup && onUpdateEnvGroup && onDeleteEnvGroup && (
+        <ProjectEnvGroupsPanel
+          envGroups={envGroups ?? []}
+          onCreate={onCreateEnvGroup}
+          onUpdate={onUpdateEnvGroup}
+          onDelete={onDeleteEnvGroup}
+        />
+      )}
 
       <div className="border-border/50 px-4 py-3">
         <SectionHeader title="Pipelines">
@@ -241,7 +260,7 @@ function SidebarContent({
   );
 }
 
-export default function TestExecutionPage({ pipelines, spec, specs, projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onImportSpec, onEditSpec, onDeleteSpec, selectedPipelineId, initialSelectedIndex, onViewDashboard, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
+export default function TestExecutionPage({ pipelines, spec, specs, envGroups = [], projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onImportSpec, onEditSpec, onDeleteSpec, onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup, selectedPipelineId, initialSelectedIndex, onViewDashboard, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const stepViewMode = useStepViewStore((s) => s.mode);
@@ -288,6 +307,20 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
   const loadTestResetRef = useRef<(() => void) | null>(null);
   const loadTestCancelRef = useRef<(() => void) | null>(null);
   const loadTestStartRef = useRef<(() => void) | null>(null);
+  const [selectedEnvGroupSlug, setSelectedEnvGroupSlug] = useState<string | null>(envGroups[0]?.slug ?? null);
+
+  useEffect(() => {
+    if (envGroups.length === 0) {
+      setSelectedEnvGroupSlug(null);
+      return;
+    }
+    setSelectedEnvGroupSlug((current) =>
+      current && envGroups.some((group) => group.slug === current) ? current : envGroups[0].slug
+    );
+  }, [envGroups]);
+
+  const runtimeEnvGroups = useMemo(() => apiClient.projectEnvGroupsToRuntime(envGroups), [envGroups]);
+  const effectiveSelectedEnvGroupSlug = selectedEnvGroupSlug ?? envGroups[0]?.slug ?? null;
 
   const handleLoadTestStateChange = useCallback((s: string) => {
     setLoadTestState(s);
@@ -791,10 +824,10 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
       onSelectPipeline?.(index);
     }
 
-    const status = await runExecutionTest(pipeline, index, projectId, executionBackendUrl, specs);
+    const status = await runExecutionTest(pipeline, index, projectId, executionBackendUrl, specs, envGroups, effectiveSelectedEnvGroupSlug);
     setChartRefreshKey(prev => prev + 1);
     return status;
-  }, [orderedPipelines, projectId, executionBackendUrl, onSelectPipeline, runExecutionTest, specs, selectedIndex]);
+  }, [orderedPipelines, projectId, executionBackendUrl, onSelectPipeline, runExecutionTest, specs, envGroups, effectiveSelectedEnvGroupSlug, selectedIndex]);
 
   const handleRun = useCallback(async () => {
     if (selectedIndex === null) return;
@@ -851,6 +884,8 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
       const queueRecord = await apiClient.createE2eQueue(executionBackendUrl, projectId, {
         pipelineIds,
         specs: runtimeSpecs,
+        envGroups: runtimeEnvGroups,
+        selectedEnvGroupSlug: effectiveSelectedEnvGroupSlug,
       });
       await handleQueueSnapshot(queueRecord);
       connectQueueStream(queueRecord.id);
@@ -860,7 +895,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
       setBatchState("idle");
       setBatchTotal(0);
     }
-  }, [orderedPipelines, selectedForBatch, showBatchCheckboxes, executionBackendUrl, projectId, specs, selectedIndex, t]);
+  }, [orderedPipelines, selectedForBatch, showBatchCheckboxes, executionBackendUrl, projectId, specs, runtimeEnvGroups, effectiveSelectedEnvGroupSlug, selectedIndex, t]);
 
   const handleToggleBatchCheck = useCallback((index: number) => {
     setSelectedForBatch(prev => {
@@ -1000,8 +1035,9 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
   }, [pipelineStatuses, queuePipelines, orderedPipelines]);
 
   const sidebarProps = {
-    spec, specs, pipelines: orderedPipelines, selectedIndex, pipelineStatuses: effectivePipelineStatuses, running, isBatchActive, batchState,
+    spec, specs, envGroups, pipelines: orderedPipelines, selectedIndex, pipelineStatuses: effectivePipelineStatuses, running, isBatchActive, batchState,
     batchProgress, batchTotal, onEditSpec, onDeleteSpec, onCreatePipeline, onCreateAIPipeline,
+    onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup,
     onSelect: handleSelectPipeline, onEdit: onEditPipeline, onDuplicate: onDuplicatePipeline, onDelete: onDeletePipeline,
     handleRunAll, handleBatchPause, handleBatchResume, handleBatchCancel, executionBackendUrl,
     dragTargetIndex, onDragStart: handleDragStart, onDragOver: handleDragOver, onDrop: handleDrop,
@@ -1062,6 +1098,20 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
                 </Button>
+              )}
+              {envGroups.length > 0 && (
+                <Select value={effectiveSelectedEnvGroupSlug ?? undefined} onValueChange={(value) => setSelectedEnvGroupSlug(value)}>
+                  <SelectTrigger className="h-8 w-[140px] shrink-0 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {envGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.slug}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
               {activeTab === "integration" ? (
                 <Button onClick={handleRun} disabled={running || isBatchActive || !executionBackendUrl} size="sm" className="shrink-0" title={!executionBackendUrl ? t("testExecution.configureServerUrlSettings") : undefined}>
@@ -1289,6 +1339,8 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
                       pipelineIndex={selectedIndex!}
                       executionBackendUrl={executionBackendUrl}
                       specs={specs}
+                      envGroups={envGroups}
+                      selectedEnvGroupSlug={effectiveSelectedEnvGroupSlug}
                       onStateChange={handleLoadTestStateChange}
                       onResetRef={loadTestResetRef}
                       onCancelRef={loadTestCancelRef}

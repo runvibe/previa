@@ -203,7 +203,10 @@ fn create_sqlite_file_if_missing(database_url: &str) -> Result<(), sqlx::Error> 
     }
 
     let path = Path::new(path);
-    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(parent).map_err(|err| {
             sqlx::Error::Configuration(
                 format!("failed to create sqlite database directory: {err}").into(),
@@ -216,7 +219,9 @@ fn create_sqlite_file_if_missing(database_url: &str) -> Result<(), sqlx::Error> 
         .open(path)
         .map(|_| ())
         .map_err(|err| {
-            sqlx::Error::Configuration(format!("failed to create sqlite database file: {err}").into())
+            sqlx::Error::Configuration(
+                format!("failed to create sqlite database file: {err}").into(),
+            )
         })
 }
 

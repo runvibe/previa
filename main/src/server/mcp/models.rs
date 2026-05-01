@@ -338,8 +338,11 @@ pub struct CreateProjectE2eQueueArgs {
     pub project_id: String,
     pub pipeline_ids: Vec<String>,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     #[serde(default)]
     pub specs: Vec<previa_runner::RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<previa_runner::RuntimeEnvGroup>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
 }
@@ -425,9 +428,12 @@ pub struct RunProjectE2eTestArgs {
     pub pipeline_id: Option<String>,
     pub pipeline: Option<Pipeline>,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<previa_runner::RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<previa_runner::RuntimeEnvGroup>,
     pub transaction_id: Option<String>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
@@ -441,9 +447,12 @@ pub struct RunProjectLoadTestArgs {
     pub pipeline: Option<Pipeline>,
     pub config: LoadTestConfig,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,
     #[serde(default)]
     pub specs: Vec<previa_runner::RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<previa_runner::RuntimeEnvGroup>,
     pub transaction_id: Option<String>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,

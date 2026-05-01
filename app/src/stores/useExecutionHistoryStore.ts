@@ -42,7 +42,9 @@ interface ExecutionHistoryState {
     pipelineIndex: number,
     projectId: string,
     executionBackendUrl?: string,
-    specs?: import("@/types/project").ProjectSpec[]
+    specs?: import("@/types/project").ProjectSpec[],
+    envGroups?: import("@/types/project").ProjectEnvGroup[],
+    selectedEnvGroupSlug?: string | null
   ) => Promise<"success" | "error">;
   cancelTest: () => void;
   selectRun: (run: ExecutionRun, executionBackendUrl?: string) => void;
@@ -130,7 +132,7 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
 
   // ── Execution actions ──
 
-  runTest: async (pipeline, pipelineIndex, projectId, executionBackendUrl?, specs?) => {
+  runTest: async (pipeline, pipelineIndex, projectId, executionBackendUrl?, specs?, envGroups?, selectedEnvGroupSlug?) => {
     console.log("[DEBUG][runTest] pipeline received", {
       pipelineId: pipeline.id,
       pipelineName: pipeline.name,
@@ -177,6 +179,10 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
     // Remote execution via SSE
     await new Promise<void>((resolve) => {
       const runtimeSpecs = specs?.map(s => ({ slug: s.slug, servers: s.servers }));
+      const runtimeEnvGroups = envGroups?.map((group) => ({
+        slug: group.slug,
+        urls: Object.fromEntries(group.entries.map((entry) => [entry.name, entry.url])),
+      }));
       const controller = runRemoteIntegrationTest(executionBackendUrl, pipeline, {
           onExecutionInit: (executionId) => {
             if (!executionId || !pipeline.id) return;
@@ -222,7 +228,7 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
             resolve();
           },
           onNodeInfo: (node) => set({ executionNode: node }),
-        }, projectId, undefined, pipelineIndex, runtimeSpecs);
+        }, projectId, undefined, pipelineIndex, runtimeSpecs, runtimeEnvGroups, selectedEnvGroupSlug);
         _controller = controller;
     });
 

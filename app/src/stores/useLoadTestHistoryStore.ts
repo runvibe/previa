@@ -58,7 +58,9 @@ interface LoadTestHistoryState {
     cfg: LoadTestConfig,
     executionBackendUrl?: string,
     selectedBaseUrlKey?: string,
-    specs?: import("@/types/project").ProjectSpec[]
+    specs?: import("@/types/project").ProjectSpec[],
+    envGroups?: import("@/types/project").ProjectEnvGroup[],
+    selectedEnvGroupSlug?: string | null
   ) => void;
   cancelTest: () => void;
   resetTest: () => void;
@@ -106,7 +108,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
 
   // ── Execution actions ──
 
-  runTest: (pipeline, pipelineIndex, projectId, cfg, executionBackendUrl?, selectedBaseUrlKey?, specs?) => {
+  runTest: (pipeline, pipelineIndex, projectId, cfg, executionBackendUrl?, selectedBaseUrlKey?, specs?, envGroups?, selectedEnvGroupSlug?) => {
     // selectedBaseUrlKey is kept for remote compat but unused locally
     const syntheticId = `running-${Date.now()}`;
     const syntheticRun: LoadTestRunRecord = {
@@ -153,6 +155,10 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
     {
       const collectedNodeNames = new Set<string>();
       const runtimeSpecs = specs?.map(s => ({ slug: s.slug, servers: s.servers }));
+      const runtimeEnvGroups = envGroups?.map((group) => ({
+        slug: group.slug,
+        urls: Object.fromEntries(group.entries.map((entry) => [entry.name, entry.url])),
+      }));
       const controller = runRemoteLoadTest(executionBackendUrl, pipeline, cfg, {
         onSnapshot: (snapshot) => {
           const s = get();
@@ -204,7 +210,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
             },
           });
         },
-      }, projectId, selectedBaseUrlKey, pipelineIndex, runtimeSpecs);
+      }, projectId, selectedBaseUrlKey, pipelineIndex, runtimeSpecs, runtimeEnvGroups, selectedEnvGroupSlug);
       _loadController = controller;
     }
   },

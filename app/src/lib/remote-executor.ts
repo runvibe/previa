@@ -550,7 +550,9 @@ export function runRemoteIntegrationTest(
   projectId: string,
   selectedBaseUrlKey?: string,
   pipelineIndex?: number,
-  specs?: Array<{ slug: string; servers: Record<string, string> }>
+  specs?: Array<{ slug: string; servers: Record<string, string> }>,
+  envGroups?: Array<{ slug: string; urls: Record<string, string> }>,
+  selectedEnvGroupSlug?: string | null
 ): RemoteExecutionController {
   const abortController = new AbortController();
   const transactionId = generateUUID();
@@ -560,7 +562,14 @@ export function runRemoteIntegrationTest(
     try {
       const base = ensureApiPrefix(backendUrl);
       const basePath = `${base}/projects/${projectId}/tests/e2e`;
-      const body = { pipelineId: pipeline.id, selectedBaseUrlKey, pipelineIndex, specs };
+      const body = {
+        pipelineId: pipeline.id,
+        selectedBaseUrlKey,
+        selectedEnvGroupSlug,
+        pipelineIndex,
+        specs,
+        envGroups,
+      };
       const response = await fetch(basePath, {
         method: "POST",
         headers: {
@@ -692,7 +701,9 @@ export function runRemoteLoadTest(
   projectId: string,
   selectedBaseUrlKey?: string,
   pipelineIndex?: number,
-  specs?: Array<{ slug: string; servers: Record<string, string> }>
+  specs?: Array<{ slug: string; servers: Record<string, string> }>,
+  envGroups?: Array<{ slug: string; urls: Record<string, string> }>,
+  selectedEnvGroupSlug?: string | null
 ): RemoteLoadTestController {
   const abortController = new AbortController();
   const transactionId = generateUUID();
@@ -730,7 +741,15 @@ export function runRemoteLoadTest(
     try {
       const base = ensureApiPrefix(backendUrl);
       const basePath = `${base}/projects/${projectId}/tests/load`;
-      const body = { pipelineId: pipeline.id, config, selectedBaseUrlKey, pipelineIndex, specs };
+      const body = {
+        pipelineId: pipeline.id,
+        config,
+        selectedBaseUrlKey,
+        selectedEnvGroupSlug,
+        pipelineIndex,
+        specs,
+        envGroups,
+      };
       const response = await fetch(basePath, {
         method: "POST",
         headers: {

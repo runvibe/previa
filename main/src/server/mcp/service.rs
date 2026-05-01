@@ -1070,7 +1070,7 @@ async fn execute_tool(state: &AppState, params: ToolCallParams) -> Result<ToolCa
                     .await
                     .map_err(|err| format!("failed to load project specs for validation: {err}"))?;
             let template_errors =
-                validate_pipeline_templates(&args.pipeline, runtime_specs.as_deref());
+                validate_pipeline_templates(&args.pipeline, runtime_specs.as_deref(), None, None);
             if !template_errors.is_empty() {
                 return Ok(tool_error(template_errors.join("; ")));
             }
@@ -1097,7 +1097,7 @@ async fn execute_tool(state: &AppState, params: ToolCallParams) -> Result<ToolCa
                     .await
                     .map_err(|err| format!("failed to load project specs for validation: {err}"))?;
             let template_errors =
-                validate_pipeline_templates(&args.pipeline, runtime_specs.as_deref());
+                validate_pipeline_templates(&args.pipeline, runtime_specs.as_deref(), None, None);
             if !template_errors.is_empty() {
                 return Ok(tool_error(template_errors.join("; ")));
             }
@@ -1243,7 +1243,9 @@ async fn execute_tool(state: &AppState, params: ToolCallParams) -> Result<ToolCa
                 ProjectE2eQueueRequest {
                     pipeline_ids: args.pipeline_ids,
                     selected_base_url_key: args.selected_base_url_key,
+                    selected_env_group_slug: args.selected_env_group_slug,
                     specs: args.specs,
+                    env_groups: args.env_groups,
                 },
             )
             .await
@@ -2280,9 +2282,11 @@ async fn resolve_project_e2e_request(
     Ok(E2eTestRequest {
         pipeline,
         selected_base_url_key: args.selected_base_url_key,
+        selected_env_group_slug: args.selected_env_group_slug,
         project_id: Some(args.project_id),
         pipeline_index,
         specs: args.specs,
+        env_groups: args.env_groups,
     })
 }
 
@@ -2312,9 +2316,11 @@ async fn resolve_project_load_request(
         pipeline,
         config: args.config,
         selected_base_url_key: args.selected_base_url_key,
+        selected_env_group_slug: args.selected_env_group_slug,
         project_id: Some(args.project_id),
         pipeline_index,
         specs: args.specs,
+        env_groups: args.env_groups,
     })
 }
 

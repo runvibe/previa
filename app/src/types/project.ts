@@ -11,6 +11,22 @@ export interface ProjectSpec {
   specMd5?: string;
 }
 
+export interface ProjectEnvEntry {
+  name: string;
+  url: string;
+  description?: string | null;
+}
+
+export interface ProjectEnvGroup {
+  id: string;
+  projectId: string;
+  slug: string;
+  name: string;
+  entries: ProjectEnvEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * Generate a slug from a spec name.
  */
@@ -30,6 +46,7 @@ export interface Project {
   /** @deprecated Use specs[] instead. Kept for backward compatibility — returns merged routes from all specs. */
   spec?: OpenAPISpec;
   specs: ProjectSpec[];
+  envGroups: ProjectEnvGroup[];
   pipelines: Pipeline[];
 }
 
@@ -56,7 +73,7 @@ export function getMergedSpec(specs: ProjectSpec[]): OpenAPISpec | undefined {
  */
 export function migrateProjectSpecs(project: Project): Project {
   if (project.specs && project.specs.length > 0) return project;
-  if (!project.spec) return { ...project, specs: [] };
+  if (!project.spec) return { ...project, specs: [], envGroups: project.envGroups ?? [] };
 
   const legacySpec: ProjectSpec = {
     id: "default",
@@ -70,5 +87,6 @@ export function migrateProjectSpecs(project: Project): Project {
   return {
     ...project,
     specs: [legacySpec],
+    envGroups: project.envGroups ?? [],
   };
 }

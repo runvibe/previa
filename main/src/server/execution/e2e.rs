@@ -9,8 +9,8 @@ use tracing::error;
 use crate::server::db::{save_e2e_history, upsert_e2e_history};
 use crate::server::execution::{
     AcquireOutcome, ScheduledExecutionKind, add_context_fields, build_e2e_snapshot_payload,
-    determine_e2e_history_status, forward_runner_stream, resolve_runtime_specs_for_execution,
-    send_sse_best_effort, spawn_broadcast_bridge,
+    determine_e2e_history_status, forward_runner_stream, resolve_runtime_env_groups_for_execution,
+    resolve_runtime_specs_for_execution, send_sse_best_effort, spawn_broadcast_bridge,
 };
 use crate::server::models::{
     E2eHistoryAccumulator, E2eHistoryWrite, E2eTestRequest, HistoryMetadata, NodePlan, SseMessage,
@@ -64,8 +64,24 @@ pub async fn start_e2e_execution(
             "failed to load project specs for execution: {err}"
         ))
     })?;
+    let runtime_env_groups = resolve_runtime_env_groups_for_execution(
+        &state.db,
+        payload.project_id.as_deref(),
+        &payload.env_groups,
+    )
+    .await
+    .map_err(|err| {
+        StartE2eExecutionError::Internal(format!(
+            "failed to load project env groups for execution: {err}"
+        ))
+    })?;
 
-    let template_errors = validate_pipeline_templates(&payload.pipeline, runtime_specs.as_deref());
+    let template_errors = validate_pipeline_templates(
+        &payload.pipeline,
+        runtime_specs.as_deref(),
+        runtime_env_groups.as_deref(),
+        payload.selected_env_group_slug.as_deref(),
+    );
     if !template_errors.is_empty() {
         return Err(StartE2eExecutionError::BadRequest(
             template_errors.join("; "),
@@ -77,10 +93,13 @@ pub async fn start_e2e_execution(
     let pipeline_name = payload.pipeline.name.clone();
     let selected_base_url_key = payload.selected_base_url_key.clone();
     let selected_base_url_key_for_runner = payload.selected_base_url_key.clone();
+    let selected_env_group_slug_for_runner = payload.selected_env_group_slug.clone();
     let history_request = json!({
         "pipeline": payload.pipeline,
         "selectedBaseUrlKey": payload.selected_base_url_key,
+        "selectedEnvGroupSlug": payload.selected_env_group_slug,
         "specs": runtime_specs.clone(),
+        "envGroups": runtime_env_groups.clone(),
         "projectId": payload.project_id,
         "pipelineIndex": payload.pipeline_index
     });
@@ -161,6 +180,7 @@ pub async fn start_e2e_execution(
     }
 
     let runtime_specs_for_runner = runtime_specs.clone().unwrap_or_default();
+    let runtime_env_groups_for_runner = runtime_env_groups.clone().unwrap_or_default();
     let transaction_id_for_runner = transaction_id.clone();
     let state_clone = state.clone();
     let execution_id_for_cleanup = orchestrator_execution_id.clone();
@@ -302,7 +322,9 @@ pub async fn start_e2e_execution(
         let request_body = json!({
             "pipeline": pipeline_for_runner,
             "selectedBaseUrlKey": selected_base_url_key_for_runner,
-            "specs": runtime_specs_for_runner
+            "selectedEnvGroupSlug": selected_env_group_slug_for_runner,
+            "specs": runtime_specs_for_runner,
+            "envGroups": runtime_env_groups_for_runner
         });
 
         forward_runner_stream(
@@ -482,9 +504,11 @@ mod tests {
             crate::server::models::E2eTestRequest {
                 pipeline: test_pipeline("pipe-1"),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )
@@ -495,9 +519,11 @@ mod tests {
             crate::server::models::E2eTestRequest {
                 pipeline: test_pipeline("pipe-1"),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )

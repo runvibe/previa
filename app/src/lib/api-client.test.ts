@@ -5,6 +5,7 @@ import {
   deleteRunner,
   loadRecordToRun,
   listRunners,
+  projectEnvGroupsToRuntime,
   updateRunner,
   type LoadHistoryRecord,
   type RunnerRecord,
@@ -176,6 +177,33 @@ describe("api-client load history mapping", () => {
         networkRxBytes: 4_096,
         networkTotalBytes: 6_144,
         networkTotalKb: 6,
+      },
+    ]);
+  });
+});
+
+describe("api-client env group mapping", () => {
+  it("converts project env group entries to runtime url maps", () => {
+    expect(projectEnvGroupsToRuntime([
+      {
+        id: "env-group-1",
+        projectId: "project-1",
+        slug: "hml",
+        name: "Homolog",
+        entries: [
+          { name: "api", url: "https://api-hml.example.com" },
+          { name: "auth", url: "https://auth-hml.example.com" },
+        ],
+        createdAt: "2026-05-01T00:00:00Z",
+        updatedAt: "2026-05-01T00:00:00Z",
+      },
+    ])).toEqual([
+      {
+        slug: "hml",
+        urls: {
+          api: "https://api-hml.example.com",
+          auth: "https://auth-hml.example.com",
+        },
       },
     ]);
   });

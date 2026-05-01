@@ -174,6 +174,7 @@ export function registerTemplateCompletions(
       if (segments.length <= 1) {
         return {
           suggestions: [
+            makeSuggestion("envs", monaco.languages.CompletionItemKind.Module, "URLs por env group (envs.current.<entrada>)"),
             makeSuggestion("specs", monaco.languages.CompletionItemKind.Module, "URL do servidor (specs.<slug>.url.<env>)"),
             makeSuggestion("steps", monaco.languages.CompletionItemKind.Module, "Dados de steps anteriores"),
             makeSuggestion("helpers", monaco.languages.CompletionItemKind.Module, "Funções de dados fake"),
@@ -182,6 +183,32 @@ export function registerTemplateCompletions(
       }
 
       const root = segments[0];
+
+      // envs.<group>
+      if (root === "envs" && segments.length === 2) {
+        const ctx = getContext();
+        const envGroups = ctx?.availableEnvGroups ?? [];
+        const suggestions = [
+          makeSuggestion("current", monaco.languages.CompletionItemKind.Variable, "Env group selecionado na execução"),
+          ...envGroups.map((group) =>
+            makeSuggestion(group.slug, monaco.languages.CompletionItemKind.Variable, `Env group: ${group.slug}`)
+          ),
+        ];
+        return { suggestions };
+      }
+
+      // envs.<group>.<entry>
+      if (root === "envs" && segments.length === 3) {
+        const ctx = getContext();
+        const requestedSlug = segments[1];
+        const resolvedSlug = requestedSlug === "current" ? ctx?.selectedEnvGroupSlug : requestedSlug;
+        const envGroup = ctx?.availableEnvGroups?.find((group) => group.slug === resolvedSlug);
+        return {
+          suggestions: (envGroup?.entries ?? []).map((entry) =>
+            makeSuggestion(entry, monaco.languages.CompletionItemKind.Constant, `Entrada: ${entry}`)
+          ),
+        };
+      }
 
       // specs.<slug>
       if (root === "specs" && segments.length === 2) {
