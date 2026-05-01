@@ -17,6 +17,7 @@ const emptyMetrics: LoadTestMetrics = {
   totalSent: 0, totalSuccess: 0, totalError: 0,
   avgLatency: 0, p95: 0, p99: 0, rps: 0,
   latencyHistory: [], rpsHistory: [],
+  runnerResourceHistory: [],
   startTime: 0, elapsedMs: 0,
 };
 

@@ -15,6 +15,22 @@ export interface RpsPoint {
   rps: number;
 }
 
+export interface RunnerRuntimeInfo {
+  pid: number;
+  memoryBytes: number;
+  virtualMemoryBytes: number;
+  cpuUsagePercent: number;
+}
+
+export interface RunnerResourcePoint {
+  node: string;
+  timestamp: number;
+  elapsedMs: number;
+  cpuUsagePercent: number;
+  memoryBytes: number;
+  memoryMb: number;
+}
+
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */
 export interface RemoteMetricsEvent {
   totalSent: number;
@@ -23,6 +39,7 @@ export interface RemoteMetricsEvent {
   rps: number;
   startTime: number;
   elapsedMs: number;
+  runtime?: RunnerRuntimeInfo;
 }
 
 /** Rich client-side metrics used by UI & storage. */
@@ -36,6 +53,7 @@ export interface LoadTestMetrics {
   rps: number;
   latencyHistory: LatencyPoint[];
   rpsHistory: RpsPoint[];
+  runnerResourceHistory: RunnerResourcePoint[];
   startTime: number;
   elapsedMs: number;
 }

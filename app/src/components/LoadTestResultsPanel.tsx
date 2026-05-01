@@ -3,7 +3,18 @@ import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import type { LoadTestMetrics, LoadTestState } from "@/types/load-test";
+import type { LoadTestMetrics, LoadTestState, RunnerResourcePoint } from "@/types/load-test";
+
+const RUNNER_RESOURCE_COLORS = [
+  "hsl(var(--primary))",
+  "hsl(var(--status-success))",
+  "hsl(var(--status-running))",
+  "hsl(var(--status-error))",
+  "#a855f7",
+  "#06b6d4",
+  "#f97316",
+  "#84cc16",
+];
 
 function formatCompact(value: string | number): { display: string; full: string; needsTooltip: boolean } {
   const raw = typeof value === "string" ? value : String(value);
@@ -47,6 +58,31 @@ function MetricCard({ icon: Icon, label, value, color }: { icon: React.ElementTy
   );
 }
 
+function buildRunnerResourceChartData(
+  points: RunnerResourcePoint[],
+  valueKey: "cpuUsagePercent" | "memoryMb",
+) {
+  const rows = new Map<number, Record<string, number>>();
+
+  for (const point of points.slice(-300)) {
+    const second = Math.round(point.elapsedMs / 1000);
+    const row = rows.get(second) ?? { time: second };
+    row[point.node] = Math.round(point[valueKey] * 100) / 100;
+    rows.set(second, row);
+  }
+
+  return Array.from(rows.values()).sort((a, b) => a.time - b.time);
+}
+
+function getRunnerNames(points: RunnerResourcePoint[]) {
+  return Array.from(new Set(points.map((point) => point.node)));
+}
+
+function formatMemory(value: number) {
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
+  return `${Math.round(value)} MB`;
+}
+
 interface LoadTestResultsPanelProps {
   metrics: LoadTestMetrics;
   state: LoadTestState;
@@ -67,6 +103,10 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
     time: Math.round((p.timestamp - metrics.startTime) / 1000),
     rps: p.rps,
   }));
+  const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
+  const runnerNames = getRunnerNames(runnerResourceHistory);
+  const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
+  const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, "memoryMb");
 
   return (
     <div className="space-y-4 p-1">
@@ -166,6 +206,87 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
               />
               <Area type="monotone" dataKey="rps" stroke="hsl(var(--status-success))" fill="hsl(var(--status-success) / 0.15)" strokeWidth={1.5} />
             </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {runnerNames.length > 0 && cpuChartData.length > 1 && (
+        <div className="glass rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
+            <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+              {runnerNames.map((name, index) => (
+                <span key={name} className="inline-flex items-center gap-1 text-[9px] text-muted-foreground">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
+                  />
+                  <span className="max-w-28 truncate font-mono">{name}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={110}>
+            <LineChart data={cpuChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} />
+              <RechartsTooltip
+                contentStyle={{
+                  background: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "var(--radius)",
+                  fontSize: 11,
+                }}
+                formatter={(v: number, name: string) => [`${v}%`, name]}
+                labelFormatter={(v) => `${v}s`}
+              />
+              {runnerNames.map((name, index) => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {runnerNames.length > 0 && memoryChartData.length > 1 && (
+        <div className="glass rounded-lg p-3 space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
+          <ResponsiveContainer width="100%" height={110}>
+            <LineChart data={memoryChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatMemory(Number(v))} width={42} />
+              <RechartsTooltip
+                contentStyle={{
+                  background: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "var(--radius)",
+                  fontSize: 11,
+                }}
+                formatter={(v: number, name: string) => [formatMemory(v), name]}
+                labelFormatter={(v) => `${v}s`}
+              />
+              {runnerNames.map((name, index) => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
           </ResponsiveContainer>
         </div>
       )}

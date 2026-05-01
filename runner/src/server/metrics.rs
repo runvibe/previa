@@ -1,4 +1,4 @@
-use crate::server::models::LoadTestMetrics;
+use crate::server::models::{LoadTestMetrics, RunnerInfoResponse};
 use crate::server::utils::{now_ms, round2};
 
 #[derive(Debug)]
@@ -28,7 +28,11 @@ impl MetricsAccumulator {
         }
     }
 
-    pub fn snapshot(&self, duration_ms: Option<u64>) -> LoadTestMetrics {
+    pub fn snapshot(
+        &self,
+        duration_ms: Option<u64>,
+        runtime: Option<RunnerInfoResponse>,
+    ) -> LoadTestMetrics {
         let now = now_ms();
         let elapsed_ms = now.saturating_sub(self.start_time);
 
@@ -47,6 +51,7 @@ impl MetricsAccumulator {
             start_time: self.start_time,
             elapsed_ms,
             duration_ms,
+            runtime,
         }
     }
 }
@@ -61,7 +66,7 @@ mod tests {
         metrics.update(100.0, true);
         metrics.update(200.0, true);
 
-        let snapshot = metrics.snapshot(None);
+        let snapshot = metrics.snapshot(None, None);
 
         assert_eq!(snapshot.total_sent, 2);
         assert_eq!(snapshot.total_success, 2);
@@ -74,9 +79,31 @@ mod tests {
         let mut metrics = MetricsAccumulator::new();
         metrics.update(150.0, true);
 
-        let snapshot = metrics.snapshot(Some(150));
+        let snapshot = metrics.snapshot(Some(150), None);
 
         assert_eq!(snapshot.total_sent, 1);
         assert_eq!(snapshot.duration_ms, Some(150));
+    }
+
+    #[test]
+    fn snapshot_includes_runner_runtime_when_provided() {
+        let mut metrics = MetricsAccumulator::new();
+        metrics.update(150.0, true);
+
+        let snapshot = metrics.snapshot(
+            Some(150),
+            Some(RunnerInfoResponse {
+                pid: 42,
+                memory_bytes: 1024,
+                virtual_memory_bytes: 4096,
+                cpu_usage_percent: 12.5,
+            }),
+        );
+
+        let runtime = snapshot.runtime.expect("runtime snapshot");
+        assert_eq!(runtime.pid, 42);
+        assert_eq!(runtime.memory_bytes, 1024);
+        assert_eq!(runtime.virtual_memory_bytes, 4096);
+        assert_eq!(runtime.cpu_usage_percent, 12.5);
     }
 }

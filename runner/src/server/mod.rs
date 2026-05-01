@@ -18,6 +18,7 @@ pub mod handlers;
 pub mod metrics;
 pub mod middleware;
 pub mod models;
+pub mod runtime;
 pub mod sse;
 pub mod state;
 pub mod utils;

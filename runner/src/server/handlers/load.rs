@@ -18,6 +18,7 @@ use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::metrics::MetricsAccumulator;
 use crate::server::middleware::transaction::{extract_transaction_id, with_transaction_header};
 use crate::server::models::{ErrorResponse, LoadTestRequest};
+use crate::server::runtime::RuntimeSampler;
 use crate::server::sse::{SseMessage, send_sse_or_cancel, sse_response};
 use crate::server::state::AppState;
 
@@ -117,6 +118,7 @@ pub async fn run_load_test(
 
         let counter = Arc::new(AtomicUsize::new(0));
         let metrics = Arc::new(tokio::sync::Mutex::new(MetricsAccumulator::new()));
+        let runtime_sampler = Arc::new(tokio::sync::Mutex::new(RuntimeSampler::new()));
 
         let mut handles = Vec::with_capacity(concurrency);
 
@@ -131,6 +133,7 @@ pub async fn run_load_test(
 
             let counter = Arc::clone(&counter);
             let metrics = Arc::clone(&metrics);
+            let runtime_sampler = Arc::clone(&runtime_sampler);
             let tx = tx.clone();
             let token = token.clone();
             let pipeline = pipeline.clone();
@@ -161,11 +164,15 @@ pub async fn run_load_test(
                     let duration_ms = start.elapsed().as_millis() as u64;
                     let duration = duration_ms as f64;
                     let success = !results.iter().any(|r| r.status == "error");
+                    let runtime = {
+                        let mut lock = runtime_sampler.lock().await;
+                        lock.snapshot()
+                    };
 
                     let snapshot = {
                         let mut lock = metrics.lock().await;
                         lock.update(duration, success);
-                        lock.snapshot(Some(duration_ms))
+                        lock.snapshot(Some(duration_ms), runtime)
                     };
 
                     if !send_sse_or_cancel(
@@ -188,7 +195,11 @@ pub async fn run_load_test(
 
         let complete = {
             let lock = metrics.lock().await;
-            lock.snapshot(None)
+            let runtime = {
+                let mut sampler = runtime_sampler.lock().await;
+                sampler.snapshot()
+            };
+            lock.snapshot(None, runtime)
         };
 
         if !token.is_cancelled() {

@@ -64,6 +64,12 @@ describe("remote execution snapshot parsing", () => {
             rps: 12,
             startTime: 1000,
             elapsedMs: 5000,
+            runtime: {
+              pid: 101,
+              memoryBytes: 104857600,
+              virtualMemoryBytes: 209715200,
+              cpuUsagePercent: 37.5,
+            },
           },
         },
       ],
@@ -94,6 +100,16 @@ describe("remote execution snapshot parsing", () => {
       startTime: 1000,
       elapsedMs: 5000,
     });
+    expect(snapshot?.metrics.runnerResourceHistory).toEqual([
+      {
+        node: "runner-a",
+        timestamp: 6000,
+        elapsedMs: 5000,
+        cpuUsagePercent: 37.5,
+        memoryBytes: 104857600,
+        memoryMb: 100,
+      },
+    ]);
     expect(snapshot?.nodesInfo).toEqual({
       nodesUsed: 2,
       nodesFound: 3,

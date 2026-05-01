@@ -1,11 +1,11 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use utoipa::OpenApi;
 
 use crate::server::docs::ApiDoc;
 use crate::server::models::{ErrorResponse, RunnerInfoResponse};
+use crate::server::runtime::snapshot_current_process_runtime;
 
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     let mut openapi = ApiDoc::openapi();
@@ -54,16 +54,7 @@ pub async fn health() -> StatusCode {
     )
 )]
 pub async fn info_runtime() -> Response {
-    let pid = std::process::id();
-    let process_pid = Pid::from_u32(pid);
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[process_pid]),
-        true,
-        ProcessRefreshKind::nothing().with_memory().with_cpu(),
-    );
-
-    let Some(process) = system.process(process_pid) else {
+    let Some(runtime) = snapshot_current_process_runtime() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
@@ -74,11 +65,5 @@ pub async fn info_runtime() -> Response {
             .into_response();
     };
 
-    Json(RunnerInfoResponse {
-        pid,
-        memory_bytes: process.memory(),
-        virtual_memory_bytes: process.virtual_memory(),
-        cpu_usage_percent: process.cpu_usage(),
-    })
-    .into_response()
+    Json(runtime).into_response()
 }

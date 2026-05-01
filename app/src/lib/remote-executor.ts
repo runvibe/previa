@@ -6,6 +6,8 @@ import type {
   RemoteMetricsEvent,
   ConsolidatedLoadMetrics,
   RpsPoint,
+  RunnerResourcePoint,
+  RunnerRuntimeInfo,
 } from "@/types/load-test";
 import { generateUUID } from "./uuid";
 import { cancelExecution, ensureApiPrefix } from "./api-client";
@@ -209,7 +211,68 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     rps: rps ?? 0,
     startTime: toNumber(value.startTime) ?? Date.now(),
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
+    runtime: extractRunnerRuntime(value.runtime),
   };
+}
+
+function extractRunnerRuntime(value: unknown): RunnerRuntimeInfo | undefined {
+  if (!isSseObject(value)) return undefined;
+  const pid = toNumber(value.pid);
+  const memoryBytes = toNumber(value.memoryBytes);
+  const virtualMemoryBytes = toNumber(value.virtualMemoryBytes);
+  const cpuUsagePercent = toNumber(value.cpuUsagePercent);
+
+  if (
+    pid === undefined
+    || memoryBytes === undefined
+    || virtualMemoryBytes === undefined
+    || cpuUsagePercent === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    pid,
+    memoryBytes,
+    virtualMemoryBytes,
+    cpuUsagePercent,
+  };
+}
+
+function extractRunnerResourcePoints(lines: unknown[]): RunnerResourcePoint[] {
+  const points: RunnerResourcePoint[] = [];
+
+  for (const line of lines) {
+    if (!isSseObject(line)) continue;
+    const payload = isSseObject(line.payload) ? line.payload : line;
+    const metrics = extractRemoteMetrics(payload);
+    const node = pickString(line.node, payload.node);
+    if (!metrics?.runtime || !node) continue;
+
+    const elapsedMs = metrics.elapsedMs;
+    points.push({
+      node,
+      timestamp: metrics.startTime + elapsedMs,
+      elapsedMs,
+      cpuUsagePercent: metrics.runtime.cpuUsagePercent,
+      memoryBytes: metrics.runtime.memoryBytes,
+      memoryMb: Math.round((metrics.runtime.memoryBytes / 1024 / 1024) * 100) / 100,
+    });
+  }
+
+  return points;
+}
+
+const MAX_RUNNER_RESOURCE_POINTS = 800;
+
+function appendRunnerResourceHistory(history: RunnerResourcePoint[], lines: unknown[] | undefined) {
+  if (!lines) return;
+  const points = extractRunnerResourcePoints(lines);
+  if (points.length === 0) return;
+  history.push(...points);
+  if (history.length > MAX_RUNNER_RESOURCE_POINTS) {
+    history.splice(0, history.length - MAX_RUNNER_RESOURCE_POINTS);
+  }
 }
 
 function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
@@ -283,6 +346,9 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     rps,
     latencyHistory: [],
     rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps }] : [],
+    runnerResourceHistory: Array.isArray(snapshot.lines)
+      ? extractRunnerResourcePoints(snapshot.lines)
+      : [],
     startTime,
     elapsedMs: toNumber(consolidated?.elapsedMs) ?? aggregated?.elapsedMs ?? 0,
   };
@@ -625,6 +691,7 @@ export function runRemoteLoadTest(
   // Client-side node state accumulator
   const lastKnownNodeMetrics = new Map<string, RemoteMetricsEvent>();
   const rpsHistory: RpsPoint[] = [];
+  const runnerResourceHistory: RunnerResourcePoint[] = [];
   let lastRpsPointTime = 0;
 
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
@@ -643,6 +710,7 @@ export function runRemoteLoadTest(
       rps: consolidated?.rps ?? event.rps,
       latencyHistory: [],
       rpsHistory: [...rpsHistory],
+      runnerResourceHistory: [...runnerResourceHistory],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
     };
@@ -722,6 +790,7 @@ export function runRemoteLoadTest(
                 const envelopeConsolidated = envelope.consolidated as ConsolidatedLoadMetrics | undefined;
                 let snapshot: RemoteMetricsEvent;
                 if (lines !== undefined) {
+                  appendRunnerResourceHistory(runnerResourceHistory, lines);
                   for (const line of lines) {
                     if (line.runnerEvent === "metrics") {
                       lastKnownNodeMetrics.set(line.node, line.payload);
@@ -739,6 +808,7 @@ export function runRemoteLoadTest(
                 const envelopeConsolidated = envelope.consolidated as ConsolidatedLoadMetrics | undefined;
                 let snapshot: RemoteMetricsEvent;
                 if (lines !== undefined) {
+                  appendRunnerResourceHistory(runnerResourceHistory, lines);
                   for (const line of lines) {
                     if (line.runnerEvent === "metrics" || line.runnerEvent === "complete") {
                       lastKnownNodeMetrics.set(line.node, line.payload);
@@ -963,6 +1033,7 @@ export function reconnectToLoadExecution(
 
   const lastKnownNodeMetrics = new Map<string, RemoteMetricsEvent>();
   const rpsHistory: RpsPoint[] = [];
+  const runnerResourceHistory: RunnerResourcePoint[] = [];
   let lastRpsPointTime = 0;
 
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
@@ -981,6 +1052,7 @@ export function reconnectToLoadExecution(
       rps: consolidated?.rps ?? event.rps,
       latencyHistory: [],
       rpsHistory: [...rpsHistory],
+      runnerResourceHistory: [...runnerResourceHistory],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
     };
@@ -1050,6 +1122,7 @@ export function reconnectToLoadExecution(
                 const envelopeConsolidated = envelope.consolidated as ConsolidatedLoadMetrics | undefined;
                 let snapshot: RemoteMetricsEvent;
                 if (lines !== undefined) {
+                  appendRunnerResourceHistory(runnerResourceHistory, lines);
                   for (const line of lines) {
                     if (line.runnerEvent === "metrics") {
                       lastKnownNodeMetrics.set(line.node, line.payload);
@@ -1067,6 +1140,7 @@ export function reconnectToLoadExecution(
                 const envelopeConsolidated = envelope.consolidated as ConsolidatedLoadMetrics | undefined;
                 let snapshot: RemoteMetricsEvent;
                 if (lines !== undefined) {
+                  appendRunnerResourceHistory(runnerResourceHistory, lines);
                   for (const line of lines) {
                     if (line.runnerEvent === "metrics" || line.runnerEvent === "complete") {
                       lastKnownNodeMetrics.set(line.node, line.payload);

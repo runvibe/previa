@@ -676,6 +676,7 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     rps: consolidated?.rps ?? 0,
     latencyHistory: consolidated?.latencyHistory ?? [],
     rpsHistory: consolidated?.rpsHistory ?? [],
+    runnerResourceHistory: consolidated?.runnerResourceHistory ?? [],
     startTime: consolidated?.startTime ?? r.startedAtMs,
     elapsedMs: consolidated?.elapsedMs ?? r.durationMs,
   };
