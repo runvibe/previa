@@ -84,8 +84,7 @@ export function TestModeSidebar({
               {tooltipLabel === label && (
                 <div
                   role="tooltip"
-                  className="absolute left-full top-1/2 z-[9999] ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
-                  style={{ backgroundColor: "hsl(var(--popover))" }}
+                  className="absolute left-full top-1/2 z-[2147483647] ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-popover-foreground shadow-xl"
                 >
                   {label}
                 </div>

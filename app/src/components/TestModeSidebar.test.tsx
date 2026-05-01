@@ -57,4 +57,18 @@ describe("TestModeSidebar", () => {
 
     expect(await screen.findByText("Load Test")).toBeInTheDocument();
   });
+
+  it("renders collapsed tooltips with a solid high-layer background", async () => {
+    render(
+      <Tabs defaultValue="integration">
+        <TestModeSidebar collapsed onCollapsedChange={vi.fn()} />
+      </Tabs>,
+    );
+
+    fireEvent.mouseEnter(screen.getByRole("tab", { name: "Load Test" }));
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip).not.toHaveClass("glass", "bg-popover", "backdrop-blur-xl");
+    expect(tooltip).toHaveClass("bg-[hsl(var(--popover))]", "z-[2147483647]");
+  });
 });
