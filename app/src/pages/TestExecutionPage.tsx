@@ -15,8 +15,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getPipelineOrder, savePipelineOrder, applyOrder } from "@/lib/pipeline-order";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import { DotsLoader } from "@/components/DotsLoader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { LoadTestTab } from "@/components/LoadTestTab";
+import { TestModeSidebar } from "@/components/TestModeSidebar";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { StepFlowGraph } from "@/components/StepFlowGraph";
 import type { StepFlowGraphItem } from "@/components/StepFlowGraph";
@@ -1032,20 +1033,8 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
           }
           setTimeout(() => onTabChange?.(v as "integration" | "loadtest"), 0);
         }} className="flex flex-1 flex-col overflow-hidden">
-          <div className="glass px-3 sm:px-4 pt-3 pb-0 space-y-3">
-            <div className="flex items-center gap-3">
-              <TabsList className="h-9 p-1">
-                <TabsTrigger value="integration" className="gap-1.5 text-xs px-3">
-                  <Workflow className="h-3.5 w-3.5" />
-                  End-to-End Test
-                </TabsTrigger>
-                <TabsTrigger value="loadtest" className="gap-1.5 text-xs px-3">
-                  <Zap className="h-3.5 w-3.5" />
-                  Load Test
-                </TabsTrigger>
-              </TabsList>
-            </div>
-            <div className="flex items-center gap-3 pb-3 border-border/50">
+          <div className="glass px-3 sm:px-4 py-3">
+            <div className="flex items-center gap-3 border-border/50">
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold truncate">{selectedPipeline.name}</h2>
                 <p className="text-xs text-muted-foreground truncate">{selectedPipeline.description}</p>
@@ -1102,102 +1091,37 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
             </div>
           </div>
 
-          <TabsContent value="integration" className="flex-1 flex flex-col overflow-hidden mt-0 !animate-none min-w-0">
-            {selectedPipeline.steps.length === 0 ? (
-              <EmptyState
-                icon={Plus}
-                title={t("testExecution.noSteps.title")}
-                description={t("testExecution.noSteps.integration.description")}
-                action={onEditPipeline ? {
-                  label: t("testExecution.noSteps.action"),
-                  icon: <FileCode2 className="h-4 w-4" />,
-                  onClick: () => onEditPipeline(selectedIndex!),
-                } : undefined}
-              />
-            ) : (
-              <>
-                <div>
-                  {selectedIndex !== null && !isMobile && (
-                    <PipelineMiniChart
-                      projectId={projectId}
-                      pipelineIndex={selectedIndex}
-                      refreshKey={chartRefreshKey}
-                      executionBackendUrl={executionBackendUrl}
-                    />
-                  )}
-                </div>
-
-                {isMobile ? (
-                  <div className="relative flex-1 overflow-auto">
-                    <div className="p-3">
-                      <StepFlowList
-                        items={selectedPipeline.steps.map((step, idx) => {
-                          const prevStep = idx > 0 ? selectedPipeline.steps[idx - 1] : null;
-                          const prevStatus = prevStep ? results[prevStep.id]?.status : null;
-                          const shouldCountdown = step.delay && step.delay > 0 && (
-                            idx === 0 ? running : (prevStatus === "success" || prevStatus === "error")
-                          ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
-                          return {
-                            key: step.id,
-                            content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
-                          };
-                        })}
-                      />
-                      {runHistory.length > 0 && (
-                        <div className="mt-6 max-h-[250px]">
-                          <RunHistoryPanel
-                            onClear={() => setConfirmClearOpen(true)}
-                            isEmpty={runHistory.length === 0}
-                          >
-                            {runHistory.map((run) => (
-                              <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
-                            ))}
-                          </RunHistoryPanel>
-                        </div>
+          <div className={cn("flex flex-1 min-h-0 overflow-hidden", isMobile ? "flex-col" : "flex-row")}>
+            <TestModeSidebar compact={isMobile} />
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <TabsContent value="integration" className="flex-1 flex flex-col overflow-hidden mt-0 !animate-none min-w-0">
+                {selectedPipeline.steps.length === 0 ? (
+                  <EmptyState
+                    icon={Plus}
+                    title={t("testExecution.noSteps.title")}
+                    description={t("testExecution.noSteps.integration.description")}
+                    action={onEditPipeline ? {
+                      label: t("testExecution.noSteps.action"),
+                      icon: <FileCode2 className="h-4 w-4" />,
+                      onClick: () => onEditPipeline(selectedIndex!),
+                    } : undefined}
+                  />
+                ) : (
+                  <>
+                    <div>
+                      {selectedIndex !== null && !isMobile && (
+                        <PipelineMiniChart
+                          projectId={projectId}
+                          pipelineIndex={selectedIndex}
+                          refreshKey={chartRefreshKey}
+                          executionBackendUrl={executionBackendUrl}
+                        />
                       )}
                     </div>
-                    {failedStepIds.length > 0 && !anyErrorVisible ? (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg"
-                        onClick={scrollToNextError}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                        Next error ({(errorNavIndex % failedStepIds.length) + 1}/{failedStepIds.length})
-                      </Button>
-                    ) : showGoToButton ? (
-                      <Button
-                        size="sm"
-                        variant="default"
-                        className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg animate-fade-in bg-primary text-primary-foreground hover:bg-primary/90"
-                        onClick={goToRunningStep}
-                      >
-                        <MousePointerClick className="h-3.5 w-3.5" />
-                        {t("testExecution.goToRunning", "Go to running step")}
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="relative flex-1 overflow-hidden flex min-w-0">
-                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                      <div ref={stepScrollContainerRef} className="h-full overflow-auto p-4 min-w-0">
-                        {stepViewMode === "graph" ? (
-                          <StepFlowGraph
-                            items={selectedPipeline.steps.map((step, idx) => {
-                              const prevStep = idx > 0 ? selectedPipeline.steps[idx - 1] : null;
-                              const prevStatus = prevStep ? results[prevStep.id]?.status : null;
-                              const shouldCountdown = step.delay && step.delay > 0 && (
-                                idx === 0 ? running : (prevStatus === "success" || prevStatus === "error")
-                              ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
-                              return {
-                                key: step.id,
-                                status: results[step.id]?.status,
-                                content: <div data-step-id={step.id} className="h-full"><StepResultCard variant="grid" step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
-                              };
-                            })}
-                          />
-                        ) : (
+
+                    {isMobile ? (
+                      <div className="relative flex-1 overflow-auto">
+                        <div className="p-3">
                           <StepFlowList
                             items={selectedPipeline.steps.map((step, idx) => {
                               const prevStep = idx > 0 ? selectedPipeline.steps[idx - 1] : null;
@@ -1211,110 +1135,180 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
                               };
                             })}
                           />
-                        )}
+                          {runHistory.length > 0 && (
+                            <div className="mt-6 max-h-[250px]">
+                              <RunHistoryPanel
+                                onClear={() => setConfirmClearOpen(true)}
+                                isEmpty={runHistory.length === 0}
+                              >
+                                {runHistory.map((run) => (
+                                  <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
+                                ))}
+                              </RunHistoryPanel>
+                            </div>
+                          )}
+                        </div>
+                        {failedStepIds.length > 0 && !anyErrorVisible ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg"
+                            onClick={scrollToNextError}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                            Next error ({(errorNavIndex % failedStepIds.length) + 1}/{failedStepIds.length})
+                          </Button>
+                        ) : showGoToButton ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg animate-fade-in bg-primary text-primary-foreground hover:bg-primary/90"
+                            onClick={goToRunningStep}
+                          >
+                            <MousePointerClick className="h-3.5 w-3.5" />
+                            {t("testExecution.goToRunning", "Go to running step")}
+                          </Button>
+                        ) : null}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="relative flex-1 overflow-hidden flex min-w-0">
+                        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                          <div ref={stepScrollContainerRef} className="h-full overflow-auto p-4 min-w-0">
+                            {stepViewMode === "graph" ? (
+                              <StepFlowGraph
+                                items={selectedPipeline.steps.map((step, idx) => {
+                                  const prevStep = idx > 0 ? selectedPipeline.steps[idx - 1] : null;
+                                  const prevStatus = prevStep ? results[prevStep.id]?.status : null;
+                                  const shouldCountdown = step.delay && step.delay > 0 && (
+                                    idx === 0 ? running : (prevStatus === "success" || prevStatus === "error")
+                                  ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
+                                  return {
+                                    key: step.id,
+                                    status: results[step.id]?.status,
+                                    content: <div data-step-id={step.id} className="h-full"><StepResultCard variant="grid" step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
+                                  };
+                                })}
+                              />
+                            ) : (
+                              <StepFlowList
+                                items={selectedPipeline.steps.map((step, idx) => {
+                                  const prevStep = idx > 0 ? selectedPipeline.steps[idx - 1] : null;
+                                  const prevStatus = prevStep ? results[prevStep.id]?.status : null;
+                                  const shouldCountdown = step.delay && step.delay > 0 && (
+                                    idx === 0 ? running : (prevStatus === "success" || prevStatus === "error")
+                                  ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
+                                  return {
+                                    key: step.id,
+                                    content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
+                                  };
+                                })}
+                              />
+                            )}
+                          </div>
+                        </div>
 
-                    {runHistory.length > 0 && (
-                      <div
-                        className={cn(
-                          "shrink-0 border-l border-border/50 flex flex-col transition-[width] duration-300 ease-in-out overflow-hidden",
-                          historyCollapsed ? "w-8" : "w-[260px]"
-                        )}
-                      >
-                        {historyCollapsed ? (
-                          <div className="flex flex-col items-center pt-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => setHistoryCollapsed(false)}
-                              title="Show history"
-                            >
-                              <History className="h-3.5 w-3.5" />
-                            </Button>
+                        {runHistory.length > 0 && (
+                          <div
+                            className={cn(
+                              "shrink-0 border-l border-border/50 flex flex-col transition-[width] duration-300 ease-in-out overflow-hidden",
+                              historyCollapsed ? "w-8" : "w-[260px]"
+                            )}
+                          >
+                            {historyCollapsed ? (
+                              <div className="flex flex-col items-center pt-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => setHistoryCollapsed(false)}
+                                  title="Show history"
+                                >
+                                  <History className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex-1 min-h-0 min-w-[260px]">
+                                <RunHistoryPanel
+                                  onClear={() => setConfirmClearOpen(true)}
+                                  isEmpty={runHistory.length === 0}
+                                  onCollapse={() => setHistoryCollapsed(true)}
+                                  collapsed={false}
+                                >
+                                  {runHistory.map((run) => (
+                                    <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
+                                  ))}
+                                </RunHistoryPanel>
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="flex-1 min-h-0 min-w-[260px]">
-                            <RunHistoryPanel
-                              onClear={() => setConfirmClearOpen(true)}
-                              isEmpty={runHistory.length === 0}
-                              onCollapse={() => setHistoryCollapsed(true)}
-                              collapsed={false}
-                            >
-                              {runHistory.map((run) => (
-                                <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
-                              ))}
-                            </RunHistoryPanel>
-                          </div>
                         )}
+                        {failedStepIds.length > 0 && !anyErrorVisible ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg"
+                            onClick={scrollToNextError}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                            Next error ({(errorNavIndex % failedStepIds.length) + 1}/{failedStepIds.length})
+                          </Button>
+                        ) : showGoToButton ? (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg animate-fade-in bg-primary text-primary-foreground hover:bg-primary/90"
+                            onClick={goToRunningStep}
+                          >
+                            <MousePointerClick className="h-3.5 w-3.5" />
+                            {t("testExecution.goToRunning", "Go to running step")}
+                          </Button>
+                        ) : null}
                       </div>
                     )}
-                    {failedStepIds.length > 0 && !anyErrorVisible ? (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg"
-                        onClick={scrollToNextError}
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                        Next error ({(errorNavIndex % failedStepIds.length) + 1}/{failedStepIds.length})
-                      </Button>
-                    ) : showGoToButton ? (
-                      <Button
-                        size="sm"
-                        variant="default"
-                        className="fixed bottom-4 left-0 right-0 mx-auto w-fit z-50 gap-1.5 shadow-lg animate-fade-in bg-primary text-primary-foreground hover:bg-primary/90"
-                        onClick={goToRunningStep}
-                      >
-                        <MousePointerClick className="h-3.5 w-3.5" />
-                        {t("testExecution.goToRunning", "Go to running step")}
-                      </Button>
-                    ) : null}
-                  </div>
+                  </>
                 )}
-              </>
-            )}
-          </TabsContent>
+              </TabsContent>
 
-          <TabsContent value="loadtest" className="flex-1 flex flex-col overflow-hidden mt-0 !animate-none">
-            {selectedPipeline.steps.length === 0 ? (
-              <EmptyState
-                icon={Plus}
-                title={t("testExecution.noSteps.title")}
-                description={t("testExecution.noSteps.loadtest.description")}
-                action={onEditPipeline ? {
-                  label: t("testExecution.noSteps.action"),
-                  icon: <FileCode2 className="h-4 w-4" />,
-                  onClick: () => onEditPipeline(selectedIndex!),
-                } : undefined}
-              />
-            ) : (
-              <>
-                <div>
-                  {selectedIndex !== null && !isMobile && (
-                    <LoadTestMiniChart
+              <TabsContent value="loadtest" className="flex-1 flex flex-col overflow-hidden mt-0 !animate-none">
+                {selectedPipeline.steps.length === 0 ? (
+                  <EmptyState
+                    icon={Plus}
+                    title={t("testExecution.noSteps.title")}
+                    description={t("testExecution.noSteps.loadtest.description")}
+                    action={onEditPipeline ? {
+                      label: t("testExecution.noSteps.action"),
+                      icon: <FileCode2 className="h-4 w-4" />,
+                      onClick: () => onEditPipeline(selectedIndex!),
+                    } : undefined}
+                  />
+                ) : (
+                  <>
+                    <div>
+                      {selectedIndex !== null && !isMobile && (
+                        <LoadTestMiniChart
+                          projectId={projectId}
+                          pipelineIndex={selectedIndex}
+                          refreshKey={loadTestChartRefreshKey}
+                          executionBackendUrl={executionBackendUrl}
+                        />
+                      )}
+                    </div>
+                    <LoadTestTab
+                      pipeline={selectedPipeline}
                       projectId={projectId}
-                      pipelineIndex={selectedIndex}
-                      refreshKey={loadTestChartRefreshKey}
+                      pipelineIndex={selectedIndex!}
                       executionBackendUrl={executionBackendUrl}
+                      specs={specs}
+                      onStateChange={handleLoadTestStateChange}
+                      onResetRef={loadTestResetRef}
+                      onCancelRef={loadTestCancelRef}
+                      onStartRef={loadTestStartRef}
                     />
-                  )}
-                </div>
-                <LoadTestTab
-                  pipeline={selectedPipeline}
-                  projectId={projectId}
-                  pipelineIndex={selectedIndex!}
-                  executionBackendUrl={executionBackendUrl}
-                  specs={specs}
-                  onStateChange={handleLoadTestStateChange}
-                  onResetRef={loadTestResetRef}
-                  onCancelRef={loadTestCancelRef}
-                  onStartRef={loadTestStartRef}
-                />
-              </>
-            )}
-          </TabsContent>
+                  </>
+                )}
+              </TabsContent>
+            </div>
+          </div>
         </Tabs>
       ) : (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
