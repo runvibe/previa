@@ -143,7 +143,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
       {/* Progress */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Progress value={progressPercent} className="h-2 flex-1" />
+          <Progress value={progressPercent} className="h-3.5 flex-1" />
           <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
             {metrics.totalSent}/{totalRequests}
           </span>
