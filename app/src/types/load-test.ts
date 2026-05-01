@@ -20,6 +20,9 @@ export interface RunnerRuntimeInfo {
   memoryBytes: number;
   virtualMemoryBytes: number;
   cpuUsagePercent: number;
+  networkTxBytes?: number;
+  networkRxBytes?: number;
+  networkTotalBytes?: number;
 }
 
 export interface RunnerResourcePoint {
@@ -29,6 +32,10 @@ export interface RunnerResourcePoint {
   cpuUsagePercent: number;
   memoryBytes: number;
   memoryMb: number;
+  networkTxBytes: number;
+  networkRxBytes: number;
+  networkTotalBytes: number;
+  networkTotalKb: number;
 }
 
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */

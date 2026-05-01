@@ -30,6 +30,9 @@ impl RuntimeSampler {
             memory_bytes: process.memory(),
             virtual_memory_bytes: process.virtual_memory(),
             cpu_usage_percent: process.cpu_usage(),
+            network_tx_bytes: 0,
+            network_rx_bytes: 0,
+            network_total_bytes: 0,
         })
     }
 

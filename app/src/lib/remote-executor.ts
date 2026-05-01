@@ -221,6 +221,9 @@ function extractRunnerRuntime(value: unknown): RunnerRuntimeInfo | undefined {
   const memoryBytes = toNumber(value.memoryBytes);
   const virtualMemoryBytes = toNumber(value.virtualMemoryBytes);
   const cpuUsagePercent = toNumber(value.cpuUsagePercent);
+  const networkTxBytes = toNumber(value.networkTxBytes) ?? 0;
+  const networkRxBytes = toNumber(value.networkRxBytes) ?? 0;
+  const networkTotalBytes = toNumber(value.networkTotalBytes) ?? networkTxBytes + networkRxBytes;
 
   if (
     pid === undefined
@@ -236,6 +239,9 @@ function extractRunnerRuntime(value: unknown): RunnerRuntimeInfo | undefined {
     memoryBytes,
     virtualMemoryBytes,
     cpuUsagePercent,
+    networkTxBytes,
+    networkRxBytes,
+    networkTotalBytes,
   };
 }
 
@@ -257,6 +263,10 @@ function extractRunnerResourcePoints(lines: unknown[]): RunnerResourcePoint[] {
       cpuUsagePercent: metrics.runtime.cpuUsagePercent,
       memoryBytes: metrics.runtime.memoryBytes,
       memoryMb: Math.round((metrics.runtime.memoryBytes / 1024 / 1024) * 100) / 100,
+      networkTxBytes: metrics.runtime.networkTxBytes ?? 0,
+      networkRxBytes: metrics.runtime.networkRxBytes ?? 0,
+      networkTotalBytes: metrics.runtime.networkTotalBytes ?? 0,
+      networkTotalKb: Math.round(((metrics.runtime.networkTotalBytes ?? 0) / 1024) * 100) / 100,
     });
   }
 

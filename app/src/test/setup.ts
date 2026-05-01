@@ -14,6 +14,15 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 
+Object.defineProperty(window, "ResizeObserver", {
+  writable: true,
+  value: class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
+
 const storage = new Map<string, string>();
 
 Object.defineProperty(window, "localStorage", {

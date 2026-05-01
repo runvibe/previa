@@ -68,6 +68,9 @@ pub struct RunnerInfoResponse {
     pub memory_bytes: u64,
     pub virtual_memory_bytes: u64,
     pub cpu_usage_percent: f32,
+    pub network_tx_bytes: u64,
+    pub network_rx_bytes: u64,
+    pub network_total_bytes: u64,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

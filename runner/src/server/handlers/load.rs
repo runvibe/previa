@@ -15,7 +15,7 @@ use uuid::Uuid;
 use previa_runner::execute_pipeline_with_specs_hooks;
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
-use crate::server::metrics::MetricsAccumulator;
+use crate::server::metrics::{MetricsAccumulator, estimate_results_network_bytes};
 use crate::server::middleware::transaction::{extract_transaction_id, with_transaction_header};
 use crate::server::models::{ErrorResponse, LoadTestRequest};
 use crate::server::runtime::RuntimeSampler;
@@ -164,6 +164,8 @@ pub async fn run_load_test(
                     let duration_ms = start.elapsed().as_millis() as u64;
                     let duration = duration_ms as f64;
                     let success = !results.iter().any(|r| r.status == "error");
+                    let (network_tx_bytes, network_rx_bytes) =
+                        estimate_results_network_bytes(&results);
                     let runtime = {
                         let mut lock = runtime_sampler.lock().await;
                         lock.snapshot()
@@ -172,6 +174,7 @@ pub async fn run_load_test(
                     let snapshot = {
                         let mut lock = metrics.lock().await;
                         lock.update(duration, success);
+                        lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
                         lock.snapshot(Some(duration_ms), runtime)
                     };
 

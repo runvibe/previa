@@ -60,7 +60,7 @@ function MetricCard({ icon: Icon, label, value, color }: { icon: React.ElementTy
 
 function buildRunnerResourceChartData(
   points: RunnerResourcePoint[],
-  valueKey: "cpuUsagePercent" | "memoryMb",
+  valueKey: "cpuUsagePercent" | "memoryMb" | "networkTotalKb",
 ) {
   const rows = new Map<number, Record<string, number>>();
 
@@ -81,6 +81,11 @@ function getRunnerNames(points: RunnerResourcePoint[]) {
 function formatMemory(value: number) {
   if (value >= 1024) return `${(value / 1024).toFixed(1)} GB`;
   return `${Math.round(value)} MB`;
+}
+
+function formatNetwork(value: number) {
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} MB`;
+  return `${Math.round(value)} KB`;
 }
 
 interface LoadTestResultsPanelProps {
@@ -107,6 +112,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
   const runnerNames = getRunnerNames(runnerResourceHistory);
   const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
   const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, "memoryMb");
+  const networkChartData = buildRunnerResourceChartData(runnerResourceHistory, "networkTotalKb");
 
   return (
     <div className="space-y-4 p-1">
@@ -210,7 +216,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
 
-      {runnerNames.length > 0 && cpuChartData.length > 1 && (
+      {runnerNames.length > 0 && cpuChartData.length > 0 && (
         <div className="glass rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
@@ -248,7 +254,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
                   dataKey={name}
                   stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                   strokeWidth={1.5}
-                  dot={false}
+                  dot={cpuChartData.length === 1}
                   connectNulls
                 />
               ))}
@@ -257,7 +263,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
 
-      {runnerNames.length > 0 && memoryChartData.length > 1 && (
+      {runnerNames.length > 0 && memoryChartData.length > 0 && (
         <div className="glass rounded-lg p-3 space-y-2">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
           <ResponsiveContainer width="100%" height={110}>
@@ -282,7 +288,41 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
                   dataKey={name}
                   stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                   strokeWidth={1.5}
-                  dot={false}
+                  dot={memoryChartData.length === 1}
+                  connectNulls
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {runnerNames.length > 0 && networkChartData.length > 0 && (
+        <div className="glass rounded-lg p-3 space-y-2">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner network</p>
+          <ResponsiveContainer width="100%" height={110}>
+            <LineChart data={networkChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatNetwork(Number(v))} width={42} />
+              <RechartsTooltip
+                contentStyle={{
+                  background: "hsl(var(--popover))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "var(--radius)",
+                  fontSize: 11,
+                }}
+                formatter={(v: number, name: string) => [formatNetwork(v), name]}
+                labelFormatter={(v) => `${v}s`}
+              />
+              {runnerNames.map((name, index) => (
+                <Line
+                  key={name}
+                  type="monotone"
+                  dataKey={name}
+                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                  strokeWidth={1.5}
+                  dot={networkChartData.length === 1}
                   connectNulls
                 />
               ))}

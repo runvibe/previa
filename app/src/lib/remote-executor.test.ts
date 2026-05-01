@@ -69,6 +69,9 @@ describe("remote execution snapshot parsing", () => {
               memoryBytes: 104857600,
               virtualMemoryBytes: 209715200,
               cpuUsagePercent: 37.5,
+              networkTxBytes: 2048,
+              networkRxBytes: 4096,
+              networkTotalBytes: 6144,
             },
           },
         },
@@ -108,6 +111,10 @@ describe("remote execution snapshot parsing", () => {
         cpuUsagePercent: 37.5,
         memoryBytes: 104857600,
         memoryMb: 100,
+        networkTxBytes: 2048,
+        networkRxBytes: 4096,
+        networkTotalBytes: 6144,
+        networkTotalKb: 6,
       },
     ]);
     expect(snapshot?.nodesInfo).toEqual({
