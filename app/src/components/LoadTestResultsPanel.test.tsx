@@ -7,7 +7,7 @@ import type { LoadTestMetrics } from "@/types/load-test";
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, number>) => {
-      if (key === "loadTestResults.elapsed") return `${params?.seconds ?? 0}s elapsed`;
+      if (key === "loadTestResults.elapsedLabel") return "TIME";
       return key;
     },
   }),
@@ -49,5 +49,28 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("Runner memory")).toBeInTheDocument();
     expect(screen.getByText("Runner network")).toBeInTheDocument();
     expect(screen.getAllByText("runner-a").length).toBeGreaterThan(0);
+  });
+
+  it("shows elapsed time as a metric card instead of loose footer text", () => {
+    const metrics: LoadTestMetrics = {
+      totalSent: 10,
+      totalSuccess: 10,
+      totalError: 0,
+      avgLatency: 100,
+      p95: 150,
+      p99: 200,
+      rps: 2,
+      latencyHistory: [],
+      rpsHistory: [],
+      runnerResourceHistory: [],
+      startTime: 1_000,
+      elapsedMs: 1_500,
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="completed" totalRequests={10} />);
+
+    expect(screen.getByText("2s")).toBeInTheDocument();
+    expect(screen.getByText("TIME")).toBeInTheDocument();
+    expect(screen.queryByText(/elapsed/i)).not.toBeInTheDocument();
   });
 });

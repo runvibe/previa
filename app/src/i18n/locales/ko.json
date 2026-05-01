@@ -195,6 +195,7 @@
   "loadTestResults.latency": "지연시간",
   "loadTestResults.rpsOverTime": "시간에 따른 RPS",
   "loadTestResults.elapsed": "경과 시간: {{seconds}}초",
+  "loadTestResults.elapsedLabel": "시간",
   "loadTestResults.nodes": "{{count}}개 노드",
   "loadTestResults.nodes_plural": "{{count}}개 노드",
   "loadTestResults.nodesOf": "{{count}}개 중",

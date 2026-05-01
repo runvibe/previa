@@ -200,6 +200,7 @@
   "loadTestResults.latency": "Latence",
   "loadTestResults.rpsOverTime": "RPS au fil du temps",
   "loadTestResults.elapsed": "Temps écoulé : {{seconds}}s",
+  "loadTestResults.elapsedLabel": "Temps",
   "loadTestResults.nodes": "{{count}} nœud",
   "loadTestResults.nodes_plural": "{{count}} nœuds",
   "loadTestResults.nodesOf": "sur {{count}} disponibles",

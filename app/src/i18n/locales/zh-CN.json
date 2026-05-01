@@ -192,6 +192,7 @@
   "loadTestResults.latency": "延迟",
   "loadTestResults.rpsOverTime": "RPS随时间变化",
   "loadTestResults.elapsed": "已用时间：{{seconds}}秒",
+  "loadTestResults.elapsedLabel": "时间",
   "loadTestResults.nodes": "{{count}}个节点",
   "loadTestResults.nodes_plural": "{{count}}个节点",
   "loadTestResults.nodesOf": "共{{count}}个可用",
