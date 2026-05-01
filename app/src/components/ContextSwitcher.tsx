@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,12 +107,38 @@ export function ContextSwitcher() {
   const [dismissedLocalPrompt, setDismissedLocalPrompt] = useState(false);
   const [permissionBlockedUrl, setPermissionBlockedUrl] = useState<string | null>(null);
   const [isRetryingPermission, setIsRetryingPermission] = useState(false);
+  const [localPromptPosition, setLocalPromptPosition] = useState({ top: 56, right: 16 });
+  const switcherRef = useRef<HTMLDivElement>(null);
   const hasCheckedStartupContextsRef = useRef(false);
 
   const hasLocalContext = useMemo(
     () => contexts.some((ctx) => normalizeContextUrl(ctx.url) === LOCAL_ORCHESTRATOR_URL),
     [contexts],
   );
+  const showDetectedLocalPrompt = !!detectedLocalContext && !hasLocalContext && !open;
+
+  useEffect(() => {
+    if (!showDetectedLocalPrompt) return;
+
+    const updatePromptPosition = () => {
+      const rect = switcherRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      setLocalPromptPosition({
+        top: Math.round(rect.bottom + 12),
+        right: Math.max(12, Math.round(window.innerWidth - rect.right)),
+      });
+    };
+
+    updatePromptPosition();
+    window.addEventListener("resize", updatePromptPosition);
+    window.addEventListener("scroll", updatePromptPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePromptPosition);
+      window.removeEventListener("scroll", updatePromptPosition, true);
+    };
+  }, [showDetectedLocalPrompt]);
 
   const buildUniqueContextName = (baseName: string, existingContexts = contexts) => {
     const existingNames = existingContexts.map((c) => c.name);
@@ -321,7 +348,7 @@ export function ContextSwitcher() {
   };
 
   return (
-    <div className="relative">
+    <div ref={switcherRef} className="relative">
       <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) resetForm(); }}>
         <PopoverTrigger asChild>
           <Button
@@ -464,9 +491,19 @@ export function ContextSwitcher() {
         </PopoverContent>
       </Popover>
 
-      {detectedLocalContext && !hasLocalContext && !open && (
-        <div className="absolute right-0 top-full z-[1000] mt-3 w-[320px] rounded-xl border border-border bg-card p-4 shadow-lg">
-          <div className="absolute -top-2 right-6 h-4 w-4 rotate-45 border-l border-t border-border bg-card" />
+      {showDetectedLocalPrompt && detectedLocalContext && createPortal(
+        <div
+          className="fixed z-[9999] w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-border p-4 shadow-lg"
+          style={{
+            backgroundColor: "hsl(var(--card))",
+            top: localPromptPosition.top,
+            right: localPromptPosition.right,
+          }}
+        >
+          <div
+            className="absolute -top-2 right-6 h-4 w-4 rotate-45 border-l border-t border-border"
+            style={{ backgroundColor: "hsl(var(--card))" }}
+          />
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Sparkles className="h-4 w-4" />
@@ -503,7 +540,8 @@ export function ContextSwitcher() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
