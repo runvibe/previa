@@ -58,7 +58,7 @@ export function TestModeSidebar({
             title={isCollapsed ? label : undefined}
             className={cn(
               "group gap-2 text-xs text-muted-foreground shadow-none data-[state=active]:!bg-primary/15 data-[state=active]:!text-primary data-[state=active]:shadow-none",
-              "hover:bg-accent/60 hover:text-foreground",
+              "hover:text-foreground",
               compact && (isCollapsed ? "h-9 w-10 px-0" : "px-3"),
               !compact && "h-10 w-full px-3",
               isCollapsed ? "justify-center px-0" : "justify-start",

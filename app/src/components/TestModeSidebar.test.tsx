@@ -13,8 +13,9 @@ describe("TestModeSidebar", () => {
     );
 
     expect(screen.getByLabelText("Test modes")).toHaveClass("border-r");
+    expect(screen.getByRole("tablist")).toHaveClass("bg-transparent");
     expect(screen.getByRole("tab", { name: /End-to-End Test/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Load Test/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Load Test/i })).not.toHaveClass("hover:bg-accent/60");
   });
 
   it("requests collapse from the sidebar toggle", () => {
