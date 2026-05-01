@@ -149,12 +149,7 @@ export function ProjectEnvGroupsPanel({ envGroups, onCreate, onUpdate, onDelete 
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Entries</Label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setEntries((current) => [...current, emptyEntry()])}>
-                  <Plus className="h-3 w-3" /> Entry
-                </Button>
-              </div>
+              <Label>Entries</Label>
               <div className="space-y-2">
                 {entries.map((entry, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_32px]">
@@ -166,6 +161,9 @@ export function ProjectEnvGroupsPanel({ envGroups, onCreate, onUpdate, onDelete 
                   </div>
                 ))}
               </div>
+              <Button type="button" variant="outline" className="w-full" onClick={() => setEntries((current) => [...current, emptyEntry()])}>
+                <Plus className="h-3.5 w-3.5" /> Entry
+              </Button>
             </div>
           </div>
 
