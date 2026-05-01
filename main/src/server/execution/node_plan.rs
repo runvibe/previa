@@ -75,9 +75,9 @@ pub fn calculate_node_plan(
     total_requests: usize,
     concurrency: usize,
 ) -> NodePlan {
-    let required_nodes = requested_concurrency.div_ceil(rps_per_node) as usize;
+    let capacity_required_nodes = requested_concurrency.div_ceil(rps_per_node).max(1) as usize;
 
-    let mut nodes_used = required_nodes.min(nodes_found);
+    let mut nodes_used = nodes_found;
     nodes_used = nodes_used.min(total_requests.max(1));
     nodes_used = nodes_used.min(concurrency.max(1));
 
@@ -85,17 +85,19 @@ pub fn calculate_node_plan(
         nodes_used = 1;
     }
 
-    let warning = if required_nodes > nodes_found {
+    let requested_nodes = capacity_required_nodes.max(nodes_used);
+
+    let warning = if capacity_required_nodes > nodes_found {
         Some(format!(
             "Requested concurrency {} needs {} nodes at {} req/s capacity per node, but only {} active nodes were found. Distributing across available nodes.",
-            requested_concurrency, required_nodes, rps_per_node, nodes_found
+            requested_concurrency, capacity_required_nodes, rps_per_node, nodes_found
         ))
     } else {
         None
     };
 
     NodePlan {
-        requested_nodes: required_nodes,
+        requested_nodes,
         nodes_found,
         nodes_used,
         warning,
@@ -151,8 +153,16 @@ mod tests {
     #[test]
     fn does_not_warn_when_capacity_is_enough() {
         let plan = calculate_node_plan(2_000, 1_000, 3, 100_000, 100);
-        assert_eq!(plan.requested_nodes, 2);
-        assert_eq!(plan.nodes_used, 2);
+        assert_eq!(plan.requested_nodes, 3);
+        assert_eq!(plan.nodes_used, 3);
+        assert!(plan.warning.is_none());
+    }
+
+    #[test]
+    fn uses_available_nodes_for_load_distribution() {
+        let plan = calculate_node_plan(10, 1_000, 3, 100, 10);
+        assert_eq!(plan.requested_nodes, 3);
+        assert_eq!(plan.nodes_used, 3);
         assert!(plan.warning.is_none());
     }
 
