@@ -2,6 +2,19 @@
 
 Remote runners let one `previa-main` orchestrate execution against runner processes outside the local stack.
 
+## Runners Are Required for Tests
+
+`previa-main` is the API and orchestrator. It does not execute E2E or load-test pipelines by itself. Test execution is always delegated to one or more `previa-runner` processes.
+
+Before running tests, make sure at least one runner is:
+
+- registered in the active `previa-main` context;
+- enabled in the runner registry;
+- reachable from `previa-main`;
+- returning success from `/health`.
+
+If no enabled runner is healthy, the app cannot start E2E or load tests. The runner icon in the app shows an alert in that state, and the `/runners` page explains that a runner must be started or fixed before tests can run.
+
 ## Start a Runner
 
 Example:
