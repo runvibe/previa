@@ -11,6 +11,6 @@ describe("Input", () => {
 
     expect(input).not.toHaveClass("border");
     expect(input).not.toHaveClass("border-input");
-    expect(input).toHaveClass("bg-background/60");
+    expect(input).toHaveClass("bg-muted/60");
   });
 });
