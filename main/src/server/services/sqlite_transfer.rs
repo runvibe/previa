@@ -336,6 +336,32 @@ mod tests {
         assert!(names.contains(&"Project A-imported".to_owned()));
     }
 
+    #[tokio::test]
+    async fn imports_legacy_sqlite_projects_without_env_groups_table() {
+        let source_path = std::env::temp_dir().join(format!(
+            "previa-import-legacy-source-{}.sqlite3",
+            crate::server::utils::new_uuid_v7()
+        ));
+        let _source_cleanup = TempFileCleanup(source_path.clone());
+        let source = migrated_db(&sqlite_url(&source_path)).await;
+        add_project(&source, "source-project", "Legacy Project").await;
+        source
+            .query("DROP TABLE project_env_groups")
+            .execute(&source)
+            .await
+            .expect("drop env groups table");
+        drop(source);
+
+        let target = migrated_db("sqlite::memory:").await;
+        let result = super::import_projects_from_sqlite(&target, &source_path, true)
+            .await
+            .expect("import legacy sqlite");
+
+        assert_eq!(result.projects_imported, 1);
+        assert_eq!(result.projects[0].project_name, "Legacy Project");
+        assert_eq!(result.projects[0].env_groups_imported, 0);
+    }
+
     struct TempFileCleanup(std::path::PathBuf);
 
     impl Drop for TempFileCleanup {

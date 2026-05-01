@@ -1,4 +1,4 @@
-use crate::server::db::DbPool;
+use crate::server::db::{DatabaseKind, DbPool};
 use chrono::DateTime;
 use serde_json::Value;
 use sqlx::Row;
@@ -34,7 +34,11 @@ pub async fn load_project_export(
     let spec = spec_json.and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
     let pipelines = load_pipelines_for_project(db, project_id).await?;
     let specs = list_project_spec_records(db, project_id).await?;
-    let env_groups = list_project_env_group_records(db, project_id).await?;
+    let env_groups = if table_exists(db, "project_env_groups").await? {
+        list_project_env_group_records(db, project_id).await?
+    } else {
+        Vec::new()
+    };
 
     Ok(Some(ProjectExportProject {
         id: row.try_get("id").unwrap_or_default(),
@@ -51,6 +55,27 @@ pub async fn load_project_export(
             load: Vec::new(),
         },
     }))
+}
+
+async fn table_exists(db: &DbPool, table_name: &str) -> Result<bool, sqlx::Error> {
+    match db.kind() {
+        DatabaseKind::Sqlite => {
+            let row = db
+                .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+                .bind(table_name)
+                .fetch_optional(db)
+                .await?;
+            Ok(row.is_some())
+        }
+        DatabaseKind::Postgres => {
+            let row = db
+                .query("SELECT to_regclass(?) IS NOT NULL AS present")
+                .bind(table_name)
+                .fetch_one(db)
+                .await?;
+            Ok(row.try_get::<bool, _>("present").unwrap_or(false))
+        }
+    }
 }
 
 pub async fn load_e2e_history_for_export(
