@@ -16,6 +16,8 @@ use crate::server::models::{
     RunnerRecord, RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
 };
 
+const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(OpenApi)]
 #[openapi(
     info(
@@ -140,7 +142,7 @@ pub struct ApiDoc;
 pub fn build_openapi_document() -> utoipa::openapi::OpenApi {
     let mut openapi = ApiDoc::openapi();
     openapi.info.title = env!("CARGO_PKG_NAME").to_owned();
-    openapi.info.version = env!("CARGO_PKG_VERSION").to_owned();
+    openapi.info.version = API_VERSION.to_owned();
     let package_description = env!("CARGO_PKG_DESCRIPTION").trim();
     let package_authors = env!("CARGO_PKG_AUTHORS")
         .split(':')
@@ -161,4 +163,16 @@ pub fn build_openapi_document() -> utoipa::openapi::OpenApi {
         Some(description_parts.join("\n\n"))
     };
     openapi
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_openapi_document;
+
+    #[test]
+    fn openapi_info_version_matches_cargo_package_version() {
+        let document = build_openapi_document();
+
+        assert_eq!(document.info.version, env!("CARGO_PKG_VERSION"));
+    }
 }
