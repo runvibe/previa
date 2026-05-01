@@ -9,7 +9,7 @@ import type { Project, ProjectSpec } from "@/types/project";
 import { getMergedSpec } from "@/types/project";
 import type { ExecutionRun } from "@/lib/execution-store";
 import type { LoadTestRunRecord } from "@/lib/load-test-store";
-import type { LoadTestMetrics, LoadTestState } from "@/types/load-test";
+import type { LoadTestMetrics, LoadTestState, RunnerResourcePoint } from "@/types/load-test";
 
 // ============ API Types (from OpenAPI spec) ============
 
@@ -590,6 +590,42 @@ function stringifyAssertionValue(value: unknown): string | undefined {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function buildRunnerResourceHistoryFromLines(lines: Array<Record<string, unknown>>): RunnerResourcePoint[] {
+  return lines.flatMap((line) => {
+    const payload = isRecord(line.payload) ? line.payload : line;
+    const runtime = isRecord(payload.runtime) ? payload.runtime : null;
+    const node = typeof line.node === "string" ? line.node : typeof payload.node === "string" ? payload.node : null;
+    if (!runtime || !node) return [];
+
+    const startTime = toSafeNumber(payload.startTime, Date.now());
+    const elapsedMs = toSafeNumber(payload.elapsedMs, 0);
+    const memoryBytes = toSafeNumber(runtime.memoryBytes, 0);
+    const networkTxBytes = toSafeNumber(runtime.networkTxBytes, 0);
+    const networkRxBytes = toSafeNumber(runtime.networkRxBytes, 0);
+    const networkTotalBytes = toSafeNumber(
+      runtime.networkTotalBytes,
+      networkTxBytes + networkRxBytes,
+    );
+
+    return [{
+      node,
+      timestamp: startTime + elapsedMs,
+      elapsedMs,
+      cpuUsagePercent: toSafeNumber(runtime.cpuUsagePercent, 0),
+      memoryBytes,
+      memoryMb: Math.round((memoryBytes / 1024 / 1024) * 100) / 100,
+      networkTxBytes,
+      networkRxBytes,
+      networkTotalBytes,
+      networkTotalKb: Math.round((networkTotalBytes / 1024) * 100) / 100,
+    }];
+  });
+}
+
 function normalizeAssertionResults(raw: unknown): Array<{
   assertion: { field: string; operator: "equals" | "not_equals" | "contains" | "exists" | "not_exists" | "gt" | "lt"; expected?: string };
   passed: boolean;
@@ -679,7 +715,7 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     rps: consolidated?.rps ?? 0,
     latencyHistory: consolidated?.latencyHistory ?? [],
     rpsHistory: consolidated?.rpsHistory ?? [],
-    runnerResourceHistory: consolidated?.runnerResourceHistory ?? [],
+    runnerResourceHistory: consolidated?.runnerResourceHistory ?? buildRunnerResourceHistoryFromLines(r.finalLines),
     startTime: consolidated?.startTime ?? r.startedAtMs,
     elapsedMs: consolidated?.elapsedMs ?? r.durationMs,
   };

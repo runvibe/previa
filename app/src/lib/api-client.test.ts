@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createRunner,
   deleteRunner,
+  loadRecordToRun,
   listRunners,
   updateRunner,
+  type LoadHistoryRecord,
   type RunnerRecord,
 } from "@/lib/api-client";
 
@@ -102,5 +104,79 @@ describe("api-client runners", () => {
 
     await expect(deleteRunner(baseUrl, runner.id)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(`${baseUrl}/runners/${runner.id}`, { method: "DELETE" });
+  });
+});
+
+describe("api-client load history mapping", () => {
+  it("rebuilds runner resource history from final runner lines", () => {
+    const run = loadRecordToRun({
+      id: "run-1",
+      executionId: "exec-1",
+      pipelineName: "Load",
+      status: "success",
+      startedAtMs: 1_000,
+      finishedAtMs: 2_000,
+      durationMs: 1_000,
+      requestedConfig: {
+        totalRequests: 3,
+        concurrency: 1,
+        rampUpSeconds: 0,
+      },
+      finalConsolidated: {
+        totalSent: 3,
+        totalSuccess: 3,
+        totalError: 0,
+        rps: 3,
+        avgLatency: 10,
+        p95: 12,
+        p99: 13,
+        startTime: 1_000,
+        elapsedMs: 1_000,
+      },
+      finalLines: [
+        {
+          node: "runner-a",
+          payload: {
+            totalSent: 3,
+            totalSuccess: 3,
+            totalError: 0,
+            rps: 3,
+            startTime: 1_000,
+            elapsedMs: 1_000,
+            runtime: {
+              pid: 123,
+              memoryBytes: 104_857_600,
+              virtualMemoryBytes: 209_715_200,
+              cpuUsagePercent: 11.5,
+              networkTxBytes: 2_048,
+              networkRxBytes: 4_096,
+              networkTotalBytes: 6_144,
+            },
+          },
+          runnerEvent: "complete",
+          receivedAt: 2_000,
+        },
+      ],
+      errors: [],
+      request: {},
+      context: {},
+      projectId: "project-1",
+      pipelineIndex: 0,
+    } satisfies LoadHistoryRecord);
+
+    expect(run.metrics.runnerResourceHistory).toEqual([
+      {
+        node: "runner-a",
+        timestamp: 2_000,
+        elapsedMs: 1_000,
+        cpuUsagePercent: 11.5,
+        memoryBytes: 104_857_600,
+        memoryMb: 100,
+        networkTxBytes: 2_048,
+        networkRxBytes: 4_096,
+        networkTotalBytes: 6_144,
+        networkTotalKb: 6,
+      },
+    ]);
   });
 });
