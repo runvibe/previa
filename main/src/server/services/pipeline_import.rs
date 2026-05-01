@@ -65,7 +65,7 @@ pub async fn import_pipelines_as_project(
             }
         }
 
-        let validation_errors = validate_pipeline_templates(&pipeline, None);
+        let validation_errors = validate_pipeline_templates(&pipeline, None, None, None);
         if !validation_errors.is_empty() {
             return Err(PipelineImportError::Validation(format!(
                 "pipeline '{}': {}",

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
 use crate::server::db::DbPool;
-use previa_runner::RuntimeSpec;
+use previa_runner::{RuntimeEnvGroup, RuntimeSpec};
 
-use crate::server::db::list_project_spec_records;
+use crate::server::db::{
+    list_project_env_group_records, list_project_spec_records, runtime_env_group_from_record,
+};
 use crate::server::models::ProjectSpecRecord;
 
 pub async fn load_runtime_specs_for_project(
@@ -16,6 +18,69 @@ pub async fn load_runtime_specs_for_project(
         .filter_map(runtime_spec_from_record)
         .collect();
     Ok(specs)
+}
+
+pub async fn load_runtime_env_groups_for_project(
+    db: &DbPool,
+    project_id: &str,
+) -> Result<Vec<RuntimeEnvGroup>, sqlx::Error> {
+    let records = list_project_env_group_records(db, project_id).await?;
+    Ok(records
+        .iter()
+        .filter_map(runtime_env_group_from_record)
+        .collect())
+}
+
+pub async fn resolve_runtime_env_groups_for_execution(
+    db: &DbPool,
+    project_id: Option<&str>,
+    payload_env_groups: &[RuntimeEnvGroup],
+) -> Result<Option<Vec<RuntimeEnvGroup>>, sqlx::Error> {
+    let sanitized_payload_env_groups = sanitize_runtime_env_groups(payload_env_groups);
+    if !sanitized_payload_env_groups.is_empty() {
+        return Ok(Some(sanitized_payload_env_groups));
+    }
+
+    if let Some(project_id) = project_id {
+        let env_groups = load_runtime_env_groups_for_project(db, project_id).await?;
+        if !env_groups.is_empty() {
+            return Ok(Some(env_groups));
+        }
+    }
+
+    Ok(None)
+}
+
+pub fn sanitize_runtime_env_groups(env_groups: &[RuntimeEnvGroup]) -> Vec<RuntimeEnvGroup> {
+    let mut sanitized = Vec::new();
+
+    for group in env_groups {
+        let slug = group.slug.trim();
+        if slug.is_empty() || slug == "current" {
+            continue;
+        }
+
+        let mut urls = HashMap::new();
+        for (name, url) in &group.urls {
+            let name = name.trim();
+            let url = url.trim();
+            if name.is_empty() || url.is_empty() {
+                continue;
+            }
+            urls.insert(name.to_owned(), url.to_owned());
+        }
+
+        if urls.is_empty() {
+            continue;
+        }
+
+        sanitized.push(RuntimeEnvGroup {
+            slug: slug.to_owned(),
+            urls,
+        });
+    }
+
+    sanitized
 }
 
 pub async fn resolve_runtime_specs_for_execution(

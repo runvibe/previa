@@ -3,6 +3,7 @@ use chrono::DateTime;
 use serde_json::Value;
 use sqlx::Row;
 
+use super::env_groups::list_project_env_group_records;
 use super::pipelines::load_pipelines_for_project;
 use super::specs::list_project_spec_records;
 use crate::server::models::{
@@ -33,6 +34,7 @@ pub async fn load_project_export(
     let spec = spec_json.and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
     let pipelines = load_pipelines_for_project(db, project_id).await?;
     let specs = list_project_spec_records(db, project_id).await?;
+    let env_groups = list_project_env_group_records(db, project_id).await?;
 
     Ok(Some(ProjectExportProject {
         id: row.try_get("id").unwrap_or_default(),
@@ -43,6 +45,7 @@ pub async fn load_project_export(
         spec,
         pipelines,
         specs,
+        env_groups,
         history: ProjectHistoryExport {
             e2e: Vec::new(),
             load: Vec::new(),
@@ -264,6 +267,36 @@ pub async fn import_project_bundle(
         .await?;
     }
 
+    for group in &project.env_groups {
+        let group_id = if group.id.trim().is_empty() {
+            new_uuid_v7()
+        } else {
+            group.id.clone()
+        };
+        let entries_json =
+            serde_json::to_string(&group.entries).unwrap_or_else(|_| "[]".to_owned());
+        let group_created_at_ms = parse_iso_to_ms(&group.created_at).unwrap_or(now_ms_i64);
+        let group_updated_at_ms = parse_iso_to_ms(&group.updated_at).unwrap_or(now_ms_i64);
+
+        db.query(
+            "INSERT INTO project_env_groups (
+                id, project_id, slug, name, entries_json, created_at, updated_at,
+                created_at_ms, updated_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(group_id)
+        .bind(&project.id)
+        .bind(&group.slug)
+        .bind(&group.name)
+        .bind(entries_json)
+        .bind(&group.created_at)
+        .bind(&group.updated_at)
+        .bind(group_created_at_ms)
+        .bind(group_updated_at_ms)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     let mut e2e_history_imported = 0usize;
     let mut load_history_imported = 0usize;
 
@@ -347,6 +380,7 @@ pub async fn import_project_bundle(
         include_history,
         pipelines_imported: project.pipelines.len(),
         specs_imported: project.specs.len(),
+        env_groups_imported: project.env_groups.len(),
         e2e_history_imported,
         load_history_imported,
     })

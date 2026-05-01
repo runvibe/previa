@@ -1,4 +1,5 @@
 pub mod app;
+pub mod env_groups;
 pub mod executions;
 pub mod health;
 pub mod history_e2e;

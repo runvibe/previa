@@ -11,8 +11,9 @@ use crate::server::execution::{
     AcquireOutcome, ScheduledExecutionKind, add_load_context_fields,
     build_live_load_snapshot_payload, build_load_snapshot_payload, calculate_node_plan,
     determine_load_history_status, extract_load_context_value, flush_load_batches,
-    forward_runner_stream_load_chunked, resolve_runtime_specs_for_execution, send_sse_best_effort,
-    snapshot_consolidated_metrics, snapshot_latest_lines, split_even,
+    forward_runner_stream_load_chunked, resolve_runtime_env_groups_for_execution,
+    resolve_runtime_specs_for_execution, send_sse_best_effort, snapshot_consolidated_metrics,
+    snapshot_latest_lines, split_even,
 };
 use crate::server::models::{
     HistoryMetadata, LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadTestRequest,
@@ -114,7 +115,23 @@ pub async fn start_load_execution(
             "failed to load project specs for execution: {err}"
         ))
     })?;
-    let template_errors = validate_pipeline_templates(&payload.pipeline, runtime_specs.as_deref());
+    let runtime_env_groups = resolve_runtime_env_groups_for_execution(
+        &state.db,
+        payload.project_id.as_deref(),
+        &payload.env_groups,
+    )
+    .await
+    .map_err(|err| {
+        StartLoadExecutionError::Internal(format!(
+            "failed to load project env groups for execution: {err}"
+        ))
+    })?;
+    let template_errors = validate_pipeline_templates(
+        &payload.pipeline,
+        runtime_specs.as_deref(),
+        runtime_env_groups.as_deref(),
+        payload.selected_env_group_slug.as_deref(),
+    );
     if !template_errors.is_empty() {
         return Err(StartLoadExecutionError::BadRequest(
             template_errors.join("; "),
@@ -122,6 +139,7 @@ pub async fn start_load_execution(
     }
     let runner_pipeline = payload.pipeline.clone();
     let runner_selected_base_url_key = payload.selected_base_url_key.clone();
+    let runner_selected_env_group_slug = payload.selected_env_group_slug.clone();
     let runner_config = payload.config.clone();
     let runner_ramp_up_seconds = runner_config.ramp_up_seconds;
     let history_pipeline_id = payload.pipeline.id.clone();
@@ -130,7 +148,9 @@ pub async fn start_load_execution(
     let history_request = json!({
         "pipeline": runner_pipeline.clone(),
         "selectedBaseUrlKey": runner_selected_base_url_key.clone(),
+        "selectedEnvGroupSlug": runner_selected_env_group_slug.clone(),
         "specs": runtime_specs.clone(),
+        "envGroups": runtime_env_groups.clone(),
         "config": runner_config.clone(),
         "projectId": history_metadata.project_id.clone(),
         "pipelineIndex": history_metadata.pipeline_index
@@ -219,6 +239,7 @@ pub async fn start_load_execution(
     let execution_id_for_cleanup = orchestrator_execution_id.clone();
     let history_execution_id = orchestrator_execution_id.clone();
     let runtime_specs_for_runner = runtime_specs.clone().unwrap_or_default();
+    let runtime_env_groups_for_runner = runtime_env_groups.clone().unwrap_or_default();
     let (completion_tx, completion_rx) = oneshot::channel();
 
     tokio::spawn(async move {
@@ -454,15 +475,19 @@ pub async fn start_load_execution(
             let load_errors = Arc::clone(&load_errors);
             let load_context = Arc::clone(&load_context);
             let selected_base_url_key = runner_selected_base_url_key.clone();
+            let selected_env_group_slug = runner_selected_env_group_slug.clone();
             let pipeline = runner_pipeline.clone();
             let transaction_id = transaction_id_for_children.clone();
             let specs = runtime_specs_for_runner.clone();
+            let env_groups = runtime_env_groups_for_runner.clone();
             let runner_auth_key = state_clone.runner_auth_key.clone();
 
             let child_request = json!({
                 "pipeline": pipeline,
                 "selectedBaseUrlKey": selected_base_url_key,
+                "selectedEnvGroupSlug": selected_env_group_slug,
                 "specs": specs,
+                "envGroups": env_groups,
                 "config": {
                     "totalRequests": split_requests[index],
                     "concurrency": split_concurrency[index],
@@ -745,9 +770,11 @@ mod tests {
                 pipeline: test_pipeline("pipe-1"),
                 config: test_config(),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )
@@ -759,9 +786,11 @@ mod tests {
                 pipeline: test_pipeline("pipe-1"),
                 config: test_config(),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )
@@ -830,9 +859,11 @@ mod tests {
                 pipeline: test_pipeline("pipe-1"),
                 config: test_config(),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )
@@ -844,9 +875,11 @@ mod tests {
                 pipeline: test_pipeline("pipe-1"),
                 config: test_config(),
                 selected_base_url_key: None,
+                selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
                 specs: Vec::new(),
+                env_groups: Vec::new(),
             },
             None,
         )

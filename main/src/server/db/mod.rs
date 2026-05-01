@@ -1,5 +1,6 @@
 pub mod common;
 pub mod e2e_queues;
+pub mod env_groups;
 pub mod history;
 pub mod pipelines;
 pub mod pool;
@@ -14,6 +15,11 @@ pub use e2e_queues::{
     cancel_non_terminal_e2e_queue, cancel_stale_e2e_queues, insert_e2e_queue,
     load_e2e_queue_record, queue_request_json, update_e2e_queue_item_status,
     update_e2e_queue_status,
+};
+pub use env_groups::{
+    delete_project_env_group_record, insert_project_env_group_record,
+    list_project_env_group_records, load_project_env_group_record_by_id,
+    runtime_env_group_from_record, update_project_env_group_record,
 };
 pub use history::{
     list_e2e_history_records, list_load_history_records, load_e2e_history_record_by_id,

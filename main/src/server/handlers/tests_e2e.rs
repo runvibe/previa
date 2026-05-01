@@ -115,9 +115,11 @@ pub async fn run_e2e_test_for_project(
     let forwarded = E2eTestRequest {
         pipeline,
         selected_base_url_key: payload.selected_base_url_key,
+        selected_env_group_slug: payload.selected_env_group_slug,
         project_id: Some(project_id.clone()),
         pipeline_index,
         specs: payload.specs,
+        env_groups: payload.env_groups,
     };
     run_e2e_test_internal(State(state), project_id, headers, Ok(Json(forwarded))).await
 }

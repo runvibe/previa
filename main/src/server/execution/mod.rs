@@ -24,7 +24,9 @@ pub use load_batch::{
 pub use node_plan::{
     calculate_node_plan, collect_runner_statuses, parse_runner_endpoints, split_even,
 };
-pub use runtime_specs::resolve_runtime_specs_for_execution;
+pub use runtime_specs::{
+    resolve_runtime_env_groups_for_execution, resolve_runtime_specs_for_execution,
+};
 pub use scheduler::{AcquireOutcome, ExecutionScheduler, ScheduledExecutionKind, SchedulerConfig};
 pub use snapshot::{
     build_e2e_snapshot_payload, build_live_load_snapshot_payload, build_load_snapshot_payload,

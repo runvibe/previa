@@ -5,7 +5,9 @@ use crate::server::db::{
     DbPool, import_project_bundle, load_e2e_history_for_export, load_load_history_for_export,
     load_project_export, project_name_exists,
 };
-use crate::server::models::{ProjectExportProject, ProjectImportResponse, ProjectSpecRecord};
+use crate::server::models::{
+    ProjectEnvGroupRecord, ProjectExportProject, ProjectImportResponse, ProjectSpecRecord,
+};
 use crate::server::utils::new_uuid_v7;
 use serde::Serialize;
 use sqlx::Row;
@@ -18,6 +20,7 @@ pub struct SqliteProjectImportItem {
     pub project_name: String,
     pub pipelines_imported: usize,
     pub specs_imported: usize,
+    pub env_groups_imported: usize,
     pub e2e_history_imported: usize,
     pub load_history_imported: usize,
 }
@@ -142,6 +145,17 @@ async fn rewrite_imported_project(
         })
         .collect::<Vec<ProjectSpecRecord>>();
 
+    project.env_groups = project
+        .env_groups
+        .iter()
+        .cloned()
+        .map(|mut group| {
+            group.id = new_uuid_v7();
+            group.project_id = new_project_id.clone();
+            group
+        })
+        .collect::<Vec<ProjectEnvGroupRecord>>();
+
     for record in &mut project.history.e2e {
         record.id = new_uuid_v7();
         record.execution_id = new_uuid_v7();
@@ -209,6 +223,7 @@ fn import_item(
         project_name,
         pipelines_imported: response.pipelines_imported,
         specs_imported: response.specs_imported,
+        env_groups_imported: response.env_groups_imported,
         e2e_history_imported: response.e2e_history_imported,
         load_history_imported: response.load_history_imported,
     }

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use previa_runner::{Pipeline, RuntimeSpec};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
 use regex::Regex;
 use serde_json::Value;
 
@@ -12,8 +12,11 @@ pub const KNOWN_TEMPLATE_HELPERS: &[&str] = &[
 pub fn validate_pipeline_templates(
     pipeline: &Pipeline,
     specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
 ) -> Vec<String> {
     let specs_index = build_specs_index(specs);
+    let env_groups_index = build_env_groups_index(env_groups);
     let mut known_steps = HashSet::new();
     let mut errors = Vec::new();
 
@@ -23,6 +26,8 @@ pub fn validate_pipeline_templates(
             &format!("step '{}' field 'url'", step.id),
             &known_steps,
             &specs_index,
+            &env_groups_index,
+            selected_env_group_slug,
             &mut errors,
         );
 
@@ -32,6 +37,8 @@ pub fn validate_pipeline_templates(
                 &format!("step '{}' header '{}'", step.id, header_name),
                 &known_steps,
                 &specs_index,
+                &env_groups_index,
+                selected_env_group_slug,
                 &mut errors,
             );
         }
@@ -42,6 +49,8 @@ pub fn validate_pipeline_templates(
                 &format!("step '{}' body", step.id),
                 &known_steps,
                 &specs_index,
+                &env_groups_index,
+                selected_env_group_slug,
                 &mut errors,
             );
         }
@@ -53,6 +62,8 @@ pub fn validate_pipeline_templates(
                     &format!("step '{}' assertion {} expected value", step.id, index + 1),
                     &known_steps,
                     &specs_index,
+                    &env_groups_index,
+                    selected_env_group_slug,
                     &mut errors,
                 );
             }
@@ -69,11 +80,21 @@ fn validate_value_templates(
     path: &str,
     known_steps: &HashSet<String>,
     specs_index: &HashMap<String, HashSet<String>>,
+    env_groups_index: &HashMap<String, HashSet<String>>,
+    selected_env_group_slug: Option<&str>,
     errors: &mut Vec<String>,
 ) {
     match value {
         Value::String(value) => {
-            validate_string_templates(value, path, known_steps, specs_index, errors);
+            validate_string_templates(
+                value,
+                path,
+                known_steps,
+                specs_index,
+                env_groups_index,
+                selected_env_group_slug,
+                errors,
+            );
         }
         Value::Array(items) => {
             for (index, item) in items.iter().enumerate() {
@@ -82,6 +103,8 @@ fn validate_value_templates(
                     &format!("{path}[{index}]"),
                     known_steps,
                     specs_index,
+                    env_groups_index,
+                    selected_env_group_slug,
                     errors,
                 );
             }
@@ -93,6 +116,8 @@ fn validate_value_templates(
                     &format!("{path}.{key}"),
                     known_steps,
                     specs_index,
+                    env_groups_index,
+                    selected_env_group_slug,
                     errors,
                 );
             }
@@ -106,6 +131,8 @@ fn validate_string_templates(
     path: &str,
     known_steps: &HashSet<String>,
     specs_index: &HashMap<String, HashSet<String>>,
+    env_groups_index: &HashMap<String, HashSet<String>>,
+    selected_env_group_slug: Option<&str>,
     errors: &mut Vec<String>,
 ) {
     for expression in template_regex().captures_iter(value) {
@@ -125,7 +152,13 @@ fn validate_string_templates(
             continue;
         };
 
-        if let Some(message) = validate_expression(&normalized, known_steps, specs_index) {
+        if let Some(message) = validate_expression(
+            &normalized,
+            known_steps,
+            specs_index,
+            env_groups_index,
+            selected_env_group_slug,
+        ) {
             errors.push(format!("{path}: {message}"));
         }
     }
@@ -135,6 +168,8 @@ fn validate_expression(
     expression: &str,
     known_steps: &HashSet<String>,
     specs_index: &HashMap<String, HashSet<String>>,
+    env_groups_index: &HashMap<String, HashSet<String>>,
+    selected_env_group_slug: Option<&str>,
 ) -> Option<String> {
     if let Some(helper_expression) = expression.strip_prefix("helpers.") {
         let helper_name = helper_expression
@@ -193,9 +228,78 @@ fn validate_expression(
         };
     }
 
+    if let Some(env_expression) = expression.strip_prefix("envs.") {
+        let mut parts = env_expression.split('.');
+        let group = parts.next().unwrap_or_default().trim();
+        let name = parts.next().unwrap_or_default().trim();
+
+        if group.is_empty() || name.is_empty() || parts.next().is_some() {
+            return Some(format!(
+                "template variable '{{{{{expression}}}}}' must use the format '{{{{envs.<group>.<name>}}}}' or '{{{{envs.current.<name>}}}}'"
+            ));
+        }
+
+        if env_groups_index.is_empty() && selected_env_group_slug.is_none() {
+            return None;
+        }
+
+        let resolved_group = if group == "current" {
+            let Some(selected) = selected_env_group_slug
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            else {
+                return Some(format!(
+                    "template variable '{{{{{expression}}}}}' requires a selected env group"
+                ));
+            };
+            selected
+        } else {
+            group
+        };
+
+        let Some(entries) = env_groups_index.get(resolved_group) else {
+            return Some(format!(
+                "template variable '{{{{{expression}}}}}' references unknown env group '{resolved_group}'"
+            ));
+        };
+
+        return if entries.contains(name) {
+            None
+        } else {
+            Some(format!(
+                "template variable '{{{{{expression}}}}}' references unknown env '{name}' for group '{resolved_group}'"
+            ))
+        };
+    }
+
     Some(format!(
         "template variable '{{{{{expression}}}}}' does not exist"
     ))
+}
+
+fn build_env_groups_index(
+    env_groups: Option<&[RuntimeEnvGroup]>,
+) -> HashMap<String, HashSet<String>> {
+    let mut index = HashMap::new();
+
+    for group in env_groups.unwrap_or(&[]) {
+        let slug = group.slug.trim();
+        if slug.is_empty() {
+            continue;
+        }
+
+        let mut urls = HashSet::new();
+        for name in group.urls.keys() {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                urls.insert(trimmed.to_owned());
+            }
+        }
+
+        index.insert(slug.to_owned(), urls);
+    }
+
+    index
 }
 
 fn build_specs_index(specs: Option<&[RuntimeSpec]>) -> HashMap<String, HashSet<String>> {
@@ -245,7 +349,7 @@ fn template_regex() -> &'static Regex {
 mod tests {
     use std::collections::HashMap;
 
-    use previa_runner::{Pipeline, PipelineStep, RuntimeSpec};
+    use previa_runner::{Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec};
     use serde_json::json;
 
     use super::validate_pipeline_templates;
@@ -275,7 +379,7 @@ mod tests {
             steps: vec![sample_step("step-1", "https://example.com/{{run.id}}")],
         };
 
-        let errors = validate_pipeline_templates(&pipeline, None);
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
         assert!(errors.iter().any(|item| item.contains("{{run.id}}")));
     }
 
@@ -291,7 +395,7 @@ mod tests {
             ],
         };
 
-        let errors = validate_pipeline_templates(&pipeline, None);
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
         assert!(errors.iter().any(|item| item.contains("step 'step-2'")));
     }
 
@@ -314,7 +418,68 @@ mod tests {
             servers: HashMap::from([("hml".to_owned(), "https://hml.example.com".to_owned())]),
         }];
 
-        let errors = validate_pipeline_templates(&pipeline, Some(&specs));
+        let errors = validate_pipeline_templates(&pipeline, Some(&specs), None, None);
         assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn accepts_current_env_reference_when_selected_group_has_entry() {
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![sample_step("step-1", "{{envs.current.api}}/health")],
+        };
+        let env_groups = vec![RuntimeEnvGroup {
+            slug: "hml".to_owned(),
+            urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+        }];
+
+        let errors = validate_pipeline_templates(&pipeline, None, Some(&env_groups), Some("hml"));
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn rejects_current_env_reference_without_selected_group() {
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![sample_step("step-1", "{{envs.current.api}}/health")],
+        };
+        let env_groups = vec![RuntimeEnvGroup {
+            slug: "hml".to_owned(),
+            urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+        }];
+
+        let errors = validate_pipeline_templates(&pipeline, None, Some(&env_groups), None);
+        assert!(
+            errors
+                .iter()
+                .any(|item| item.contains("requires a selected env group")),
+            "unexpected errors: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_env_entry() {
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![sample_step("step-1", "{{envs.hml.auth}}/health")],
+        };
+        let env_groups = vec![RuntimeEnvGroup {
+            slug: "hml".to_owned(),
+            urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+        }];
+
+        let errors = validate_pipeline_templates(&pipeline, None, Some(&env_groups), Some("hml"));
+        assert!(
+            errors
+                .iter()
+                .any(|item| item.contains("unknown env 'auth'")),
+            "unexpected errors: {errors:?}"
+        );
     }
 }

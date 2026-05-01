@@ -117,9 +117,11 @@ pub async fn run_load_test_for_project(
         pipeline,
         config: payload.config,
         selected_base_url_key: payload.selected_base_url_key,
+        selected_env_group_slug: payload.selected_env_group_slug,
         project_id: Some(project_id.clone()),
         pipeline_index,
         specs: payload.specs,
+        env_groups: payload.env_groups,
     };
     run_load_test_internal(State(state), project_id, headers, Ok(Json(forwarded))).await
 }
