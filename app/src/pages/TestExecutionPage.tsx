@@ -249,6 +249,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
   const stepScrollContainerRef = useRef<HTMLDivElement>(null!);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [testModeSidebarCollapsed, setTestModeSidebarCollapsed] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     initialSelectedIndex ?? (pipelines.length > 0 ? 0 : null)
   );
@@ -1092,7 +1093,11 @@ export default function TestExecutionPage({ pipelines, spec, specs, projectId, o
           </div>
 
           <div className={cn("flex flex-1 min-h-0 overflow-hidden", isMobile ? "flex-col" : "flex-row")}>
-            <TestModeSidebar compact={isMobile} />
+            <TestModeSidebar
+              compact={isMobile}
+              collapsed={testModeSidebarCollapsed}
+              onCollapsedChange={setTestModeSidebarCollapsed}
+            />
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <TabsContent value="integration" className="flex-1 flex flex-col overflow-hidden mt-0 !animate-none min-w-0">
                 {selectedPipeline.steps.length === 0 ? (

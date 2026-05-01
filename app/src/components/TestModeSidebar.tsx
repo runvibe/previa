@@ -1,47 +1,73 @@
-import { Workflow, Zap } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Workflow, Zap } from "lucide-react";
 
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 interface TestModeSidebarProps {
   compact?: boolean;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
-export function TestModeSidebar({ compact = false }: TestModeSidebarProps) {
+const testModes = [
+  { value: "integration", label: "End-to-End Test", icon: Workflow },
+  { value: "loadtest", label: "Load Test", icon: Zap },
+];
+
+export function TestModeSidebar({
+  compact = false,
+  collapsed = false,
+  onCollapsedChange,
+}: TestModeSidebarProps) {
+  const isCollapsed = collapsed;
+
   return (
     <aside
       aria-label="Test modes"
       className={cn(
-        "shrink-0 border-border/50 bg-card/30",
-        compact ? "border-b px-3 py-2" : "w-[180px] border-r p-3",
+        "shrink-0 border-border/50 bg-card/40 transition-[width] duration-200 ease-out",
+        compact ? "flex items-center gap-2 border-b px-3 py-2" : "border-r p-2",
+        !compact && (isCollapsed ? "w-14" : "w-[184px]"),
       )}
     >
+      <div className={cn("flex", compact ? "shrink-0" : "mb-2", isCollapsed ? "justify-center" : "justify-end")}>
+        <button
+          type="button"
+          aria-label={isCollapsed ? "Expand test mode sidebar" : "Collapse test mode sidebar"}
+          title={isCollapsed ? "Expand" : "Collapse"}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onCollapsedChange?.(!isCollapsed)}
+        >
+          {isCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </button>
+      </div>
+
       <TabsList
         className={cn(
-          "h-auto bg-transparent p-0",
-          compact ? "grid w-full grid-cols-2 gap-1" : "flex w-full flex-col gap-1",
+          "h-auto border-0 bg-transparent p-0 shadow-none",
+          compact && "grid grid-cols-2 gap-1",
+          compact && (isCollapsed ? "w-[88px]" : "flex-1"),
+          !compact && "flex w-full flex-col gap-1",
         )}
       >
-        <TabsTrigger
-          value="integration"
-          className={cn(
-            "gap-2 text-xs",
-            compact ? "px-3" : "h-9 w-full justify-start px-3",
-          )}
-        >
-          <Workflow className="h-3.5 w-3.5" />
-          End-to-End Test
-        </TabsTrigger>
-        <TabsTrigger
-          value="loadtest"
-          className={cn(
-            "gap-2 text-xs",
-            compact ? "px-3" : "h-9 w-full justify-start px-3",
-          )}
-        >
-          <Zap className="h-3.5 w-3.5" />
-          Load Test
-        </TabsTrigger>
+        {testModes.map(({ value, label, icon: Icon }) => (
+          <TabsTrigger
+            key={value}
+            value={value}
+            aria-label={isCollapsed ? label : undefined}
+            title={isCollapsed ? label : undefined}
+            className={cn(
+              "group gap-2 text-xs text-muted-foreground shadow-none data-[state=active]:!bg-primary/15 data-[state=active]:!text-primary data-[state=active]:shadow-none",
+              "hover:bg-accent/60 hover:text-foreground",
+              compact && (isCollapsed ? "h-9 w-10 px-0" : "px-3"),
+              !compact && "h-10 w-full px-3",
+              isCollapsed ? "justify-center px-0" : "justify-start",
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {!isCollapsed && <span className="truncate">{label}</span>}
+          </TabsTrigger>
+        ))}
       </TabsList>
     </aside>
   );
