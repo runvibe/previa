@@ -4,13 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 import { ProjectEnvGroupsPanel } from "@/components/ProjectEnvGroupsPanel";
 import type { ProjectEnvGroup } from "@/types/project";
 
-function makeEnvGroup(index: number): ProjectEnvGroup {
+function makeEnvGroup(index: number, entriesCount = 1): ProjectEnvGroup {
   return {
     id: `env-${index}`,
     projectId: "project-1",
     name: `Env ${index}`,
     slug: `env-${index}`,
-    entries: [{ name: "api", url: `https://api-${index}.example.com`, description: null }],
+    entries: Array.from({ length: entriesCount }, (_, entryIndex) => ({
+      name: `api-${entryIndex}`,
+      url: `https://api-${index}-${entryIndex}.example.com`,
+      description: null,
+    })),
     createdAt: "2026-05-01T00:00:00Z",
     updatedAt: "2026-05-01T00:00:00Z",
   };
@@ -47,5 +51,18 @@ describe("ProjectEnvGroupsPanel", () => {
       "opacity-0",
       "group-hover:opacity-100",
     );
+  });
+
+  it("does not show the env entry count in sidebar items", () => {
+    render(
+      <ProjectEnvGroupsPanel
+        envGroups={[makeEnvGroup(9, 2)]}
+        onCreate={vi.fn()}
+        onUpdate={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("2")).not.toBeInTheDocument();
   });
 });

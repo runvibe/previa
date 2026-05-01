@@ -120,7 +120,6 @@ export function ProjectEnvGroupsPanel({ envGroups, onCreate, onUpdate, onDelete 
               <div className="truncate font-medium">{group.name}</div>
               <div className="truncate font-mono text-[10px] text-muted-foreground">{group.slug}</div>
             </div>
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{group.entries.length}</span>
             <SidebarItemActionBar
               label={`${group.name} actions`}
               actions={[
