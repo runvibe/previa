@@ -243,6 +243,27 @@ export function ensureApiPrefix(url: string): string {
   return clean.endsWith("/api/v1") ? clean : `${clean}/api/v1`;
 }
 
+export function ensureApiRoot(url: string): string {
+  return url.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
+export async function getOpenApiVersion(baseUrl: string): Promise<string | null> {
+  const root = ensureApiRoot(baseUrl);
+  const signal = typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+    ? AbortSignal.timeout(8000)
+    : undefined;
+
+  try {
+    const response = await fetch(`${root}/openapi.json`, { signal });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const version = data?.info?.version;
+    return typeof version === "string" && version.trim() ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null);
   if (entries.length === 0) return "";

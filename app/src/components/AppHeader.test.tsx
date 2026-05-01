@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppHeader } from "@/components/AppHeader";
+import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 
 vi.mock("@/components/ContextSwitcher", () => ({
   ContextSwitcher: () => <div data-testid="context-switcher" />,
@@ -13,6 +14,18 @@ vi.mock("@/components/EventsPanel", () => ({
 }));
 
 describe("AppHeader", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+    useOrchestratorStore.setState({
+      contexts: [],
+      activeContextId: null,
+      activeContext: null,
+      url: null,
+      info: null,
+    });
+  });
+
   it("exposes the stack dashboard from the stack context menu", async () => {
     const onDashboard = vi.fn();
 
@@ -39,5 +52,50 @@ describe("AppHeader", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Dashboard" }));
 
     expect(onDashboard).toHaveBeenCalledOnce();
+  });
+
+  it("does not show an api version subtitle when no context is active", () => {
+    render(
+      <MemoryRouter>
+        <AppHeader onBackToProjects={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("alpha")).not.toBeInTheDocument();
+  });
+
+  it("shows the active context api version under the logo", async () => {
+    const activeContext = { id: "local", name: "local", url: "http://127.0.0.1:5798" };
+    useOrchestratorStore.setState({
+      contexts: [activeContext],
+      activeContextId: activeContext.id,
+      activeContext,
+      url: activeContext.url,
+      info: null,
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "http://127.0.0.1:5798/openapi.json") {
+        return {
+          ok: true,
+          json: async () => ({ info: { version: "1.0.0-alpha.20" } }),
+        };
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter>
+        <AppHeader onBackToProjects={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("1.0.0-alpha.20")).toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:5798/openapi.json",
+      expect.any(Object),
+    );
   });
 });

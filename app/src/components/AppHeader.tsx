@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { PreviaLogo } from "./PreviaLogo";
 import { ContextSwitcher } from "./ContextSwitcher";
 import { EventsPanel } from "./EventsPanel";
 import { BarChart3, FolderOpen } from "lucide-react";
+import { getOpenApiVersion } from "@/lib/api-client";
+import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -81,6 +83,23 @@ function useBreadcrumbs(projectName?: string, pipelineName?: string) {
 export function AppHeader({ projectName, pipelineName, onBackToProjects, onDashboard, isDashboardActive, headerActions, mobileHeaderActions }: AppHeaderProps) {
   const navigate = useNavigate();
   const crumbs = useBreadcrumbs(projectName, pipelineName);
+  const activeContextUrl = useOrchestratorStore((state) => state.activeContext?.url ?? null);
+  const [apiVersion, setApiVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setApiVersion(null);
+    if (!activeContextUrl) return;
+
+    getOpenApiVersion(activeContextUrl).then((version) => {
+      if (!cancelled) setApiVersion(version);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeContextUrl]);
+
   const rightActions = useMemo(() => (
     <div className="flex items-center gap-1 sm:gap-2 shrink-0">
       <div className="sm:hidden">{mobileHeaderActions ?? headerActions}</div>
@@ -102,7 +121,9 @@ export function AppHeader({ projectName, pipelineName, onBackToProjects, onDashb
           <PreviaLogo className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
           <div className="flex flex-col items-start">
             <h1 className="text-base sm:text-lg font-bold tracking-tight whitespace-nowrap">Previa</h1>
-            <span className="text-[9px] leading-none text-muted-foreground font-medium tracking-wide self-end -mt-1">alpha</span>
+            {apiVersion ? (
+              <span className="text-[9px] leading-none text-muted-foreground font-medium tracking-wide self-end -mt-1">{apiVersion}</span>
+            ) : null}
           </div>
         </button>
         {crumbs.length > 0 && (
