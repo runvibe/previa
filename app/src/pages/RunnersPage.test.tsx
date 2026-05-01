@@ -40,7 +40,7 @@ const translateMock = vi.hoisted(() => (key: string, params?: Record<string, str
     "runners.name": "Name",
     "runners.nameFor": `Name for ${params?.endpoint ?? ""}`,
     "runners.namePlaceholder": "Optional name",
-    "runners.noBackend": "Backend not connected. Select or configure an active context.",
+    "runners.noBackend": "Backend unavailable. Check the API base and make sure previa-main is running.",
     "runners.refresh": "Refresh",
     "runners.runtime": "Runtime",
     "runners.status": "Status",
@@ -180,6 +180,7 @@ function mockFetch(initialRunners: RunnerRecord[] = [runnerA]) {
 describe("RunnersPage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("VITE_PREVIA_API_BASE_URL", baseUrl);
     toastSuccessMock.mockReset();
     toastErrorMock.mockReset();
     useAppHeaderMock.mockReset();

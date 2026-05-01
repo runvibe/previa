@@ -33,7 +33,7 @@ Use:
 previa --home ./.previa up -d
 ```
 
-## How do I connect the hosted IDE to my local stack?
+## How do I open the IDE for my local stack?
 
 Run:
 
@@ -41,7 +41,7 @@ Run:
 previa open
 ```
 
-This opens `https://ide.previa.dev?add_context=<main-url>`.
+This opens the selected `previa-main` URL directly, for example `http://127.0.0.1:5588`.
 
 ## How do I connect an AI assistant through MCP?
 

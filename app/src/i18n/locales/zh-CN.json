@@ -68,7 +68,7 @@
   "runners.summary.healthy": "健康",
   "runners.empty.title": "尚未注册 runner",
   "runners.empty.description": "添加 runner endpoint，使其可用于执行。",
-  "runners.noBackend": "Backend 未连接。请选择或配置活动 context。",
+  "runners.noBackend": "Backend 不可用。请检查 API base，并确认 previa-main 正在运行。",
   "runners.loadError": "加载 runners 时出错。",
   "runners.addSuccess": "Runner 添加成功！",
   "runners.addError": "添加 runner 时出错。",

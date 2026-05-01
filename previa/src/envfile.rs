@@ -44,6 +44,7 @@ pub fn default_main_env_map(stack_paths: &StackPaths) -> BTreeMap<String, String
         "ORCHESTRATOR_DATABASE_URL".to_owned(),
         sqlite_database_url(&stack_paths.orchestrator_db),
     );
+    values.insert("PREVIA_APP_ENABLED".to_owned(), "true".to_owned());
     values.insert(
         "RUNNER_ENDPOINTS".to_owned(),
         "http://127.0.0.1:55880".to_owned(),

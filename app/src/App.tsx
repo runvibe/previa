@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,69 +11,12 @@ import NotFound from "./pages/NotFound";
 import { SpecSyncNotifier } from "./components/SpecSyncNotifier";
 import { DotsLoader } from "./components/DotsLoader";
 import { AppShell } from "./components/AppShell";
-import { useOrchestratorStore } from "./stores/useOrchestratorStore";
 
 const SpecDiffPage = lazy(() => import("./pages/SpecDiffPage"));
-// Handle ?context= and ?add_context= query params on app init
-function useContextQueryParam() {
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-
-    // ?context= — switch to existing context by name/id, or auto-create from URL
-    const contextVal = params.get("context");
-    if (contextVal) {
-      const store = useOrchestratorStore.getState();
-      const found = store.contexts.find(
-        (c) => c.name === contextVal || c.id === contextVal
-      );
-      if (found) {
-        store.switchContext(found.id);
-      } else if (/^https?:\/\//i.test(contextVal)) {
-        const ctx = store.addContext(contextVal, contextVal);
-        store.switchContext(ctx.id);
-      }
-      params.delete("context");
-    }
-
-    // ?add_context= — add a new context by URL, fetch /info for name
-    const addContextUrl = params.get("add_context");
-    if (addContextUrl) {
-      const store = useOrchestratorStore.getState();
-      const trimmed = addContextUrl.replace(/\/+$/, "");
-      // Avoid duplicates
-      const existing = store.contexts.find((c) => c.url === trimmed);
-      if (!existing) {
-        const ctx = store.addContext(trimmed, trimmed);
-        store.switchContext(ctx.id);
-        // Try to fetch name from /info
-        const base = trimmed.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
-        fetch(`${base}/info`, { signal: AbortSignal.timeout(6000) })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((data) => {
-            if (data?.context) {
-              useOrchestratorStore.getState().updateContext(ctx.id, { name: data.context });
-            }
-          })
-          .catch(() => { /* stays offline / unnamed */ });
-      } else {
-        store.switchContext(existing.id);
-      }
-      params.delete("add_context");
-    }
-
-    // Clean URL
-    if (contextVal || addContextUrl) {
-      const newSearch = params.toString();
-      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "");
-      window.history.replaceState({}, "", newUrl);
-    }
-  }, []);
-}
 
 const queryClient = new QueryClient();
 
 const App = () => {
-  useContextQueryParam();
   return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>

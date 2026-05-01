@@ -25,7 +25,7 @@ previa open
 This opens:
 
 ```text
-https://ide.previa.dev?add_context=<your-local-main-url>
+http://127.0.0.1:5588
 ```
 
 ## 2. Create a Project

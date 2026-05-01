@@ -304,6 +304,9 @@ fn compose_document(resolved: &ResolvedUpConfig) -> Result<ComposeDocument> {
     let mut main_environment = resolved.main_env.clone();
     main_environment.insert("ADDRESS".to_owned(), "0.0.0.0".to_owned());
     main_environment.insert("PORT".to_owned(), resolved.main.port.to_string());
+    main_environment
+        .entry("PREVIA_APP_ENABLED".to_owned())
+        .or_insert_with(|| "true".to_owned());
     main_environment.insert(
         "RUNNER_ENDPOINTS".to_owned(),
         resolved

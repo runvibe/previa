@@ -71,7 +71,7 @@
   "runners.unavailable.title": "No hay runners disponibles",
   "runners.unavailable.description": "Necesitas al menos un runner saludable para ejecutar pruebas.",
   "runners.unavailable.docs": "Leer documentación de runners",
-  "runners.noBackend": "Backend no conectado. Selecciona o configura un contexto activo.",
+  "runners.noBackend": "Backend no disponible. Verifica la API base y confirma que previa-main está en ejecución.",
   "runners.loadError": "Error al cargar runners.",
   "runners.addSuccess": "¡Runner agregado exitosamente!",
   "runners.addError": "Error al agregar runner.",

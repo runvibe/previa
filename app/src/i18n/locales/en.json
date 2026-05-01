@@ -76,7 +76,7 @@
   "runners.unavailable.title": "No runners available",
   "runners.unavailable.description": "You need at least one healthy runner to execute tests.",
   "runners.unavailable.docs": "Read runner docs",
-  "runners.noBackend": "Backend not connected. Select or configure an active context.",
+  "runners.noBackend": "Backend unavailable. Check the API base and make sure previa-main is running.",
   "runners.loadError": "Error loading runners.",
   "runners.addSuccess": "Runner added successfully!",
   "runners.addError": "Error adding runner.",

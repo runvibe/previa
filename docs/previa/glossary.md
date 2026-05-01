@@ -70,9 +70,9 @@ The root directory where Previa stores binaries, contexts, logs, runtime state, 
 
 Model Context Protocol. In Previa, this is the integration that lets AI assistants inspect and operate the platform through exposed tools and prompts.
 
-## hosted IDE
+## IDE
 
-The browser UI at `https://ide.previa.dev`, which connects to your local `previa-main` through `previa open`.
+The browser UI served by `previa-main`. Embedded builds use `window.location.origin` as the API base; external/PWA builds use `VITE_PREVIA_API_BASE_URL`.
 
 ## See Also
 

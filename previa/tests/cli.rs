@@ -3826,7 +3826,7 @@ fn up_leaves_no_runtime_state_when_compose_startup_fails() {
 }
 
 #[test]
-fn open_launches_app_with_encoded_main_context_url() {
+fn open_launches_local_main_app_url() {
     let temp = setup_fake_docker();
     let stack = "other";
     let stack_dir = temp.path().join("stacks").join(stack);
@@ -3878,7 +3878,7 @@ fn open_launches_app_with_encoded_main_context_url() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     let opened = fs::read_to_string(&capture).expect("captured URL");
-    let expected = "https://ide.previa.dev?add_context=http%3A%2F%2F127.0.0.1%3A5588";
+    let expected = "http://127.0.0.1:5588";
     assert_eq!(opened, expected);
     assert_eq!(stdout.trim(), expected);
 }
@@ -3933,7 +3933,7 @@ fn open_prints_url_when_browser_launch_fails() {
 
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
-    let expected = "https://ide.previa.dev?add_context=http%3A%2F%2F127.0.0.1%3A5588";
+    let expected = "http://127.0.0.1:5588";
 
     assert_eq!(stdout.trim(), expected);
     assert!(stderr.contains("\u{1b}[31m"));

@@ -578,7 +578,7 @@ Notes:
 
 ## `previa open`
 
-Opens the hosted Previa IDE in the browser with the current context attached.
+Opens the Previa UI served by the selected detached `previa-main`.
 
 ```text
 previa open [OPTIONS]
@@ -597,7 +597,8 @@ previa open --context other
 
 Runtime behavior:
 
-- builds a URL like `https://ide.previa.dev?add_context=<main-url>`
+- builds a URL like `http://127.0.0.1:5588`
+- normalizes unspecified bind addresses such as `0.0.0.0` and `::` to loopback
 - opens the default browser
 - prints the final URL to stdout
 - if the browser launcher fails, exits with error, highlights the failure in red, and still prints the final URL for manual opening

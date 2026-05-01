@@ -29,7 +29,7 @@ Previa combines local runtime operations with project-scoped API testing workflo
 - `previa` runs and manages the local stack
 - `previa-main` is the orchestrator API for projects, specs, pipelines, history, proxying, queues, and MCP
 - `previa-runner` executes E2E and load tests
-- the browser IDE at `https://ide.previa.dev` connects to your local `previa-main`
+- the browser IDE is served by `previa-main`; external/PWA builds can point to a main API with `VITE_PREVIA_API_BASE_URL`
 
 In practice, the flow looks like this:
 
@@ -135,8 +135,10 @@ previa local import ./previa-projects.sqlite3
 `previa open` launches:
 
 ```text
-https://ide.previa.dev?add_context=http%3A%2F%2F127.0.0.1%3A5588
+http://127.0.0.1:5588
 ```
+
+The embedded app uses `window.location.origin` as the API base. When the app is built as an external/PWA artifact, set `VITE_PREVIA_API_BASE_URL` at build time to point it at a `previa-main`.
 
 Se o comando de browser falhar, o CLI mantém a saída em erro, destaca a mensagem em vermelho e ainda imprime a URL final para abrir manualmente.
 

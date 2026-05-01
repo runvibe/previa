@@ -31,8 +31,10 @@ previa open
 This opens:
 
 ```text
-https://ide.previa.dev?add_context=<url-encoded-main-url>
+http://127.0.0.1:5588
 ```
+
+The embedded app uses the same origin as its API base.
 
 ## 4. Create a Project Workflow
 

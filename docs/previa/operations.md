@@ -108,7 +108,7 @@ Notes:
 
 ## `previa open`
 
-Open the hosted UI with the current context:
+Open the UI served by the selected detached `previa-main`:
 
 ```bash
 previa open
@@ -118,11 +118,12 @@ previa open --context other
 It opens:
 
 ```text
-https://ide.previa.dev?add_context=<main-url>
+http://127.0.0.1:5588
 ```
 
 If the recorded main address is `0.0.0.0` or `::`, `previa` normalizes it to
-loopback before building the URL.
+loopback before building the URL. The embedded app uses the opened origin as the
+API base.
 
 You can override the browser command with `PREVIA_OPEN_BROWSER`.
 

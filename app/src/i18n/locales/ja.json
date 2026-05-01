@@ -68,7 +68,7 @@
   "runners.summary.healthy": "正常",
   "runners.empty.title": "登録済み runner はありません",
   "runners.empty.description": "Runner endpoint を追加して実行で利用できるようにします。",
-  "runners.noBackend": "Backend に接続されていません。アクティブな context を選択または設定してください。",
+  "runners.noBackend": "Backend を利用できません。API base を確認し、previa-main が実行中であることを確認してください。",
   "runners.loadError": "Runners の読み込みでエラーが発生しました。",
   "runners.addSuccess": "Runner を追加しました！",
   "runners.addError": "Runner の追加でエラーが発生しました。",

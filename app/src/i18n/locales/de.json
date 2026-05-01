@@ -68,7 +68,7 @@
   "runners.summary.healthy": "Gesund",
   "runners.empty.title": "Keine Runner registriert",
   "runners.empty.description": "Fügen Sie einen Runner-Endpoint hinzu, damit er für Ausführungen verfügbar ist.",
-  "runners.noBackend": "Backend nicht verbunden. Wählen oder konfigurieren Sie einen aktiven Kontext.",
+  "runners.noBackend": "Backend nicht verfügbar. Prüfen Sie die API base und stellen Sie sicher, dass previa-main läuft.",
   "runners.loadError": "Fehler beim Laden der Runner.",
   "runners.addSuccess": "Runner erfolgreich hinzugefügt!",
   "runners.addError": "Fehler beim Hinzufügen des Runners.",

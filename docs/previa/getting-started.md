@@ -43,7 +43,7 @@ Check status:
 previa status
 ```
 
-Open the UI with your local context:
+Open the UI served by your local `previa-main`:
 
 ```bash
 previa open
@@ -52,8 +52,10 @@ previa open
 This opens:
 
 ```text
-https://ide.previa.dev?add_context=<your-local-main-url>
+http://127.0.0.1:5588
 ```
+
+The embedded app uses `window.location.origin` as the API base. External/PWA builds use `VITE_PREVIA_API_BASE_URL` when it is defined.
 
 From there, you can:
 

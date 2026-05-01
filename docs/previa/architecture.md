@@ -29,7 +29,8 @@ By default:
 - local `previa-runner` instances start at `127.0.0.1:55880`
 - the MCP endpoint is `http://localhost:5588/mcp` when enabled
 - the embedded app is served by `previa-main` on `/` and `/index` when `PREVIA_APP_ENABLED=true`
-- `previa open` opens `https://ide.previa.dev?add_context=<main-url>`
+- `previa open` opens the selected `previa-main` URL directly
+- the embedded app uses `window.location.origin` as the API base; external/PWA builds use `VITE_PREVIA_API_BASE_URL`
 
 ## Feature Map
 

@@ -8,6 +8,7 @@ describe("project-io imports", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("VITE_PREVIA_API_BASE_URL", "http://127.0.0.1:5588");
     anchors = [];
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
