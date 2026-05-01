@@ -4,15 +4,18 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::core::types::{RuntimeSpec, StepExecutionResult};
+use crate::core::types::{RuntimeEnvGroup, RuntimeSpec, StepExecutionResult};
 use crate::template::helpers::resolve_helper;
 
 pub(crate) fn resolve_template_variables(
     value: &Value,
     context: &HashMap<String, StepExecutionResult>,
     specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
 ) -> Value {
-    let template_context = build_template_context(context, specs);
+    let template_context =
+        build_template_context(context, specs, env_groups, selected_env_group_slug);
     resolve_template_variables_with_context(value, &template_context)
 }
 
@@ -112,6 +115,8 @@ pub(crate) fn normalize_handlebars_expression(expression: &str) -> String {
 pub(crate) fn build_template_context(
     steps: &HashMap<String, StepExecutionResult>,
     specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
 ) -> Value {
     let mut root = Map::new();
 
@@ -151,6 +156,35 @@ pub(crate) fn build_template_context(
     }
     root.insert("specs".to_owned(), Value::Object(specs_map));
 
+    let mut envs_map = Map::new();
+    let selected_slug = selected_env_group_slug
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(env_groups) = env_groups {
+        for group in env_groups {
+            let slug = group.slug.trim();
+            if slug.is_empty() {
+                continue;
+            }
+
+            let mut urls_map = Map::new();
+            for (name, url) in &group.urls {
+                let name = name.trim();
+                let url = url.trim();
+                if name.is_empty() || url.is_empty() {
+                    continue;
+                }
+                urls_map.insert(name.to_owned(), Value::String(url.to_owned()));
+            }
+
+            if selected_slug == Some(slug) {
+                envs_map.insert("current".to_owned(), Value::Object(urls_map.clone()));
+            }
+            envs_map.insert(slug.to_owned(), Value::Object(urls_map));
+        }
+    }
+    root.insert("envs".to_owned(), Value::Object(envs_map));
+
     Value::Object(root)
 }
 
@@ -161,5 +195,68 @@ pub(crate) fn value_to_string(value: &Value) -> Option<String> {
         Value::Bool(b) => Some(b.to_string()),
         Value::Number(n) => Some(n.to_string()),
         _ => Some(value.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::types::RuntimeEnvGroup;
+
+    #[test]
+    fn resolves_explicit_env_group_url_variable() {
+        let env_groups = [RuntimeEnvGroup {
+            slug: "hml".to_owned(),
+            urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+        }];
+        let context = build_template_context(&HashMap::new(), None, Some(&env_groups), Some("hml"));
+        let rendered = resolve_template_variables_with_context(
+            &Value::String("{{envs.hml.api}}/health".to_owned()),
+            &context,
+        );
+        assert_eq!(
+            rendered,
+            Value::String("https://api-hml.example.com/health".to_owned())
+        );
+    }
+
+    #[test]
+    fn resolves_current_env_group_url_variable() {
+        let env_groups = [
+            RuntimeEnvGroup {
+                slug: "local".to_owned(),
+                urls: HashMap::from([("api".to_owned(), "http://localhost:3000".to_owned())]),
+            },
+            RuntimeEnvGroup {
+                slug: "hml".to_owned(),
+                urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+            },
+        ];
+        let context = build_template_context(&HashMap::new(), None, Some(&env_groups), Some("hml"));
+        let rendered = resolve_template_variables_with_context(
+            &Value::String("{{envs.current.api}}/health".to_owned()),
+            &context,
+        );
+        assert_eq!(
+            rendered,
+            Value::String("https://api-hml.example.com/health".to_owned())
+        );
+    }
+
+    #[test]
+    fn leaves_current_env_variable_unresolved_without_selection() {
+        let env_groups = [RuntimeEnvGroup {
+            slug: "hml".to_owned(),
+            urls: HashMap::from([("api".to_owned(), "https://api-hml.example.com".to_owned())]),
+        }];
+        let context = build_template_context(&HashMap::new(), None, Some(&env_groups), None);
+        let rendered = resolve_template_variables_with_context(
+            &Value::String("{{envs.current.api}}/health".to_owned()),
+            &context,
+        );
+        assert_eq!(
+            rendered,
+            Value::String("{{envs.current.api}}/health".to_owned())
+        );
     }
 }
