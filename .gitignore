@@ -4,5 +4,6 @@ target-container
 .env
 .previa
 .previa*
+.superpowers/
 RELEASE_NOTES.md
 app/.git
