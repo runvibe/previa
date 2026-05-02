@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { HelpCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import { HelpCircle, Pencil, Trash2 } from "lucide-react";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, WaveLoadConfig } from "@/types/load-test";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
@@ -99,15 +100,16 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const { t } = useTranslation();
   const initialWave = isWaveLoadConfig(initialConfig) ? initialConfig : defaultWaveConfig();
   const [points, setPoints] = useState<LoadPoint[]>(initialWave.points);
+  const [durationMs, setDurationMs] = useState(Math.max(initialWave.points.at(-1)?.atMs ?? 120_000, 100));
+  const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [interpolation, setInterpolation] = useState<LoadInterpolation>(initialWave.interpolation);
   const [maxInFlight, setMaxInFlight] = useState(initialWave.maxInFlight ?? 200);
   const [gracePeriodMs, setGracePeriodMs] = useState(initialWave.gracePeriodMs ?? 30_000);
   const [selectedEnv, setSelectedEnv] = useState<string | undefined>(undefined);
 
   const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
-  const sortedPoints = normalizeWavePoints(points);
-  const durationMs = sortedPoints.at(-1)?.atMs ?? 0;
-  const maxMs = Math.max(durationMs, 1);
+  const sortedPoints = normalizeWavePoints(points, durationMs);
+  const selectedPoint = sortedPoints[selectedPointIndex] ?? sortedPoints[0];
   const waveConfig: WaveLoadConfig = {
     points: sortedPoints,
     interpolation,
@@ -117,14 +119,21 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
 
   useEffect(() => {
     onConfigChange?.(waveConfig, selectedEnv);
-  }, [points, interpolation, maxInFlight, gracePeriodMs, selectedEnv, onConfigChange]);
+  }, [points, durationMs, interpolation, maxInFlight, gracePeriodMs, selectedEnv, onConfigChange]);
 
   const setPoint = (index: number, patch: Partial<LoadPoint>) => {
     setPoints((current) =>
       normalizeWavePoints(current.map((point, currentIndex) =>
         currentIndex === index ? { ...point, ...patch } : point
-      )),
+      ), durationMs),
     );
+  };
+
+  const setDuration = (nextDurationMs: number) => {
+    const clampedDuration = Math.max(100, Math.round(nextDurationMs));
+    setDurationMs(clampedDuration);
+    setPoints((current) => normalizeWavePoints(current, clampedDuration));
+    setSelectedPointIndex((current) => Math.min(current, points.length - 1));
   };
 
   return (
@@ -139,56 +148,79 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
         <p className="text-[11px] leading-relaxed text-muted-foreground">
           {t("loadTest.wavePoints.hint")}
         </p>
-        <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-2 pr-10 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>{t("loadTest.pointTimeColumn")}</span>
-            <span>{t("loadTest.pointIntensityColumn")}</span>
+        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="load-wave-duration" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("loadTest.duration")}
+            </Label>
+            <Input
+              id="load-wave-duration"
+              type="number"
+              min={100}
+              value={durationMs}
+              onChange={(event) => setDuration(Number(event.target.value))}
+              className="h-8 text-xs"
+              aria-label={t("loadTest.duration")}
+            />
           </div>
-          {sortedPoints.map((point, index) => (
-            <div key={`${point.atMs}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
-              <Input
-                type="number"
-                min={0}
-                value={point.atMs}
-                onChange={(event) => setPoint(index, { atMs: Math.max(0, Number(event.target.value)) })}
-                className="h-8 text-xs"
-                aria-label={t("loadTest.pointTimeMs")}
-              />
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={point.intensity}
-                onChange={(event) => setPoint(index, { intensity: Math.min(100, Math.max(0, Number(event.target.value))) })}
-                className="h-8 text-xs"
-                aria-label={t("loadTest.pointIntensity")}
-              />
+          <span className="pb-2 text-[10px] text-muted-foreground">{formatDurationMs(durationMs)}</span>
+        </div>
+
+        <WaveEditor
+          points={sortedPoints}
+          durationMs={durationMs}
+          selectedPointIndex={selectedPointIndex}
+          onPointsChange={setPoints}
+          onSelectedPointIndex={setSelectedPointIndex}
+        />
+
+        {selectedPoint && (
+          <div className="space-y-2 rounded-md border border-border/60 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("loadTest.selectedPoint")}</p>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 disabled={sortedPoints.length <= 2}
-                onClick={() => setPoints((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                onClick={() => {
+                  setPoints((current) => normalizeWavePoints(current.filter((_, index) => index !== selectedPointIndex), durationMs));
+                  setSelectedPointIndex((current) => Math.max(0, current - 1));
+                }}
                 aria-label={t("loadTest.removePoint")}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
-          ))}
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            const last = sortedPoints.at(-1) ?? { atMs: 0, intensity: 30 };
-            setPoints([...sortedPoints, { atMs: last.atMs + 60_000, intensity: last.intensity }]);
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          {t("loadTest.addPoint")}
-        </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointTimeColumn")}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={durationMs}
+                  value={selectedPoint.atMs}
+                  disabled={selectedPointIndex === 0 || selectedPointIndex === sortedPoints.length - 1}
+                  onChange={(event) => setPoint(selectedPointIndex, { atMs: Math.max(0, Math.min(durationMs, Number(event.target.value))) })}
+                  className="h-8 text-xs"
+                  aria-label={t("loadTest.pointTimeMs")}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointIntensityColumn")}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={selectedPoint.intensity}
+                  onChange={(event) => setPoint(selectedPointIndex, { intensity: Math.min(100, Math.max(0, Number(event.target.value))) })}
+                  className="h-8 text-xs"
+                  aria-label={t("loadTest.pointIntensity")}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -228,37 +260,6 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
         <SliderWithManual value={Math.round(gracePeriodMs / 1000)} onChange={(seconds) => setGracePeriodMs(seconds * 1000)} min={0} max={120} step={1} suffix="s" />
       </div>
 
-      <div className="rounded-md border border-border/60 p-3 text-primary">
-        <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          <span>{t("loadTest.previewIntensityAxis")}</span>
-          <span>{t("loadTest.previewTimeAxis")}</span>
-        </div>
-        <div className="grid grid-cols-[2.75rem_1fr] gap-2">
-          <div className="flex flex-col justify-between py-1 text-[10px] text-muted-foreground">
-            <span>100%</span>
-            <span>0%</span>
-          </div>
-          <svg viewBox="0 0 100 40" className="h-24 w-full" role="img" aria-label={t("loadTest.wavePreview")}>
-            <polyline
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              points={sortedPoints
-                .map((point) => {
-                  const x = (point.atMs / maxMs) * 100;
-                  const y = 40 - (point.intensity / 100) * 40;
-                  return `${x},${y}`;
-                })
-                .join(" ")}
-            />
-          </svg>
-        </div>
-        <div className="ml-[3.25rem] mt-1 flex justify-between text-[10px] text-muted-foreground">
-          <span>0 ms</span>
-          <span>{formatDurationMs(durationMs)}</span>
-        </div>
-      </div>
-
       {selectedEnvGroup && (
         <div className="rounded-md border border-border/60 px-3 py-2">
           <p className="text-[10px] text-muted-foreground">Env group</p>
@@ -276,6 +277,162 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   );
 }
 
+function WaveEditor({
+  points,
+  durationMs,
+  selectedPointIndex,
+  onPointsChange,
+  onSelectedPointIndex,
+}: {
+  points: LoadPoint[];
+  durationMs: number;
+  selectedPointIndex: number;
+  onPointsChange: (points: LoadPoint[]) => void;
+  onSelectedPointIndex: (index: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const draggingIndexRef = useRef<number | null>(null);
+  const plotWidth = 100;
+  const plotHeight = 48;
+  const markerRadius = 2.3;
+  const graphPoints = points.map((point) => pointToGraph(point, durationMs, plotWidth, plotHeight));
+  const pathPoints = graphPoints.map((point) => `${point.x},${point.y}`).join(" ");
+
+  const pointFromEvent = (event: MouseEvent<SVGSVGElement> | PointerEvent<SVGSVGElement>): LoadPoint => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const xRatio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
+    const yRatio = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1);
+    return {
+      atMs: snapMs(xRatio * durationMs),
+      intensity: Math.round((1 - yRatio) * 100),
+    };
+  };
+
+  const updatePoint = (index: number, point: LoadPoint) => {
+    const nextPoint = {
+      atMs: index === 0 ? 0 : index === points.length - 1 ? durationMs : clamp(point.atMs, 0, durationMs),
+      intensity: clamp(point.intensity, 0, 100),
+    };
+    const nextPoints = normalizeWavePoints(points.map((current, currentIndex) => currentIndex === index ? nextPoint : current), durationMs);
+    const nextIndex = nextPoints.findIndex((current) => current.atMs === nextPoint.atMs && current.intensity === nextPoint.intensity);
+    onPointsChange(nextPoints);
+    onSelectedPointIndex(Math.max(0, nextIndex));
+  };
+
+  const addPoint = (point: LoadPoint) => {
+    const nextPoint = {
+      atMs: clamp(point.atMs, 0, durationMs),
+      intensity: clamp(point.intensity, 0, 100),
+    };
+    const nextPoints = normalizeWavePoints([...points, nextPoint], durationMs);
+    onPointsChange(nextPoints);
+    onSelectedPointIndex(nextPoints.findIndex((current) => current.atMs === nextPoint.atMs && current.intensity === nextPoint.intensity));
+  };
+
+  const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    const activeIndex = draggingIndexRef.current;
+    if (activeIndex === null) return;
+    updatePoint(activeIndex, pointFromEvent(event));
+  };
+
+  const handleMouseMove = (event: MouseEvent<SVGSVGElement>) => {
+    const activeIndex = draggingIndexRef.current;
+    if (activeIndex === null) return;
+    updatePoint(activeIndex, pointFromEvent(event));
+  };
+
+  const stopDragging = () => {
+    draggingIndexRef.current = null;
+    setDraggingIndex(null);
+  };
+
+  return (
+    <div className="rounded-md border border-border/60 p-3 text-primary">
+      <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span>{t("loadTest.previewIntensityAxis")}</span>
+        <span>{t("loadTest.previewTimeAxis")}</span>
+      </div>
+      <div className="grid grid-cols-[2.75rem_1fr] gap-2">
+        <div className="flex flex-col justify-between py-1 text-[10px] text-muted-foreground">
+          <span>100%</span>
+          <span>0%</span>
+        </div>
+        <svg
+          data-testid="wave-editor-graph"
+          viewBox={`0 0 ${plotWidth} ${plotHeight}`}
+          className="h-40 w-full cursor-crosshair touch-none rounded bg-muted/20"
+          role="img"
+          aria-label={t("loadTest.wavePreview")}
+          onDoubleClick={(event) => addPoint(pointFromEvent(event))}
+          onMouseMove={handleMouseMove}
+          onMouseUp={stopDragging}
+          onMouseLeave={stopDragging}
+          onPointerMove={handlePointerMove}
+          onPointerUp={stopDragging}
+          onPointerLeave={stopDragging}
+        >
+          {[0.25, 0.5, 0.75].map((line) => (
+            <line
+              key={`h-${line}`}
+              x1="0"
+              x2={plotWidth}
+              y1={plotHeight * line}
+              y2={plotHeight * line}
+              stroke="currentColor"
+              strokeOpacity="0.08"
+              strokeWidth="0.5"
+            />
+          ))}
+          {[0.25, 0.5, 0.75].map((line) => (
+            <line
+              key={`v-${line}`}
+              x1={plotWidth * line}
+              x2={plotWidth * line}
+              y1="0"
+              y2={plotHeight}
+              stroke="currentColor"
+              strokeOpacity="0.08"
+              strokeWidth="0.5"
+            />
+          ))}
+          <polyline fill="none" stroke="currentColor" strokeWidth="1.8" points={pathPoints} />
+          {graphPoints.map((point, index) => (
+            <circle
+              key={`${points[index].atMs}-${points[index].intensity}-${index}`}
+              data-testid={`wave-point-${index}`}
+              cx={point.x}
+              cy={point.y}
+              r={index === selectedPointIndex ? markerRadius + 0.8 : markerRadius}
+              fill="currentColor"
+              stroke="hsl(var(--background))"
+              strokeWidth="0.8"
+              className="cursor-grab"
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                draggingIndexRef.current = index;
+                setDraggingIndex(index);
+                onSelectedPointIndex(index);
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+              }}
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                draggingIndexRef.current = index;
+                setDraggingIndex(index);
+                onSelectedPointIndex(index);
+              }}
+            />
+          ))}
+        </svg>
+      </div>
+      <div className="ml-[3.25rem] mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <span>0 ms</span>
+        <span>{formatDurationMs(durationMs)}</span>
+      </div>
+    </div>
+  );
+}
+
 function defaultWaveConfig(): WaveLoadConfig {
   return {
     points: [
@@ -288,8 +445,20 @@ function defaultWaveConfig(): WaveLoadConfig {
   };
 }
 
-function normalizeWavePoints(points: LoadPoint[]): LoadPoint[] {
-  return [...points].sort((a, b) => a.atMs - b.atMs);
+function normalizeWavePoints(points: LoadPoint[], durationMs: number): LoadPoint[] {
+  const clamped = points.map((point) => ({
+    atMs: clamp(point.atMs, 0, durationMs),
+    intensity: clamp(point.intensity, 0, 100),
+  }));
+  const sorted = clamped.sort((a, b) => a.atMs - b.atMs);
+  const first = sorted[0] ?? { atMs: 0, intensity: 10 };
+  const last = sorted.at(-1) ?? { atMs: durationMs, intensity: first.intensity };
+  const middle = sorted.filter((point) => point.atMs > 0 && point.atMs < durationMs);
+  return [
+    { ...first, atMs: 0 },
+    ...middle,
+    { ...last, atMs: durationMs },
+  ];
 }
 
 function formatDurationMs(ms: number): string {
@@ -297,4 +466,19 @@ function formatDurationMs(ms: number): string {
     return `${ms.toLocaleString()} ms (${Math.round(ms / 1000).toLocaleString()}s)`;
   }
   return `${ms.toLocaleString()} ms`;
+}
+
+function pointToGraph(point: LoadPoint, durationMs: number, width: number, height: number) {
+  return {
+    x: (point.atMs / Math.max(durationMs, 1)) * width,
+    y: height - (point.intensity / 100) * height,
+  };
+}
+
+function snapMs(ms: number): number {
+  return Math.round(ms / 100) * 100;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
