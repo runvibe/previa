@@ -136,7 +136,14 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
             <HelpPopover text={t("loadTest.wavePoints.help")} />
           </div>
         </div>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {t("loadTest.wavePoints.hint")}
+        </p>
         <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2 pr-10 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>{t("loadTest.pointTimeColumn")}</span>
+            <span>{t("loadTest.pointIntensityColumn")}</span>
+          </div>
           {sortedPoints.map((point, index) => (
             <div key={`${point.atMs}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
               <Input
@@ -222,20 +229,34 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
       </div>
 
       <div className="rounded-md border border-border/60 p-3 text-primary">
-        <svg viewBox="0 0 100 40" className="h-24 w-full" role="img" aria-label={t("loadTest.wavePreview")}>
-          <polyline
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            points={sortedPoints
-              .map((point) => {
-                const x = (point.atMs / maxMs) * 100;
-                const y = 40 - (point.intensity / 100) * 40;
-                return `${x},${y}`;
-              })
-              .join(" ")}
-          />
-        </svg>
+        <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span>{t("loadTest.previewIntensityAxis")}</span>
+          <span>{t("loadTest.previewTimeAxis")}</span>
+        </div>
+        <div className="grid grid-cols-[2.75rem_1fr] gap-2">
+          <div className="flex flex-col justify-between py-1 text-[10px] text-muted-foreground">
+            <span>100%</span>
+            <span>0%</span>
+          </div>
+          <svg viewBox="0 0 100 40" className="h-24 w-full" role="img" aria-label={t("loadTest.wavePreview")}>
+            <polyline
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              points={sortedPoints
+                .map((point) => {
+                  const x = (point.atMs / maxMs) * 100;
+                  const y = 40 - (point.intensity / 100) * 40;
+                  return `${x},${y}`;
+                })
+                .join(" ")}
+            />
+          </svg>
+        </div>
+        <div className="ml-[3.25rem] mt-1 flex justify-between text-[10px] text-muted-foreground">
+          <span>0 ms</span>
+          <span>{formatDurationMs(durationMs)}</span>
+        </div>
       </div>
 
       {selectedEnvGroup && (
@@ -269,4 +290,11 @@ function defaultWaveConfig(): WaveLoadConfig {
 
 function normalizeWavePoints(points: LoadPoint[]): LoadPoint[] {
   return [...points].sort((a, b) => a.atMs - b.atMs);
+}
+
+function formatDurationMs(ms: number): string {
+  if (ms >= 1000) {
+    return `${ms.toLocaleString()} ms (${Math.round(ms / 1000).toLocaleString()}s)`;
+  }
+  return `${ms.toLocaleString()} ms`;
 }
