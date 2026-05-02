@@ -257,10 +257,12 @@ pub async fn flush_load_batches(
     load_errors: Arc<Mutex<Vec<String>>>,
     load_context: Arc<LoadEventContext>,
     snapshot_payload: SharedValue<Value>,
+    rps_history: Arc<Mutex<Vec<Value>>>,
 ) {
     let mut interval =
         tokio::time::interval(Duration::from_millis(load_context.batch_window_ms.max(1)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_rps_history_sample_at = 0u64;
 
     loop {
         tokio::select! {
@@ -275,6 +277,16 @@ pub async fn flush_load_batches(
         }
 
         let consolidated = snapshot_consolidated_metrics(&load_latest, &load_latency).await;
+        if let Some(metrics) = consolidated.as_ref() {
+            let sample_at = now_ms();
+            if sample_at.saturating_sub(last_rps_history_sample_at) >= 500 {
+                rps_history
+                    .lock()
+                    .await
+                    .push(build_rps_history_sample(sample_at, metrics));
+                last_rps_history_sample_at = sample_at;
+            }
+        }
         let errors = load_errors.lock().await.clone();
         let latest_lines = snapshot_latest_lines(&load_latest).await;
         snapshot_payload
@@ -293,6 +305,16 @@ pub async fn flush_load_batches(
         );
         let _ = send_sse_best_effort(&tx, "metrics", payload);
     }
+}
+
+fn build_rps_history_sample(timestamp: u64, metrics: &ConsolidatedLoadMetrics) -> Value {
+    json!({
+        "timestamp": timestamp,
+        "rps": metrics.rps,
+        "totalSent": metrics.total_sent,
+        "targetIntensity": metrics.target_intensity,
+        "targetRpsLimit": metrics.target_rps_limit
+    })
 }
 
 async fn refresh_load_snapshot(
@@ -534,10 +556,12 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::server::execution::load_batch::{
-        add_load_context_fields, consolidate_load_metrics, drain_load_chunk, summarize_load_latency,
+        add_load_context_fields, build_rps_history_sample, consolidate_load_metrics,
+        drain_load_chunk, summarize_load_latency,
     };
     use crate::server::models::{
-        LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary, NodePlan, RunnerLoadLine,
+        ConsolidatedLoadMetrics, LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary,
+        NodePlan, RunnerLoadLine,
     };
 
     #[test]
@@ -699,6 +723,38 @@ mod tests {
         assert_eq!(consolidated.avg_latency, 0);
         assert_eq!(consolidated.p95, 0);
         assert_eq!(consolidated.p99, 0);
+    }
+
+    #[test]
+    fn builds_rps_history_sample_with_wave_targets() {
+        let metrics = ConsolidatedLoadMetrics {
+            total_sent: 42,
+            total_success: 40,
+            total_error: 2,
+            rps: 21.5,
+            target_intensity: Some(75.0),
+            target_rps_limit: Some(150.0),
+            in_flight: Some(3),
+            runner_max_rps: Some(200.0),
+            tick_ms: Some(500),
+            avg_latency: 10,
+            p95: 20,
+            p99: 30,
+            start_time: 1_000,
+            elapsed_ms: 2_000,
+            nodes_reporting: 2,
+        };
+
+        assert_eq!(
+            build_rps_history_sample(1_500, &metrics),
+            json!({
+                "timestamp": 1_500,
+                "rps": 21.5,
+                "totalSent": 42,
+                "targetIntensity": 75.0,
+                "targetRpsLimit": 150.0
+            })
+        );
     }
 
     #[test]

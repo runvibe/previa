@@ -362,9 +362,12 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     : null;
   const startTime = toNumber(consolidated?.startTime) ?? aggregated?.startTime ?? Date.now();
   const rps = toNumber(consolidated?.rps) ?? aggregated?.rps ?? 0;
+  const totalSent = toNumber(consolidated?.totalSent) ?? aggregated?.totalSent ?? 0;
+  const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
+  const targetRpsLimit = toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit;
 
   return {
-    totalSent: toNumber(consolidated?.totalSent) ?? aggregated?.totalSent ?? 0,
+    totalSent,
     totalSuccess: toNumber(consolidated?.totalSuccess) ?? aggregated?.totalSuccess ?? 0,
     totalError: toNumber(consolidated?.totalError) ?? aggregated?.totalError ?? 0,
     avgLatency: toNumber(consolidated?.avgLatency) ?? 0,
@@ -372,14 +375,14 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     p99: toNumber(consolidated?.p99) ?? 0,
     rps,
     latencyHistory: [],
-    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps }] : [],
+    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalSent, targetIntensity, targetRpsLimit }] : [],
     runnerResourceHistory: Array.isArray(snapshot.lines)
       ? extractRunnerResourcePoints(snapshot.lines)
       : [],
     startTime,
     elapsedMs: toNumber(consolidated?.elapsedMs) ?? aggregated?.elapsedMs ?? 0,
-    targetIntensity: toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity,
-    targetRpsLimit: toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit,
+    targetIntensity,
+    targetRpsLimit,
     inFlight: toNumber(consolidated?.inFlight) ?? aggregated?.inFlight,
     runnerMaxRps: toNumber(consolidated?.runnerMaxRps) ?? aggregated?.runnerMaxRps,
     tickMs: toNumber(consolidated?.tickMs) ?? aggregated?.tickMs,
@@ -702,6 +705,11 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
 
   let totalSent = 0, totalSuccess = 0, totalError = 0, rpsSum = 0;
   let startTime = Infinity, maxElapsed = 0;
+  let targetIntensityTotal = 0, targetIntensityCount = 0;
+  let targetRpsLimit = 0, hasTargetRpsLimit = false;
+  let inFlight = 0, hasInFlight = false;
+  let runnerMaxRps = 0, hasRunnerMaxRps = false;
+  let tickMs = 0;
 
   for (const p of nodeMap.values()) {
     totalSent += p.totalSent;
@@ -710,9 +718,50 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
     rpsSum += p.rps;
     if (p.startTime < startTime) startTime = p.startTime;
     if (p.elapsedMs > maxElapsed) maxElapsed = p.elapsedMs;
+    if (typeof p.targetIntensity === "number") {
+      targetIntensityTotal += p.targetIntensity;
+      targetIntensityCount += 1;
+    }
+    if (typeof p.targetRpsLimit === "number") {
+      targetRpsLimit += p.targetRpsLimit;
+      hasTargetRpsLimit = true;
+    }
+    if (typeof p.inFlight === "number") {
+      inFlight += p.inFlight;
+      hasInFlight = true;
+    }
+    if (typeof p.runnerMaxRps === "number") {
+      runnerMaxRps += p.runnerMaxRps;
+      hasRunnerMaxRps = true;
+    }
+    if (typeof p.tickMs === "number") {
+      tickMs = Math.max(tickMs, p.tickMs);
+    }
   }
 
-  return { totalSent, totalSuccess, totalError, rps: rpsSum, startTime, elapsedMs: maxElapsed };
+  return {
+    totalSent,
+    totalSuccess,
+    totalError,
+    rps: rpsSum,
+    startTime,
+    elapsedMs: maxElapsed,
+    targetIntensity: targetIntensityCount > 0 ? targetIntensityTotal / targetIntensityCount : undefined,
+    targetRpsLimit: hasTargetRpsLimit ? targetRpsLimit : undefined,
+    inFlight: hasInFlight ? inFlight : undefined,
+    runnerMaxRps: hasRunnerMaxRps ? runnerMaxRps : undefined,
+    tickMs: tickMs > 0 ? tickMs : undefined,
+  };
+}
+
+function buildRpsHistoryPoint(now: number, event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): RpsPoint {
+  return {
+    timestamp: now,
+    rps: consolidated?.rps ?? event.rps,
+    totalSent: consolidated?.totalSent ?? event.totalSent,
+    targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
+    targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
+  };
 }
 
 export function runRemoteLoadTest(
@@ -740,7 +789,7 @@ export function runRemoteLoadTest(
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
     const now = Date.now();
     if (now - lastRpsPointTime >= 500) {
-      rpsHistory.push({ timestamp: now, rps: consolidated?.rps ?? event.rps });
+      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated));
       lastRpsPointTime = now;
     }
     return {
@@ -1095,7 +1144,7 @@ export function reconnectToLoadExecution(
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
     const now = Date.now();
     if (now - lastRpsPointTime >= 500) {
-      rpsHistory.push({ timestamp: now, rps: consolidated?.rps ?? event.rps });
+      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated));
       lastRpsPointTime = now;
     }
     return {

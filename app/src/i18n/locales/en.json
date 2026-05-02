@@ -219,6 +219,8 @@
   "loadTestResults.latencyOverTime": "Latency over time",
   "loadTestResults.latency": "Latency",
   "loadTestResults.rpsOverTime": "RPS over time",
+  "loadTestResults.rpsActual": "Actual RPS",
+  "loadTestResults.rpsTarget": "Target RPS",
   "loadTestResults.elapsed": "Elapsed time: {{seconds}}s",
   "loadTestResults.elapsedLabel": "Time",
   "loadTestResults.nodes": "{{count}} node",

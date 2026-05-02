@@ -3,6 +3,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { buildRpsChartData } from "@/lib/load-rps-chart";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, LoadTestMetrics, LoadTestState, RunnerResourcePoint, WaveLoadConfig } from "@/types/load-test";
 
@@ -133,10 +134,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
     latency: p.latency,
   }));
 
-  const rpsChartData = (metrics.rpsHistory ?? []).map((p) => ({
-    time: Math.round((p.timestamp - metrics.startTime) / 1000),
-    rps: p.rps,
-  }));
+  const rpsChartData = buildRpsChartData(metrics, waveConfig);
+  const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
   const runnerNames = getRunnerNames(runnerResourceHistory);
   const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
@@ -292,7 +291,21 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
       {/* RPS chart */}
       {rpsChartData.length > 1 && (
         <div className="glass rounded-lg p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.rpsOverTime")}</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.rpsOverTime")}</p>
+            <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <span className="h-1.5 w-3 rounded-full bg-success" />
+                {t("loadTestResults.rpsActual")}
+              </span>
+              {hasTargetRpsLine && (
+                <span data-testid="rps-target-legend" className="inline-flex items-center gap-1">
+                  <span className="h-0 w-3 border-t border-dashed border-primary" />
+                  {t("loadTestResults.rpsTarget")}
+                </span>
+              )}
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={100}>
             <AreaChart data={rpsChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -305,9 +318,24 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                   borderRadius: "var(--radius)",
                   fontSize: 11,
                 }}
-                formatter={(v: number) => [v, "RPS"]}
+                formatter={(v: number, name: string) => [
+                  typeof v === "number" ? v.toFixed(1) : v,
+                  name === "targetRpsLimit" ? t("loadTestResults.rpsTarget") : t("loadTestResults.rpsActual"),
+                ]}
+                labelFormatter={(v) => `${v}s`}
               />
               <Area type="monotone" dataKey="rps" stroke="hsl(var(--status-success))" fill="hsl(var(--status-success) / 0.15)" strokeWidth={1.5} />
+              {hasTargetRpsLine && (
+                <Line
+                  type={waveConfig ? waveChartType(waveConfig.interpolation) : "monotone"}
+                  dataKey="targetRpsLimit"
+                  stroke="hsl(var(--primary))"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>

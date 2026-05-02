@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LoadTestResultsPanel } from "@/components/LoadTestResultsPanel";
+import { buildRpsChartData } from "@/lib/load-rps-chart";
 import type { LoadTestMetrics, WaveLoadConfig } from "@/types/load-test";
 
 vi.mock("react-i18next", () => ({
@@ -115,5 +116,64 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("10%")).toBeInTheDocument();
     expect(screen.getByText("80%")).toBeInTheDocument();
     expect(screen.getByText("25%")).toBeInTheDocument();
+  });
+
+  it("builds the RPS chart from interval throughput with target RPS", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      runnerMaxRps: 200,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0, totalSent: 0 },
+        { timestamp: 1_500, rps: 4, totalSent: 5, targetRpsLimit: 20 },
+        { timestamp: 2_500, rps: 10, totalSent: 30, targetRpsLimit: 80 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null)).toEqual([
+      { time: 0, rps: 0, targetRpsLimit: undefined },
+      { time: 1, rps: 10, targetRpsLimit: 20 },
+      { time: 2, rps: 25, targetRpsLimit: 80 },
+    ]);
+  });
+
+  it("estimates target RPS from the configured wave when history has no target samples", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 1_000, intensity: 50 },
+      ],
+      interpolation: "linear",
+    };
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      runnerMaxRps: 200,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0 },
+        { timestamp: 1_500, rps: 4 },
+        { timestamp: 2_000, rps: 10 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, config)).toEqual([
+      { time: 0, rps: 0, targetRpsLimit: 20 },
+      { time: 1, rps: 4, targetRpsLimit: 60 },
+      { time: 1, rps: 10, targetRpsLimit: 100 },
+    ]);
+  });
+
+  it("shows actual and target RPS legend when target data exists", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0, totalSent: 0, targetRpsLimit: 10 },
+        { timestamp: 2_000, rps: 20, totalSent: 20, targetRpsLimit: 80 },
+      ],
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="running" totalRequests={0} />);
+
+    expect(screen.getByText("loadTestResults.rpsActual")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.rpsTarget")).toBeInTheDocument();
+    expect(screen.getByTestId("rps-target-legend")).toBeInTheDocument();
   });
 });

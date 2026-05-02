@@ -219,6 +219,8 @@
   "loadTestResults.latencyOverTime": "Latência ao longo do tempo",
   "loadTestResults.latency": "Latência",
   "loadTestResults.rpsOverTime": "RPS ao longo do tempo",
+  "loadTestResults.rpsActual": "RPS real",
+  "loadTestResults.rpsTarget": "RPS alvo",
   "loadTestResults.elapsed": "Tempo decorrido: {{seconds}}s",
   "loadTestResults.elapsedLabel": "Tempo",
   "loadTestResults.nodes": "{{count}} node",

@@ -514,6 +514,7 @@ pub async fn start_load_execution(
         let load_latency: Arc<Mutex<LoadLatencyAccumulator>> =
             Arc::new(Mutex::new(LoadLatencyAccumulator::default()));
         let load_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let load_rps_history: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
 
         let flush_stop = CancellationToken::new();
         let flush_handle = tokio::spawn(flush_load_batches(
@@ -527,6 +528,7 @@ pub async fn start_load_execution(
             Arc::clone(&load_errors),
             Arc::clone(&load_context),
             exec_ctx.snapshot_payload.clone(),
+            Arc::clone(&load_rps_history),
         ));
 
         let mut handles = Vec::with_capacity(selected_nodes.len());
@@ -625,6 +627,14 @@ pub async fn start_load_execution(
         let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
         let final_lines = snapshot_latest_lines(&load_latest).await;
         let final_consolidated = snapshot_consolidated_metrics(&load_latest, &load_latency).await;
+        let rps_history = load_rps_history.lock().await.clone();
+        let final_consolidated_value = final_consolidated.as_ref().and_then(|value| {
+            let mut json_value = serde_json::to_value(value).ok()?;
+            if let Some(obj) = json_value.as_object_mut() {
+                obj.insert("rpsHistory".to_owned(), Value::Array(rps_history));
+            }
+            Some(json_value)
+        });
         let errors = load_errors.lock().await.clone();
         let status = determine_load_history_status(
             exec_ctx.cancel.is_cancelled(),
@@ -662,8 +672,7 @@ pub async fn start_load_execution(
                     runner_config.as_ref(),
                     runner_load.as_ref(),
                 ),
-                final_consolidated: final_consolidated
-                    .and_then(|value| serde_json::to_value(value).ok()),
+                final_consolidated: final_consolidated_value,
                 final_lines: final_lines
                     .into_iter()
                     .map(|line| serde_json::to_value(line).unwrap_or(Value::Null))

@@ -33,6 +33,9 @@ export interface LatencyPoint {
 export interface RpsPoint {
   timestamp: number;
   rps: number;
+  totalSent?: number;
+  targetIntensity?: number;
+  targetRpsLimit?: number;
 }
 
 export interface RunnerRuntimeInfo {
