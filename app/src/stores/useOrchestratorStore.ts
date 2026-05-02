@@ -34,6 +34,12 @@ interface OrchestratorState {
 
 const CURRENT_CONTEXT_ID = "current";
 
+function timeoutSignal(timeoutMs: number): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+    ? AbortSignal.timeout(timeoutMs)
+    : undefined;
+}
+
 function currentContext(name = "current"): OrchestratorContext {
   return {
     id: CURRENT_CONTEXT_ID,
@@ -67,7 +73,7 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => {
     fetchInfo: async () => {
       try {
         const base = resolveApiBaseUrl();
-        const res = await fetch(`${base}/info`, { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(`${base}/info`, { signal: timeoutSignal(8000) });
         if (!res.ok) {
           set({ info: null });
           return null;

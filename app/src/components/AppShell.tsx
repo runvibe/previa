@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { CircleHelp, EllipsisVertical, Github, Server } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 
@@ -82,6 +82,7 @@ export function RunnerNavButton({
 export function AppShell() {
   const navigate = useNavigate();
   const orchestratorInfo = useOrchestratorStore((state) => state.info);
+  const fetchOrchestratorInfo = useOrchestratorStore((state) => state.fetchInfo);
   const [headerConfig, setHeaderConfigState] = useState<AppHeaderConfig>({});
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
@@ -92,6 +93,10 @@ export function AppShell() {
       isSameHeaderConfig(currentConfig, nextConfig) ? currentConfig : nextConfig
     ));
   }, []);
+
+  useEffect(() => {
+    void fetchOrchestratorInfo();
+  }, [fetchOrchestratorInfo]);
 
   const handleOpenOnboarding = useCallback(() => {
     setIsMobileActionsOpen(false);
