@@ -70,5 +70,6 @@ describe("TestModeSidebar", () => {
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip).not.toHaveClass("glass", "bg-popover", "backdrop-blur-xl");
     expect(tooltip).toHaveClass("bg-[hsl(var(--popover))]", "z-[2147483647]");
+    expect(tooltip.parentElement).toBe(document.body);
   });
 });

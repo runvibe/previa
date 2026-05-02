@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { PanelLeftClose, PanelLeftOpen, Workflow, Zap } from "lucide-react";
 
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,13 +16,28 @@ const testModes = [
   { value: "loadtest", label: "Load Test", icon: Zap },
 ];
 
+interface TooltipState {
+  label: string;
+  left: number;
+  top: number;
+}
+
 export function TestModeSidebar({
   compact = false,
   collapsed = false,
   onCollapsedChange,
 }: TestModeSidebarProps) {
   const isCollapsed = collapsed;
-  const [tooltipLabel, setTooltipLabel] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  const showTooltip = (label: string, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    setTooltip({
+      label,
+      left: rect.right + 8,
+      top: rect.top + rect.height / 2,
+    });
+  };
 
   return (
     <aside
@@ -52,47 +68,39 @@ export function TestModeSidebar({
           !compact && "flex w-full flex-col gap-1",
         )}
       >
-        {testModes.map(({ value, label, icon: Icon }) => {
-          const trigger = (
-            <TabsTrigger
-              key={value}
-              value={value}
-              aria-label={isCollapsed ? label : undefined}
-              title={isCollapsed ? label : undefined}
-              onMouseEnter={() => isCollapsed && setTooltipLabel(label)}
-              onMouseLeave={() => setTooltipLabel((current) => current === label ? null : current)}
-              onFocus={() => isCollapsed && setTooltipLabel(label)}
-              onBlur={() => setTooltipLabel((current) => current === label ? null : current)}
-              className={cn(
-                "group gap-2 text-xs text-muted-foreground shadow-none data-[state=active]:!bg-primary/15 data-[state=active]:!text-primary data-[state=active]:shadow-none",
-                "hover:text-foreground",
-                compact && (isCollapsed ? "h-9 w-10 px-0" : "px-3"),
-                !compact && "h-10 w-full px-3",
-                isCollapsed ? "justify-center px-0" : "justify-start",
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {!isCollapsed && <span className="truncate">{label}</span>}
-            </TabsTrigger>
-          );
-
-          if (!isCollapsed) return trigger;
-
-          return (
-            <div key={value} className="relative flex w-full justify-center">
-              {trigger}
-              {tooltipLabel === label && (
-                <div
-                  role="tooltip"
-                  className="absolute left-full top-1/2 z-[2147483647] ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-popover-foreground shadow-xl"
-                >
-                  {label}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {testModes.map(({ value, label, icon: Icon }) => (
+          <TabsTrigger
+            key={value}
+            value={value}
+            aria-label={isCollapsed ? label : undefined}
+            title={isCollapsed ? label : undefined}
+            onMouseEnter={(event) => isCollapsed && showTooltip(label, event.currentTarget)}
+            onMouseLeave={() => setTooltip((current) => current?.label === label ? null : current)}
+            onFocus={(event) => isCollapsed && showTooltip(label, event.currentTarget)}
+            onBlur={() => setTooltip((current) => current?.label === label ? null : current)}
+            className={cn(
+              "group gap-2 text-xs text-muted-foreground shadow-none data-[state=active]:!bg-primary/15 data-[state=active]:!text-primary data-[state=active]:shadow-none",
+              "hover:text-foreground",
+              compact && (isCollapsed ? "h-9 w-10 px-0" : "px-3"),
+              !compact && "h-10 w-full px-3",
+              isCollapsed ? "justify-center px-0" : "justify-start",
+            )}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {!isCollapsed && <span className="truncate">{label}</span>}
+          </TabsTrigger>
+        ))}
       </TabsList>
+      {isCollapsed && tooltip ? createPortal(
+        <div
+          role="tooltip"
+          className="fixed z-[2147483647] -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-[hsl(var(--popover))] px-3 py-1.5 text-xs text-popover-foreground shadow-xl"
+          style={{ left: tooltip.left, top: tooltip.top }}
+        >
+          {tooltip.label}
+        </div>,
+        document.body,
+      ) : null}
     </aside>
   );
 }
