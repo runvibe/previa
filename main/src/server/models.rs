@@ -670,6 +670,8 @@ pub struct RunnerLoadLine {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsolidatedLoadMetrics {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_started: Option<usize>,
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,
@@ -749,6 +751,7 @@ pub struct E2eHistoryAccumulator {
 
 #[derive(Debug, Clone)]
 pub struct RunnerLoadMetricsPoint {
+    pub total_started: Option<usize>,
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,

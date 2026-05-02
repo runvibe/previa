@@ -51,9 +51,13 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
     const previous = history[index - 1];
     const elapsedMs = point.timestamp - metrics.startTime;
     const intervalSeconds = previous ? (point.timestamp - previous.timestamp) / 1000 : 0;
-    const hasTotals = previous?.totalSent !== undefined && point.totalSent !== undefined;
-    const intervalRps = hasTotals && intervalSeconds > 0
-      ? Math.max(0, (point.totalSent - previous.totalSent) / intervalSeconds)
+    const hasStartedTotals = previous?.totalStarted !== undefined && point.totalStarted !== undefined;
+    const hasSentTotals = previous?.totalSent !== undefined && point.totalSent !== undefined;
+    const currentTotal = hasStartedTotals ? point.totalStarted : point.totalSent;
+    const previousTotal = hasStartedTotals ? previous?.totalStarted : previous?.totalSent;
+    const hasTotals = hasStartedTotals || hasSentTotals;
+    const intervalRps = hasTotals && intervalSeconds > 0 && currentTotal !== undefined && previousTotal !== undefined
+      ? Math.max(0, (currentTotal - previousTotal) / intervalSeconds)
       : point.rps;
 
     return {

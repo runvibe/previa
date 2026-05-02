@@ -218,6 +218,11 @@ async fn run_classic_load(
                     break;
                 }
 
+                {
+                    let mut lock = metrics.lock().await;
+                    lock.record_start();
+                }
+
                 let start = Instant::now();
                 let results = execute_pipeline_with_runtime_hooks(
                     &pipeline,
@@ -320,6 +325,7 @@ async fn run_wave_load(
         let target_intensity = sample_intensity(&load, elapsed_ms);
         let target_rps_limit = local_rps_limit(&load, elapsed_ms);
         bucket.refill(target_rps_limit, elapsed_ms);
+        let mut launched = 0usize;
 
         while in_flight.load(Ordering::SeqCst) < load.max_in_flight && bucket.try_acquire() {
             let pipeline = pipeline.clone();
@@ -341,6 +347,11 @@ async fn run_wave_load(
             };
 
             in_flight.fetch_add(1, Ordering::SeqCst);
+            launched += 1;
+            {
+                let mut lock = metrics.lock().await;
+                lock.record_start();
+            }
             tasks.spawn(async move {
                 let start = Instant::now();
                 let results = execute_pipeline_with_runtime_hooks(
@@ -375,6 +386,33 @@ async fn run_wave_load(
                     &token,
                 );
             });
+        }
+
+        if launched > 0 {
+            let runtime = {
+                let mut lock = runtime_sampler.lock().await;
+                lock.snapshot()
+            };
+            let snapshot = {
+                let lock = metrics.lock().await;
+                lock.snapshot_with_wave(
+                    None,
+                    runtime,
+                    Some(crate::server::metrics::WaveMetricsSnapshot {
+                        target_intensity,
+                        target_rps_limit,
+                        in_flight: in_flight.load(Ordering::SeqCst),
+                        runner_max_rps: load.runner_max_rps,
+                        tick_ms,
+                    }),
+                )
+            };
+            let _ = send_sse_or_cancel(
+                &tx,
+                "metrics",
+                serde_json::to_value(snapshot).unwrap_or(Value::Null),
+                &token,
+            );
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(tick_ms)).await;

@@ -784,6 +784,7 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
   const consolidated = r.finalConsolidated as any;
 
   const metrics: LoadTestMetrics = {
+    totalStarted: consolidated?.totalStarted,
     totalSent: consolidated?.totalSent ?? 0,
     totalSuccess: consolidated?.totalSuccess ?? 0,
     totalError: consolidated?.totalError ?? 0,

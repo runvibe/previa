@@ -192,6 +192,7 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
   if (!isSseObject(value)) return null;
 
   const totalSent = toNumber(value.totalSent);
+  const totalStarted = toNumber(value.totalStarted);
   const totalSuccess = toNumber(value.totalSuccess);
   const totalError = toNumber(value.totalError);
   const rps = toNumber(value.rps);
@@ -207,6 +208,7 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
 
   return {
     totalSent: totalSent ?? 0,
+    totalStarted,
     totalSuccess: totalSuccess ?? 0,
     totalError: totalError ?? 0,
     rps: rps ?? 0,
@@ -309,6 +311,9 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
           : acc.targetIntensity;
       return {
         totalSent: acc.totalSent + item.totalSent,
+        totalStarted: item.totalStarted !== undefined
+          ? (acc.totalStarted ?? 0) + item.totalStarted
+          : acc.totalStarted,
         totalSuccess: acc.totalSuccess + item.totalSuccess,
         totalError: acc.totalError + item.totalError,
         rps: acc.rps + item.rps,
@@ -363,11 +368,13 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const startTime = toNumber(consolidated?.startTime) ?? aggregated?.startTime ?? Date.now();
   const rps = toNumber(consolidated?.rps) ?? aggregated?.rps ?? 0;
   const totalSent = toNumber(consolidated?.totalSent) ?? aggregated?.totalSent ?? 0;
+  const totalStarted = toNumber(consolidated?.totalStarted) ?? aggregated?.totalStarted;
   const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
   const targetRpsLimit = toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit;
 
   return {
     totalSent,
+    totalStarted,
     totalSuccess: toNumber(consolidated?.totalSuccess) ?? aggregated?.totalSuccess ?? 0,
     totalError: toNumber(consolidated?.totalError) ?? aggregated?.totalError ?? 0,
     avgLatency: toNumber(consolidated?.avgLatency) ?? 0,
@@ -375,7 +382,7 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     p99: toNumber(consolidated?.p99) ?? 0,
     rps,
     latencyHistory: [],
-    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalSent, targetIntensity, targetRpsLimit }] : [],
+    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalStarted, totalSent, targetIntensity, targetRpsLimit }] : [],
     runnerResourceHistory: Array.isArray(snapshot.lines)
       ? extractRunnerResourcePoints(snapshot.lines)
       : [],
@@ -704,6 +711,7 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
   if (nodeMap.size === 0) return null;
 
   let totalSent = 0, totalSuccess = 0, totalError = 0, rpsSum = 0;
+  let totalStarted = 0, hasTotalStarted = false;
   let startTime = Infinity, maxElapsed = 0;
   let targetIntensityTotal = 0, targetIntensityCount = 0;
   let targetRpsLimit = 0, hasTargetRpsLimit = false;
@@ -713,6 +721,10 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
 
   for (const p of nodeMap.values()) {
     totalSent += p.totalSent;
+    if (typeof p.totalStarted === "number") {
+      totalStarted += p.totalStarted;
+      hasTotalStarted = true;
+    }
     totalSuccess += p.totalSuccess;
     totalError += p.totalError;
     rpsSum += p.rps;
@@ -741,6 +753,7 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
 
   return {
     totalSent,
+    totalStarted: hasTotalStarted ? totalStarted : undefined,
     totalSuccess,
     totalError,
     rps: rpsSum,
@@ -758,6 +771,7 @@ function buildRpsHistoryPoint(now: number, event: RemoteMetricsEvent, consolidat
   return {
     timestamp: now,
     rps: consolidated?.rps ?? event.rps,
+    totalStarted: consolidated?.totalStarted ?? event.totalStarted,
     totalSent: consolidated?.totalSent ?? event.totalSent,
     targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
     targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
@@ -794,6 +808,7 @@ export function runRemoteLoadTest(
     }
     return {
       totalSent: consolidated?.totalSent ?? event.totalSent,
+      totalStarted: consolidated?.totalStarted ?? event.totalStarted,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,
@@ -1149,6 +1164,7 @@ export function reconnectToLoadExecution(
     }
     return {
       totalSent: consolidated?.totalSent ?? event.totalSent,
+      totalStarted: consolidated?.totalStarted ?? event.totalStarted,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,

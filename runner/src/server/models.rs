@@ -90,6 +90,7 @@ pub struct E2eSummary {
 #[derive(Debug, Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestMetrics {
+    pub total_started: usize,
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,

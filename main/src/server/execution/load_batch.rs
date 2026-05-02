@@ -311,6 +311,7 @@ fn build_rps_history_sample(timestamp: u64, metrics: &ConsolidatedLoadMetrics) -
     json!({
         "timestamp": timestamp,
         "rps": metrics.rps,
+        "totalStarted": metrics.total_started,
         "totalSent": metrics.total_sent,
         "targetIntensity": metrics.target_intensity,
         "targetRpsLimit": metrics.target_rps_limit
@@ -379,6 +380,8 @@ pub fn consolidate_load_metrics(
     latency: LoadLatencySummary,
 ) -> Option<ConsolidatedLoadMetrics> {
     let mut total_sent = 0usize;
+    let mut total_started = 0usize;
+    let mut total_started_nodes = 0usize;
     let mut total_success = 0usize;
     let mut total_error = 0usize;
     let mut rps = 0.0f64;
@@ -397,6 +400,10 @@ pub fn consolidate_load_metrics(
             continue;
         };
 
+        if let Some(value) = metrics.total_started {
+            total_started = total_started.saturating_add(value);
+            total_started_nodes += 1;
+        }
         total_sent = total_sent.saturating_add(metrics.total_sent);
         total_success = total_success.saturating_add(metrics.total_success);
         total_error = total_error.saturating_add(metrics.total_error);
@@ -427,6 +434,7 @@ pub fn consolidate_load_metrics(
     }
 
     Some(ConsolidatedLoadMetrics {
+        total_started: (total_started_nodes > 0).then_some(total_started),
         total_sent,
         total_success,
         total_error,
@@ -653,6 +661,7 @@ mod tests {
                     received_at: 1,
                     payload: json!({
                         "totalSent": 100,
+                        "totalStarted": 120,
                         "totalSuccess": 90,
                         "totalError": 10,
                         "rps": 50.5,
@@ -669,6 +678,7 @@ mod tests {
                     received_at: 2,
                     payload: json!({
                         "totalSent": 70,
+                        "totalStarted": 80,
                         "totalSuccess": 70,
                         "totalError": 0,
                         "rps": 30.0,
@@ -687,6 +697,7 @@ mod tests {
 
         let consolidated =
             consolidate_load_metrics(&latest, latency_summary).expect("expected consolidated data");
+        assert_eq!(consolidated.total_started, Some(200));
         assert_eq!(consolidated.total_sent, 170);
         assert_eq!(consolidated.total_success, 160);
         assert_eq!(consolidated.total_error, 10);
@@ -728,6 +739,7 @@ mod tests {
     #[test]
     fn builds_rps_history_sample_with_wave_targets() {
         let metrics = ConsolidatedLoadMetrics {
+            total_started: Some(45),
             total_sent: 42,
             total_success: 40,
             total_error: 2,
@@ -750,6 +762,7 @@ mod tests {
             json!({
                 "timestamp": 1_500,
                 "rps": 21.5,
+                "totalStarted": 45,
                 "totalSent": 42,
                 "targetIntensity": 75.0,
                 "targetRpsLimit": 150.0

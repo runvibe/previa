@@ -33,6 +33,7 @@ export interface LatencyPoint {
 export interface RpsPoint {
   timestamp: number;
   rps: number;
+  totalStarted?: number;
   totalSent?: number;
   targetIntensity?: number;
   targetRpsLimit?: number;
@@ -63,6 +64,7 @@ export interface RunnerResourcePoint {
 
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */
 export interface RemoteMetricsEvent {
+  totalStarted?: number;
   totalSent: number;
   totalSuccess: number;
   totalError: number;
@@ -79,6 +81,7 @@ export interface RemoteMetricsEvent {
 
 /** Rich client-side metrics used by UI & storage. */
 export interface LoadTestMetrics {
+  totalStarted?: number;
   totalSent: number;
   totalSuccess: number;
   totalError: number;
@@ -100,6 +103,7 @@ export interface LoadTestMetrics {
 
 /** Consolidated metrics sent by the orchestrator (includes percentiles). */
 export interface ConsolidatedLoadMetrics {
+  totalStarted?: number;
   totalSent: number;
   totalSuccess: number;
   totalError: number;

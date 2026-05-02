@@ -136,6 +136,23 @@ describe("LoadTestResultsPanel", () => {
     ]);
   });
 
+  it("prefers started throughput for the RPS chart when it is available", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0, totalSent: 0, totalStarted: 0 },
+        { timestamp: 2_000, rps: 0, totalSent: 0, totalStarted: 50, targetRpsLimit: 50 },
+        { timestamp: 3_000, rps: 2, totalSent: 2, totalStarted: 100, targetRpsLimit: 50 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null)).toEqual([
+      { time: 0, rps: 0, targetRpsLimit: undefined },
+      { time: 1, rps: 50, targetRpsLimit: 50 },
+      { time: 2, rps: 50, targetRpsLimit: 50 },
+    ]);
+  });
+
   it("estimates target RPS from the configured wave when history has no target samples", () => {
     const config: WaveLoadConfig = {
       points: [

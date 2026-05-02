@@ -13,6 +13,7 @@ pub struct WaveMetricsSnapshot {
 
 #[derive(Debug)]
 pub struct MetricsAccumulator {
+    total_started: usize,
     total_sent: usize,
     total_success: usize,
     total_error: usize,
@@ -24,6 +25,7 @@ pub struct MetricsAccumulator {
 impl MetricsAccumulator {
     pub fn new() -> Self {
         Self {
+            total_started: 0,
             total_sent: 0,
             total_success: 0,
             total_error: 0,
@@ -31,6 +33,10 @@ impl MetricsAccumulator {
             network_tx_bytes: 0,
             network_rx_bytes: 0,
         }
+    }
+
+    pub fn record_start(&mut self) {
+        self.total_started += 1;
     }
 
     pub fn update(&mut self, _duration: f64, success: bool) {
@@ -80,6 +86,7 @@ impl MetricsAccumulator {
         });
 
         LoadTestMetrics {
+            total_started: self.total_started,
             total_sent: self.total_sent,
             total_success: self.total_success,
             total_error: self.total_error,
@@ -174,6 +181,18 @@ mod tests {
 
         assert_eq!(snapshot.total_sent, 1);
         assert_eq!(snapshot.duration_ms, Some(150));
+    }
+
+    #[test]
+    fn snapshot_includes_started_count_before_completion() {
+        let mut metrics = MetricsAccumulator::new();
+        metrics.record_start();
+        metrics.record_start();
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.total_started, 2);
+        assert_eq!(snapshot.total_sent, 0);
     }
 
     #[test]

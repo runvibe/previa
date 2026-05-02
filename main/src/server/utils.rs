@@ -30,6 +30,7 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
     let elapsed_ms = get_u64_field(payload, "elapsedMs")?;
 
     Some(RunnerLoadMetricsPoint {
+        total_started: get_usize_field(payload, "totalStarted"),
         total_sent,
         total_success,
         total_error,
