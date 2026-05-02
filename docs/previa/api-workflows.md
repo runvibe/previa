@@ -57,7 +57,7 @@ curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/e2e \
 ```bash
 curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/load \
   -H 'content-type: application/json' \
-  -d "{\"pipelineId\":\"$PIPELINE_ID\",\"selectedBaseUrlKey\":\"hml\",\"config\":{\"totalRequests\":1000,\"concurrency\":20,\"rampUpSeconds\":10},\"specs\":[]}"
+  -d "{\"pipelineId\":\"$PIPELINE_ID\",\"selectedBaseUrlKey\":\"hml\",\"load\":{\"points\":[{\"atMs\":0,\"intensity\":10},{\"atMs\":60000,\"intensity\":80},{\"atMs\":120000,\"intensity\":30}],\"interpolation\":\"smooth\",\"maxInFlight\":200,\"gracePeriodMs\":30000},\"specs\":[]}"
 ```
 
 ## 6. Run an E2E Queue

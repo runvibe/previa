@@ -16,8 +16,8 @@ use crate::server::execution::{
     snapshot_latest_lines, split_even,
 };
 use crate::server::models::{
-    HistoryMetadata, LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadTestRequest,
-    LoadProfile, LoadTestConfig, RunnerLoadLine, RunnerLoadPlanItem, SseMessage,
+    HistoryMetadata, LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadProfile,
+    LoadTestConfig, LoadTestRequest, RunnerLoadLine, RunnerLoadPlanItem, SseMessage,
 };
 use crate::server::state::{
     AppState, EXECUTION_SSE_BUFFER_SIZE, ExecutionCtx, ExecutionKind, LOAD_BATCH_WINDOW_MS,
@@ -323,22 +323,22 @@ pub async fn start_load_execution(
                     .try_acquire(&history_execution_id, &active_nodes)
                     .await
                 {
-	                    AcquireOutcome::Reserved(runners) => break (runners, active_nodes, true),
-	                    AcquireOutcome::Pending { position } => {
-	                        let queued_context_config = load_context_config(
-	                            runner_config.as_ref(),
-	                            runner_load.as_ref(),
-	                            active_nodes.len(),
-	                            state_clone.rps_per_node,
-	                        );
-	                        let queued_payload = build_queued_load_payload(
-	                            &history_execution_id,
-	                            &registered_nodes,
-	                            &active_nodes,
-	                            &queued_context_config,
-	                            &plan,
-	                            position,
-	                        );
+                    AcquireOutcome::Reserved(runners) => break (runners, active_nodes, true),
+                    AcquireOutcome::Pending { position } => {
+                        let queued_context_config = load_context_config(
+                            runner_config.as_ref(),
+                            runner_load.as_ref(),
+                            active_nodes.len(),
+                            state_clone.rps_per_node,
+                        );
+                        let queued_payload = build_queued_load_payload(
+                            &history_execution_id,
+                            &registered_nodes,
+                            &active_nodes,
+                            &queued_context_config,
+                            &plan,
+                            position,
+                        );
                         exec_ctx.init_payload.set(queued_payload.clone()).await;
                         let queued_context = extract_load_context_value(&queued_payload);
                         exec_ctx
@@ -387,12 +387,12 @@ pub async fn start_load_execution(
             planning.total_requests,
             planning.concurrency,
         );
-        let split_requests = runner_config.as_ref().map(|config| {
-            split_even(config.total_requests.max(1), selected_nodes.len())
-        });
-        let split_concurrency = runner_config.as_ref().map(|config| {
-            split_even(config.concurrency.max(1), selected_nodes.len())
-        });
+        let split_requests = runner_config
+            .as_ref()
+            .map(|config| split_even(config.total_requests.max(1), selected_nodes.len()));
+        let split_concurrency = runner_config
+            .as_ref()
+            .map(|config| split_even(config.concurrency.max(1), selected_nodes.len()));
         let desired_total_requests = runner_config
             .as_ref()
             .map(|config| {

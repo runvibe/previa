@@ -6,9 +6,9 @@ use previa_runner::{
 };
 
 use crate::server::models::{
-    E2eSummary, E2eTestRequest, ErrorResponse, ExecutionInitEvent, LoadInterpolation,
-    LoadPoint, LoadProfile, LoadTestConfig, LoadTestMetrics, LoadTestRequest,
-    RunnerInfoResponse, StepStartEvent,
+    E2eSummary, E2eTestRequest, ErrorResponse, ExecutionInitEvent, LoadInterpolation, LoadPoint,
+    LoadProfile, LoadTestConfig, LoadTestMetrics, LoadTestRequest, RunnerInfoResponse,
+    StepStartEvent,
 };
 
 #[derive(OpenApi)]

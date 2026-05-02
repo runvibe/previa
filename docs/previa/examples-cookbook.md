@@ -70,12 +70,15 @@ curl -sS http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/e2e/queue \
   -d '{"pipelineIds":["login","checkout","cleanup"],"selectedBaseUrlKey":"hml","specs":[]}'
 ```
 
-## Load Baseline
+## Wave Load Baseline
+
+Wave load tests use elapsed time and intensity percentage. A runner treats
+`100%` as its configured safe RPS capacity.
 
 ```bash
 curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/load \
   -H 'content-type: application/json' \
-  -d '{"pipelineId":"users-crud","selectedBaseUrlKey":"hml","config":{"totalRequests":500,"concurrency":10,"rampUpSeconds":5},"specs":[]}'
+  -d '{"pipelineId":"users-crud","selectedBaseUrlKey":"hml","load":{"points":[{"atMs":0,"intensity":30},{"atMs":300000,"intensity":30}],"interpolation":"smooth","maxInFlight":200,"gracePeriodMs":30000},"specs":[]}'
 ```
 
 ## Repository Import

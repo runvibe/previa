@@ -48,7 +48,9 @@ An execution of a pipeline to validate a real end-to-end workflow.
 
 ## load test
 
-A pipeline execution repeated under load with concurrency and ramp-up settings.
+A pipeline execution repeated under a timeline-based wave of load intensity.
+The wave maps elapsed time to an intensity percentage, and runners translate
+that percentage into local request flow using their configured safe capacity.
 
 ## queue
 

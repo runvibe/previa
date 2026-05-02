@@ -13,9 +13,7 @@ use tokio::task::JoinSet;
 use tracing::error;
 use uuid::Uuid;
 
-use previa_runner::{
-    Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_hooks,
-};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_hooks};
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::load_bucket::FlowBucket;
@@ -235,8 +233,7 @@ async fn run_classic_load(
                 let duration_ms = start.elapsed().as_millis() as u64;
                 let duration = duration_ms as f64;
                 let success = !results.iter().any(|r| r.status == "error");
-                let (network_tx_bytes, network_rx_bytes) =
-                    estimate_results_network_bytes(&results);
+                let (network_tx_bytes, network_rx_bytes) = estimate_results_network_bytes(&results);
                 let runtime = {
                     let mut lock = runtime_sampler.lock().await;
                     lock.snapshot()
@@ -359,8 +356,7 @@ async fn run_wave_load(
                 .await;
                 let duration_ms = start.elapsed().as_millis() as u64;
                 let success = !results.iter().any(|result| result.status == "error");
-                let (network_tx_bytes, network_rx_bytes) =
-                    estimate_results_network_bytes(&results);
+                let (network_tx_bytes, network_rx_bytes) = estimate_results_network_bytes(&results);
                 let runtime = {
                     let mut lock = runtime_sampler.lock().await;
                     lock.snapshot()
@@ -432,9 +428,7 @@ async fn run_wave_load(
     }
 }
 
-async fn try_join_finished(
-    tasks: &mut JoinSet<()>,
-) -> Option<Result<(), tokio::task::JoinError>> {
+async fn try_join_finished(tasks: &mut JoinSet<()>) -> Option<Result<(), tokio::task::JoinError>> {
     match tokio::time::timeout(tokio::time::Duration::from_millis(0), tasks.join_next()).await {
         Ok(result) => result,
         Err(_) => None,
