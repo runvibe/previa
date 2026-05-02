@@ -17,7 +17,7 @@ use crate::server::execution::{
 };
 use crate::server::models::{
     HistoryMetadata, LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadTestRequest,
-    RunnerLoadLine, RunnerLoadPlanItem, SseMessage,
+    LoadProfile, LoadTestConfig, RunnerLoadLine, RunnerLoadPlanItem, SseMessage,
 };
 use crate::server::state::{
     AppState, EXECUTION_SSE_BUFFER_SIZE, ExecutionCtx, ExecutionKind, LOAD_BATCH_WINDOW_MS,
@@ -46,6 +46,13 @@ pub struct StartedLoadExecution {
     pub completion: oneshot::Receiver<LoadExecutionOutcome>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LoadPlanningValues {
+    target_rps: u64,
+    total_requests: usize,
+    concurrency: usize,
+}
+
 pub async fn start_load_execution(
     state: AppState,
     payload: LoadTestRequest,
@@ -55,6 +62,14 @@ pub async fn start_load_execution(
         return Err(StartLoadExecutionError::BadRequest(
             "pipeline must contain at least one step".to_owned(),
         ));
+    }
+    if payload.load.is_none() && payload.config.is_none() {
+        return Err(StartLoadExecutionError::BadRequest(
+            "either load or config must be provided".to_owned(),
+        ));
+    }
+    if let Some(load) = payload.load.as_ref() {
+        validate_main_load_profile(load)?;
     }
 
     let runner_statuses =
@@ -82,14 +97,19 @@ pub async fn start_load_execution(
         ));
     }
 
-    let target_rps = (payload.config.concurrency as u64).max(1);
+    let planning = load_planning_values(
+        payload.config.as_ref(),
+        payload.load.as_ref(),
+        active_nodes.len(),
+        state.rps_per_node,
+    );
 
     let plan = calculate_node_plan(
-        target_rps,
+        planning.target_rps,
         state.rps_per_node,
         active_nodes.len(),
-        payload.config.total_requests.max(1),
-        payload.config.concurrency.max(1),
+        planning.total_requests,
+        planning.concurrency,
     );
 
     let selected_nodes: Vec<String> = active_nodes.iter().take(plan.nodes_used).cloned().collect();
@@ -141,7 +161,11 @@ pub async fn start_load_execution(
     let runner_selected_base_url_key = payload.selected_base_url_key.clone();
     let runner_selected_env_group_slug = payload.selected_env_group_slug.clone();
     let runner_config = payload.config.clone();
-    let runner_ramp_up_seconds = runner_config.ramp_up_seconds;
+    let runner_load = payload.load.clone();
+    let runner_ramp_up_seconds = runner_config
+        .as_ref()
+        .map(|config| config.ramp_up_seconds)
+        .unwrap_or(0.0);
     let history_pipeline_id = payload.pipeline.id.clone();
     let history_pipeline_name = payload.pipeline.name.clone();
     let history_selected_base_url_key = payload.selected_base_url_key.clone();
@@ -152,6 +176,7 @@ pub async fn start_load_execution(
         "specs": runtime_specs.clone(),
         "envGroups": runtime_env_groups.clone(),
         "config": runner_config.clone(),
+        "load": runner_load.clone(),
         "projectId": history_metadata.project_id.clone(),
         "pipelineIndex": history_metadata.pipeline_index
     });
@@ -181,20 +206,26 @@ pub async fn start_load_execution(
         .scheduler
         .try_acquire(&orchestrator_execution_id, &active_nodes)
         .await;
+    let init_context_config = load_context_config(
+        runner_config.as_ref(),
+        runner_load.as_ref(),
+        active_nodes.len(),
+        state.rps_per_node,
+    );
     let init_payload = match &initial_acquire {
         AcquireOutcome::Reserved(runners) => build_running_load_payload(
             &orchestrator_execution_id,
             &registered_nodes,
             &active_nodes,
             runners,
-            &runner_config,
+            &init_context_config,
             &plan,
         ),
         AcquireOutcome::Pending { position } => build_queued_load_payload(
             &orchestrator_execution_id,
             &registered_nodes,
             &active_nodes,
-            &runner_config,
+            &init_context_config,
             &plan,
             *position.max(&queue_position),
         ),
@@ -202,7 +233,7 @@ pub async fn start_load_execution(
             &orchestrator_execution_id,
             &registered_nodes,
             &active_nodes,
-            &runner_config,
+            &init_context_config,
             &plan,
             1,
         ),
@@ -292,16 +323,22 @@ pub async fn start_load_execution(
                     .try_acquire(&history_execution_id, &active_nodes)
                     .await
                 {
-                    AcquireOutcome::Reserved(runners) => break (runners, active_nodes, true),
-                    AcquireOutcome::Pending { position } => {
-                        let queued_payload = build_queued_load_payload(
-                            &history_execution_id,
-                            &registered_nodes,
-                            &active_nodes,
-                            &runner_config,
-                            &plan,
-                            position,
-                        );
+	                    AcquireOutcome::Reserved(runners) => break (runners, active_nodes, true),
+	                    AcquireOutcome::Pending { position } => {
+	                        let queued_context_config = load_context_config(
+	                            runner_config.as_ref(),
+	                            runner_load.as_ref(),
+	                            active_nodes.len(),
+	                            state_clone.rps_per_node,
+	                        );
+	                        let queued_payload = build_queued_load_payload(
+	                            &history_execution_id,
+	                            &registered_nodes,
+	                            &active_nodes,
+	                            &queued_context_config,
+	                            &plan,
+	                            position,
+	                        );
                         exec_ctx.init_payload.set(queued_payload.clone()).await;
                         let queued_context = extract_load_context_value(&queued_payload);
                         exec_ctx
@@ -337,30 +374,60 @@ pub async fn start_load_execution(
             },
         };
 
+        let planning = load_planning_values(
+            runner_config.as_ref(),
+            runner_load.as_ref(),
+            active_nodes_for_run.len(),
+            state_clone.rps_per_node,
+        );
         let plan = calculate_node_plan(
-            (runner_config.concurrency as u64).max(1),
+            planning.target_rps,
             state_clone.rps_per_node,
             active_nodes_for_run.len(),
-            runner_config.total_requests.max(1),
-            runner_config.concurrency.max(1),
+            planning.total_requests,
+            planning.concurrency,
         );
-        let split_requests = split_even(runner_config.total_requests.max(1), selected_nodes.len());
-        let split_concurrency = split_even(runner_config.concurrency.max(1), selected_nodes.len());
+        let split_requests = runner_config.as_ref().map(|config| {
+            split_even(config.total_requests.max(1), selected_nodes.len())
+        });
+        let split_concurrency = runner_config.as_ref().map(|config| {
+            split_even(config.concurrency.max(1), selected_nodes.len())
+        });
         let desired_total_requests = runner_config
-            .total_requests
-            .max(1)
-            .div_ceil(plan.requested_nodes.max(1));
-        let runner_load_plan = selected_nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| RunnerLoadPlanItem {
-                node: node.clone(),
-                total_requests: split_requests[index],
-                concurrency: split_concurrency[index],
-                desired_total_requests,
-                above_desired: split_requests[index] > desired_total_requests,
+            .as_ref()
+            .map(|config| {
+                config
+                    .total_requests
+                    .max(1)
+                    .div_ceil(plan.requested_nodes.max(1))
             })
-            .collect::<Vec<_>>();
+            .unwrap_or(0);
+        let runner_load_plan = match (split_requests.as_ref(), split_concurrency.as_ref()) {
+            (Some(split_requests), Some(split_concurrency)) => selected_nodes
+                .iter()
+                .enumerate()
+                .map(|(index, node)| RunnerLoadPlanItem {
+                    node: node.clone(),
+                    total_requests: split_requests[index],
+                    concurrency: split_concurrency[index],
+                    desired_total_requests,
+                    above_desired: split_requests[index] > desired_total_requests,
+                })
+                .collect::<Vec<_>>(),
+            _ => selected_nodes
+                .iter()
+                .map(|node| RunnerLoadPlanItem {
+                    node: node.clone(),
+                    total_requests: 0,
+                    concurrency: runner_load
+                        .as_ref()
+                        .and_then(|load| load.max_in_flight)
+                        .unwrap_or_else(|| state_clone.rps_per_node.max(1) as usize),
+                    desired_total_requests: 0,
+                    above_desired: false,
+                })
+                .collect::<Vec<_>>(),
+        };
         let overloaded_nodes = runner_load_plan
             .iter()
             .filter(|item| item.above_desired)
@@ -411,7 +478,8 @@ pub async fn start_load_execution(
         let started_at_ms = now_ms() as i64;
         let history_record_id = new_uuid_v7();
         let running_context_payload = add_load_context_fields(json!({}), load_context.as_ref());
-        let running_requested_config = serde_json::to_value(&runner_config).unwrap_or(Value::Null);
+        let running_requested_config =
+            requested_load_config_value(runner_config.as_ref(), runner_load.as_ref());
         if let Err(err) = save_load_history(
             &state_clone.db,
             LoadHistoryWrite {
@@ -482,18 +550,35 @@ pub async fn start_load_execution(
             let env_groups = runtime_env_groups_for_runner.clone();
             let runner_auth_key = state_clone.runner_auth_key.clone();
 
-            let child_request = json!({
-                "pipeline": pipeline,
-                "selectedBaseUrlKey": selected_base_url_key,
-                "selectedEnvGroupSlug": selected_env_group_slug,
-                "specs": specs,
-                "envGroups": env_groups,
-                "config": {
-                    "totalRequests": split_requests[index],
-                    "concurrency": split_concurrency[index],
-                    "rampUpSeconds": runner_ramp_up_seconds
-                }
-            });
+            let child_request = if let Some(load_profile) = runner_load.as_ref() {
+                json!({
+                    "pipeline": pipeline,
+                    "selectedBaseUrlKey": selected_base_url_key,
+                    "selectedEnvGroupSlug": selected_env_group_slug,
+                    "specs": specs,
+                    "envGroups": env_groups,
+                    "load": runner_load_profile(load_profile, state_clone.rps_per_node)
+                })
+            } else {
+                let split_requests = split_requests
+                    .as_ref()
+                    .expect("classic load split requests");
+                let split_concurrency = split_concurrency
+                    .as_ref()
+                    .expect("classic load split concurrency");
+                json!({
+                    "pipeline": pipeline,
+                    "selectedBaseUrlKey": selected_base_url_key,
+                    "selectedEnvGroupSlug": selected_env_group_slug,
+                    "specs": specs,
+                    "envGroups": env_groups,
+                    "config": {
+                        "totalRequests": split_requests[index],
+                        "concurrency": split_concurrency[index],
+                        "rampUpSeconds": runner_ramp_up_seconds
+                    }
+                })
+            };
 
             handles.push(tokio::spawn(async move {
                 forward_runner_stream_load_chunked(
@@ -573,7 +658,10 @@ pub async fn start_load_execution(
                 started_at_ms,
                 finished_at_ms,
                 duration_ms,
-                requested_config: serde_json::to_value(runner_config).unwrap_or(Value::Null),
+                requested_config: requested_load_config_value(
+                    runner_config.as_ref(),
+                    runner_load.as_ref(),
+                ),
                 final_consolidated: final_consolidated
                     .and_then(|value| serde_json::to_value(value).ok()),
                 final_lines: final_lines
@@ -612,6 +700,109 @@ pub fn sse_response_for_started_load_execution(
     let (tx, rx) = mpsc::unbounded_channel();
     crate::server::execution::spawn_broadcast_bridge(started.subscriber, tx, false);
     crate::server::execution::sse_response_from_rx(rx)
+}
+
+fn load_planning_values(
+    config: Option<&LoadTestConfig>,
+    load: Option<&LoadProfile>,
+    active_nodes: usize,
+    rps_per_node: u64,
+) -> LoadPlanningValues {
+    if let Some(config) = config {
+        return LoadPlanningValues {
+            target_rps: (config.concurrency as u64).max(1),
+            total_requests: config.total_requests.max(1),
+            concurrency: config.concurrency.max(1),
+        };
+    }
+
+    let nodes = active_nodes.max(1);
+    let max_intensity = load
+        .and_then(|load| {
+            load.points
+                .iter()
+                .map(|point| point.intensity)
+                .reduce(f64::max)
+        })
+        .unwrap_or(100.0)
+        .clamp(0.0, 100.0);
+    let target_rps = ((rps_per_node as f64) * nodes as f64 * max_intensity / 100.0)
+        .ceil()
+        .max(1.0) as u64;
+
+    LoadPlanningValues {
+        target_rps,
+        total_requests: nodes,
+        concurrency: nodes,
+    }
+}
+
+fn load_context_config(
+    config: Option<&LoadTestConfig>,
+    load: Option<&LoadProfile>,
+    active_nodes: usize,
+    rps_per_node: u64,
+) -> LoadTestConfig {
+    if let Some(config) = config {
+        return config.clone();
+    }
+
+    LoadTestConfig {
+        total_requests: active_nodes.max(1),
+        concurrency: load
+            .and_then(|load| load.max_in_flight)
+            .unwrap_or_else(|| rps_per_node.max(1) as usize),
+        ramp_up_seconds: 0.0,
+    }
+}
+
+fn runner_load_profile(profile: &LoadProfile, runner_max_rps: u64) -> Value {
+    json!({
+        "points": profile.points,
+        "interpolation": profile.interpolation,
+        "runnerMaxRps": profile.runner_max_rps.unwrap_or(runner_max_rps as f64),
+        "maxInFlight": profile.max_in_flight.unwrap_or_else(|| runner_max_rps.max(1) as usize),
+        "gracePeriodMs": profile.grace_period_ms.unwrap_or(30_000)
+    })
+}
+
+fn requested_load_config_value(
+    config: Option<&LoadTestConfig>,
+    load: Option<&LoadProfile>,
+) -> Value {
+    match (config, load) {
+        (_, Some(load)) => json!({ "load": load }),
+        (Some(config), None) => serde_json::to_value(config).unwrap_or(Value::Null),
+        (None, None) => Value::Null,
+    }
+}
+
+fn validate_main_load_profile(profile: &LoadProfile) -> Result<(), StartLoadExecutionError> {
+    if profile.points.len() < 2 {
+        return Err(StartLoadExecutionError::BadRequest(
+            "load.points must contain at least two points".to_owned(),
+        ));
+    }
+    if profile.points[0].at_ms != 0 {
+        return Err(StartLoadExecutionError::BadRequest(
+            "load.points[0].atMs must be 0".to_owned(),
+        ));
+    }
+    for point in &profile.points {
+        if !(0.0..=100.0).contains(&point.intensity) {
+            return Err(StartLoadExecutionError::BadRequest(
+                "load.points intensity must be between 0 and 100".to_owned(),
+            ));
+        }
+    }
+    for pair in profile.points.windows(2) {
+        if pair[1].at_ms <= pair[0].at_ms {
+            return Err(StartLoadExecutionError::BadRequest(
+                "load.points must be strictly increasing by atMs".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn build_running_load_payload(
@@ -768,7 +959,8 @@ mod tests {
             state.clone(),
             LoadTestRequest {
                 pipeline: test_pipeline("pipe-1"),
-                config: test_config(),
+                config: Some(test_config()),
+                load: None,
                 selected_base_url_key: None,
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
@@ -784,7 +976,8 @@ mod tests {
             state.clone(),
             LoadTestRequest {
                 pipeline: test_pipeline("pipe-1"),
-                config: test_config(),
+                config: Some(test_config()),
+                load: None,
                 selected_base_url_key: None,
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
@@ -857,7 +1050,8 @@ mod tests {
             state.clone(),
             LoadTestRequest {
                 pipeline: test_pipeline("pipe-1"),
-                config: test_config(),
+                config: Some(test_config()),
+                load: None,
                 selected_base_url_key: None,
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
@@ -873,7 +1067,8 @@ mod tests {
             state.clone(),
             LoadTestRequest {
                 pipeline: test_pipeline("pipe-1"),
-                config: test_config(),
+                config: Some(test_config()),
+                load: None,
                 selected_base_url_key: None,
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),

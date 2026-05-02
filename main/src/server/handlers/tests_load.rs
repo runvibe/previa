@@ -116,6 +116,7 @@ pub async fn run_load_test_for_project(
     let forwarded = LoadTestRequest {
         pipeline,
         config: payload.config,
+        load: payload.load,
         selected_base_url_key: payload.selected_base_url_key,
         selected_env_group_slug: payload.selected_env_group_slug,
         project_id: Some(project_id.clone()),

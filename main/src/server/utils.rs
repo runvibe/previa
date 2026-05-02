@@ -36,6 +36,11 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         rps,
         start_time,
         elapsed_ms,
+        target_intensity: get_f64_field(payload, "targetIntensity"),
+        target_rps_limit: get_f64_field(payload, "targetRpsLimit"),
+        in_flight: get_usize_field(payload, "inFlight"),
+        runner_max_rps: get_f64_field(payload, "runnerMaxRps"),
+        tick_ms: get_u64_field(payload, "tickMs"),
     })
 }
 

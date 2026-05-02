@@ -1943,7 +1943,11 @@ fn tool_definitions() -> Vec<ToolDefinition> {
             description: "Starts a load execution for a project and returns the execution id.".to_owned(),
             input_schema: json!({
                 "type": "object",
-                "required": ["projectId", "config"],
+                "required": ["projectId"],
+                "oneOf": [
+                    { "required": ["config"] },
+                    { "required": ["load"] }
+                ],
                 "properties": {
                     "projectId": { "type": "string", "minLength": 1 },
                     "pipelineId": { "type": ["string", "null"] },
@@ -1955,6 +1959,27 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                             "totalRequests": { "type": "integer", "minimum": 1 },
                             "concurrency": { "type": "integer", "minimum": 1 },
                             "rampUpSeconds": { "type": "number", "minimum": 0 }
+                        }
+                    },
+                    "load": {
+                        "type": "object",
+                        "required": ["points"],
+                        "properties": {
+                            "points": {
+                                "type": "array",
+                                "minItems": 2,
+                                "items": {
+                                    "type": "object",
+                                    "required": ["atMs", "intensity"],
+                                    "properties": {
+                                        "atMs": { "type": "integer", "minimum": 0 },
+                                        "intensity": { "type": "number", "minimum": 0, "maximum": 100 }
+                                    }
+                                }
+                            },
+                            "interpolation": { "type": "string", "enum": ["smooth", "linear", "step"] },
+                            "maxInFlight": { "type": "integer", "minimum": 1 },
+                            "gracePeriodMs": { "type": "integer", "minimum": 0 }
                         }
                     },
                     "selectedBaseUrlKey": { "type": ["string", "null"] },
@@ -2315,6 +2340,7 @@ async fn resolve_project_load_request(
     Ok(LoadTestRequest {
         pipeline,
         config: args.config,
+        load: args.load,
         selected_base_url_key: args.selected_base_url_key,
         selected_env_group_slug: args.selected_env_group_slug,
         project_id: Some(args.project_id),
@@ -3006,12 +3032,13 @@ fn pipeline_repair_planner_prompt() -> String {
 fn load_test_designer_prompt() -> String {
     [
         "You are designing Previa load tests through MCP.",
-        "Your job is to choose realistic parameters and explain why they fit the user's goal.",
+        "Your job is to choose realistic wave load profiles and explain why they fit the user's goal.",
         "Required workflow:",
         "1. Confirm the target project and pipeline with get_project, list_project_pipelines, or get_project_pipeline.",
         "2. If needed, inspect prior load results with list_load_history and get_load_test.",
-        "3. Propose config values for totalRequests, concurrency, and rampUpSeconds with rationale.",
-        "4. Highlight operational risks such as unstable environments, missing assertions, or overly aggressive concurrency.",
+        "3. Prefer a wave load payload with points as { atMs, intensity }, where intensity is 0-100 percent of each runner's configured safe RPS capacity.",
+        "4. Use smooth interpolation by default. Use step only for explicit spike/degradation tests.",
+        "5. Highlight operational risks such as overly high intensity, missing assertions, unstable environments, or maxInFlight pressure.",
         "Output requirements:",
         "- Present a runnable payload for run_project_load_test when enough context exists.",
         "- Explain what the run is trying to learn.",

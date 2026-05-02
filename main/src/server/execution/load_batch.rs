@@ -360,6 +360,12 @@ pub fn consolidate_load_metrics(
     let mut total_success = 0usize;
     let mut total_error = 0usize;
     let mut rps = 0.0f64;
+    let mut target_intensity = 0.0f64;
+    let mut target_intensity_nodes = 0usize;
+    let mut target_rps_limit = 0.0f64;
+    let mut in_flight = 0usize;
+    let mut runner_max_rps = 0.0f64;
+    let mut tick_ms = 0u64;
     let mut start_time = u64::MAX;
     let mut elapsed_ms = 0u64;
     let mut nodes_reporting = 0usize;
@@ -373,6 +379,22 @@ pub fn consolidate_load_metrics(
         total_success = total_success.saturating_add(metrics.total_success);
         total_error = total_error.saturating_add(metrics.total_error);
         rps += metrics.rps;
+        if let Some(value) = metrics.target_intensity {
+            target_intensity += value;
+            target_intensity_nodes += 1;
+        }
+        if let Some(value) = metrics.target_rps_limit {
+            target_rps_limit += value;
+        }
+        if let Some(value) = metrics.in_flight {
+            in_flight = in_flight.saturating_add(value);
+        }
+        if let Some(value) = metrics.runner_max_rps {
+            runner_max_rps += value;
+        }
+        if let Some(value) = metrics.tick_ms {
+            tick_ms = tick_ms.max(value);
+        }
         start_time = start_time.min(metrics.start_time);
         elapsed_ms = elapsed_ms.max(metrics.elapsed_ms);
         nodes_reporting += 1;
@@ -387,6 +409,12 @@ pub fn consolidate_load_metrics(
         total_success,
         total_error,
         rps,
+        target_intensity: (target_intensity_nodes > 0)
+            .then(|| target_intensity / target_intensity_nodes as f64),
+        target_rps_limit: (target_rps_limit > 0.0).then_some(target_rps_limit),
+        in_flight: (in_flight > 0).then_some(in_flight),
+        runner_max_rps: (runner_max_rps > 0.0).then_some(runner_max_rps),
+        tick_ms: (tick_ms > 0).then_some(tick_ms),
         avg_latency: latency.avg_latency,
         p95: latency.p95,
         p99: latency.p99,

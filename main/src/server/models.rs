@@ -9,7 +9,10 @@ use utoipa::ToSchema;
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestRequest {
     pub pipeline: Pipeline,
-    pub config: LoadTestConfig,
+    #[serde(default)]
+    pub config: Option<LoadTestConfig>,
+    #[serde(default)]
+    pub load: Option<LoadProfile>,
     pub selected_base_url_key: Option<String>,
     pub selected_env_group_slug: Option<String>,
     pub project_id: Option<String>,
@@ -65,7 +68,10 @@ pub struct ProjectE2eQueueRequest {
 pub struct ProjectLoadTestRequest {
     pub pipeline_id: Option<String>,
     pub pipeline: Option<Pipeline>,
-    pub config: LoadTestConfig,
+    #[serde(default)]
+    pub config: Option<LoadTestConfig>,
+    #[serde(default)]
+    pub load: Option<LoadProfile>,
     pub selected_base_url_key: Option<String>,
     pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,
@@ -81,6 +87,41 @@ pub struct LoadTestConfig {
     pub total_requests: usize,
     pub concurrency: usize,
     pub ramp_up_seconds: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadProfile {
+    pub points: Vec<LoadPoint>,
+    #[serde(default)]
+    pub interpolation: LoadInterpolation,
+    #[serde(default)]
+    pub runner_max_rps: Option<f64>,
+    #[serde(default)]
+    pub max_in_flight: Option<usize>,
+    #[serde(default)]
+    pub grace_period_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadPoint {
+    pub at_ms: u64,
+    pub intensity: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LoadInterpolation {
+    Smooth,
+    Linear,
+    Step,
+}
+
+impl Default for LoadInterpolation {
+    fn default() -> Self {
+        Self::Smooth
+    }
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -633,6 +674,16 @@ pub struct ConsolidatedLoadMetrics {
     pub total_success: usize,
     pub total_error: usize,
     pub rps: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_intensity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_rps_limit: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_flight: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_max_rps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tick_ms: Option<u64>,
     pub avg_latency: u64,
     pub p95: u64,
     pub p99: u64,
@@ -704,6 +755,11 @@ pub struct RunnerLoadMetricsPoint {
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,
+    pub target_intensity: Option<f64>,
+    pub target_rps_limit: Option<f64>,
+    pub in_flight: Option<usize>,
+    pub runner_max_rps: Option<f64>,
+    pub tick_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
