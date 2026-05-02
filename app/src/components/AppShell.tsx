@@ -3,7 +3,6 @@ import { CircleHelp, EllipsisVertical, Github, Server } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 import { AppHeader } from "@/components/AppHeader";
-import { ContextSwitcher } from "@/components/ContextSwitcher";
 import { EventsPanel } from "@/components/EventsPanel";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { OnboardingModal } from "@/components/OnboardingModal";
@@ -202,9 +201,6 @@ export function AppShell() {
               {headerConfig.headerActions}
             </MobileHeaderActionRow>
           ) : null}
-          <MobileHeaderActionRow label="Contexto">
-            <ContextSwitcher />
-          </MobileHeaderActionRow>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

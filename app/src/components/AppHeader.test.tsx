@@ -5,10 +5,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "@/components/AppHeader";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 
-vi.mock("@/components/ContextSwitcher", () => ({
-  ContextSwitcher: () => <div data-testid="context-switcher" />,
-}));
-
 vi.mock("@/components/EventsPanel", () => ({
   EventsPanel: () => <div data-testid="events-panel" />,
 }));

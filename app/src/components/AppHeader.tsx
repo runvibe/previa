@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { PreviaLogo } from "./PreviaLogo";
-import { ContextSwitcher } from "./ContextSwitcher";
 import { EventsPanel } from "./EventsPanel";
 import { BarChart3, FolderOpen } from "lucide-react";
 import { getOpenApiVersion } from "@/lib/api-client";
@@ -106,7 +105,6 @@ export function AppHeader({ projectName, pipelineName, onBackToProjects, onDashb
       <div className="hidden sm:flex items-center gap-1 sm:gap-2">
         {headerActions}
         <EventsPanel />
-        <ContextSwitcher />
       </div>
     </div>
   ), [headerActions, mobileHeaderActions]);

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { getApiUrlFromBase, resolveApiBaseUrl } from "@/lib/api-base";
 import type { OrchestratorContext } from "@/lib/orchestrator-url";
 
@@ -33,6 +34,7 @@ interface OrchestratorState {
 }
 
 const CURRENT_CONTEXT_ID = "current";
+const API_OFFLINE_TOAST_ID = "previa-api-offline";
 
 function timeoutSignal(timeoutMs: number): AbortSignal | undefined {
   return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
@@ -46,6 +48,13 @@ function currentContext(name = "current"): OrchestratorContext {
     name,
     url: resolveApiBaseUrl(),
   };
+}
+
+function showApiOfflineToast(baseUrl: string) {
+  toast.error("Sem conexão com o servidor", {
+    id: API_OFFLINE_TOAST_ID,
+    description: `URL do serviço: ${baseUrl}`,
+  });
 }
 
 export const useOrchestratorStore = create<OrchestratorState>((set, get) => {
@@ -71,11 +80,12 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => {
     setInfo: (info) => set({ info }),
 
     fetchInfo: async () => {
+      const base = resolveApiBaseUrl();
       try {
-        const base = resolveApiBaseUrl();
         const res = await fetch(`${base}/info`, { signal: timeoutSignal(8000) });
         if (!res.ok) {
           set({ info: null });
+          showApiOfflineToast(base);
           return null;
         }
         const data = await res.json();
@@ -92,9 +102,11 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => {
           url: active.url,
           info,
         });
+        toast.dismiss?.(API_OFFLINE_TOAST_ID);
         return info;
       } catch {
         set({ info: null });
+        showApiOfflineToast(base);
         return null;
       }
     },
