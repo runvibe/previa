@@ -6,23 +6,28 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const plugins: (Plugin | Plugin[])[] = [
-    react(),
-    VitePWA({
-      injectRegister: "auto",
-      registerType: "autoUpdate",
-      manifest: false,
-      workbox: {
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/~oauth/],
-        skipWaiting: true,
-      },
-      devOptions: {
-        enabled: true,
-      },
-    }),
-  ];
+  const plugins: (Plugin | Plugin[])[] = [react()];
+  const enablePwa = process.env.VITE_PREVIA_ENABLE_PWA === "true";
+
+  if (enablePwa) {
+    plugins.push(
+      VitePWA({
+        filename: "precache-sw.js",
+        injectRegister: "auto",
+        registerType: "autoUpdate",
+        manifest: false,
+        workbox: {
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
+          navigateFallbackDenylist: [/^\/~oauth/],
+          skipWaiting: true,
+        },
+        devOptions: {
+          enabled: true,
+        },
+      }),
+    );
+  }
   
   if (mode === "development") {
     plugins.push(componentTagger());

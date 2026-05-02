@@ -55,7 +55,9 @@ This opens:
 http://127.0.0.1:5588
 ```
 
-The embedded app uses `window.location.origin` as the API base. External/PWA builds use `VITE_PREVIA_API_BASE_URL` when it is defined.
+The embedded app uses `window.location.origin` as the API base. External builds use `VITE_PREVIA_API_BASE_URL` when it is defined.
+
+Service worker precaching is disabled by default to avoid stale embedded bundles after local rebuilds. Set `VITE_PREVIA_ENABLE_PWA=true` only when building a standalone PWA artifact.
 
 From there, you can:
 

@@ -72,7 +72,7 @@ Model Context Protocol. In Previa, this is the integration that lets AI assistan
 
 ## IDE
 
-The browser UI served by `previa-main`. Embedded builds use `window.location.origin` as the API base; external/PWA builds use `VITE_PREVIA_API_BASE_URL`.
+The browser UI served by `previa-main`. Embedded builds use `window.location.origin` as the API base; external builds use `VITE_PREVIA_API_BASE_URL`. Service worker precaching is disabled by default unless `VITE_PREVIA_ENABLE_PWA=true` is set for a standalone PWA build.
 
 ## See Also
 

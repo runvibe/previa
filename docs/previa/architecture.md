@@ -30,7 +30,7 @@ By default:
 - the MCP endpoint is `http://localhost:5588/mcp` when enabled
 - the embedded app is served by `previa-main` on `/` and `/index` when `PREVIA_APP_ENABLED=true`
 - `previa open` opens the selected `previa-main` URL directly
-- the embedded app uses `window.location.origin` as the API base; external/PWA builds use `VITE_PREVIA_API_BASE_URL`
+- the embedded app uses `window.location.origin` as the API base; external builds use `VITE_PREVIA_API_BASE_URL`; standalone PWA precaching is opt-in with `VITE_PREVIA_ENABLE_PWA=true`
 
 ## Feature Map
 
