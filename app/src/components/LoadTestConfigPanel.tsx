@@ -364,7 +364,10 @@ function WaveEditor({
           className="h-40 w-full cursor-crosshair touch-none rounded bg-muted/20"
           role="img"
           aria-label={t("loadTest.wavePreview")}
-          onDoubleClick={(event) => addPoint(pointFromEvent(event))}
+          onClick={(event) => {
+            if (event.detail > 1) return;
+            addPoint(pointFromEvent(event));
+          }}
           onMouseMove={handleMouseMove}
           onMouseUp={stopDragging}
           onMouseLeave={stopDragging}
@@ -421,6 +424,7 @@ function WaveEditor({
                 setDraggingIndex(index);
                 onSelectedPointIndex(index);
               }}
+              onClick={(event) => event.stopPropagation()}
             />
           ))}
         </svg>

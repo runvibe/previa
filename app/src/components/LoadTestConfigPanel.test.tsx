@@ -94,15 +94,23 @@ describe("LoadTestConfigPanel", () => {
     expect(screen.getAllByText("300,000 ms (300s)").length).toBeGreaterThan(0);
   });
 
-  it("creates and drags points directly on the wave graph", async () => {
+  it("creates points with one graph click and drags existing points", async () => {
     const onConfigChange = renderPanel();
     const graph = mockGraphBounds();
 
-    fireEvent.doubleClick(graph, { clientX: 200, clientY: 50 });
+    fireEvent.click(graph, { clientX: 200, clientY: 50 });
 
     expect(screen.getByText("Selected point")).toBeInTheDocument();
     expect(screen.getByDisplayValue("60000")).toBeInTheDocument();
     expect(screen.getByDisplayValue("75")).toBeInTheDocument();
+
+    const createdPoint = screen.getByTestId("wave-point-1");
+    fireEvent.click(createdPoint, { clientX: 200, clientY: 50 });
+
+    await waitFor(() => {
+      const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
+      expect(latest.points).toHaveLength(3);
+    });
 
     const point = screen.getByTestId("wave-point-1");
     fireEvent.mouseDown(point, { clientX: 200, clientY: 50 });
