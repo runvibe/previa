@@ -13,7 +13,9 @@ use tokio::task::JoinSet;
 use tracing::error;
 use uuid::Uuid;
 
-use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_hooks};
+use previa_runner::{
+    Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_request_gate,
+};
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::load_bucket::FlowBucket;
@@ -224,7 +226,8 @@ async fn run_classic_load(
                 }
 
                 let start = Instant::now();
-                let results = execute_pipeline_with_runtime_hooks(
+                let metrics_for_gate = Arc::clone(&metrics);
+                let results = execute_pipeline_with_runtime_request_gate(
                     &pipeline,
                     selected_key.as_deref(),
                     Some(specs.as_slice()),
@@ -233,6 +236,13 @@ async fn run_classic_load(
                     |_| {},
                     |_| {},
                     || token.is_cancelled(),
+                    move |_| {
+                        let metrics = Arc::clone(&metrics_for_gate);
+                        Box::pin(async move {
+                            let mut lock = metrics.lock().await;
+                            lock.record_http_start();
+                        })
+                    },
                 )
                 .await;
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -247,6 +257,12 @@ async fn run_classic_load(
                 let snapshot = {
                     let mut lock = metrics.lock().await;
                     lock.update(duration, success);
+                    lock.record_http_completed_count(
+                        results
+                            .iter()
+                            .filter(|result| result.request.is_some())
+                            .count(),
+                    );
                     lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
                     lock.snapshot(Some(duration_ms), runtime)
                 };
@@ -304,7 +320,10 @@ async fn run_wave_load(
     let metrics = Arc::new(tokio::sync::Mutex::new(MetricsAccumulator::new()));
     let runtime_sampler = Arc::new(tokio::sync::Mutex::new(RuntimeSampler::new()));
     let in_flight = Arc::new(AtomicUsize::new(0));
-    let mut bucket = FlowBucket::new(local_rps_limit(&load, 0), 0);
+    let bucket = Arc::new(tokio::sync::Mutex::new(FlowBucket::new(
+        local_rps_limit(&load, 0),
+        0,
+    )));
     let mut tasks = JoinSet::new();
 
     loop {
@@ -324,10 +343,8 @@ async fn run_wave_load(
 
         let target_intensity = sample_intensity(&load, elapsed_ms);
         let target_rps_limit = local_rps_limit(&load, elapsed_ms);
-        bucket.refill(target_rps_limit, elapsed_ms);
-        let mut launched = 0usize;
 
-        while in_flight.load(Ordering::SeqCst) < load.max_in_flight && bucket.try_acquire() {
+        while in_flight.load(Ordering::SeqCst) < load.max_in_flight {
             let pipeline = pipeline.clone();
             let selected_key = selected_key.clone();
             let selected_env_group_slug = selected_env_group_slug.clone();
@@ -338,6 +355,8 @@ async fn run_wave_load(
             let metrics = Arc::clone(&metrics);
             let runtime_sampler = Arc::clone(&runtime_sampler);
             let in_flight = Arc::clone(&in_flight);
+            let bucket = Arc::clone(&bucket);
+            let load_for_gate = load.clone();
             let wave_snapshot = crate::server::metrics::WaveMetricsSnapshot {
                 target_intensity,
                 target_rps_limit,
@@ -347,14 +366,15 @@ async fn run_wave_load(
             };
 
             in_flight.fetch_add(1, Ordering::SeqCst);
-            launched += 1;
             {
                 let mut lock = metrics.lock().await;
                 lock.record_start();
             }
             tasks.spawn(async move {
                 let start = Instant::now();
-                let results = execute_pipeline_with_runtime_hooks(
+                let metrics_for_gate = Arc::clone(&metrics);
+                let token_for_gate = token.clone();
+                let results = execute_pipeline_with_runtime_request_gate(
                     &pipeline,
                     selected_key.as_deref(),
                     Some(specs.as_slice()),
@@ -363,6 +383,35 @@ async fn run_wave_load(
                     |_| {},
                     |_| {},
                     || token.is_cancelled(),
+                    move |_| {
+                        let bucket = Arc::clone(&bucket);
+                        let metrics = Arc::clone(&metrics_for_gate);
+                        let token = token_for_gate.clone();
+                        let load = load_for_gate.clone();
+                        Box::pin(async move {
+                            loop {
+                                if token.is_cancelled() {
+                                    return;
+                                }
+                                let elapsed_ms = started.elapsed().as_millis() as u64;
+                                let target_rps_limit = local_rps_limit(&load, elapsed_ms);
+                                let acquired = {
+                                    let mut bucket = bucket.lock().await;
+                                    bucket.refill(target_rps_limit, elapsed_ms);
+                                    bucket.try_acquire()
+                                };
+                                if acquired {
+                                    let mut lock = metrics.lock().await;
+                                    lock.record_http_start();
+                                    return;
+                                }
+                                tokio::time::sleep(tokio::time::Duration::from_millis(
+                                    tick_ms.min(100),
+                                ))
+                                .await;
+                            }
+                        })
+                    },
                 )
                 .await;
                 let duration_ms = start.elapsed().as_millis() as u64;
@@ -375,6 +424,12 @@ async fn run_wave_load(
                 let snapshot = {
                     let mut lock = metrics.lock().await;
                     lock.update(duration_ms as f64, success);
+                    lock.record_http_completed_count(
+                        results
+                            .iter()
+                            .filter(|result| result.request.is_some())
+                            .count(),
+                    );
                     lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
                     lock.snapshot_with_wave(Some(duration_ms), runtime, Some(wave_snapshot))
                 };
@@ -388,32 +443,30 @@ async fn run_wave_load(
             });
         }
 
-        if launched > 0 {
-            let runtime = {
-                let mut lock = runtime_sampler.lock().await;
-                lock.snapshot()
-            };
-            let snapshot = {
-                let lock = metrics.lock().await;
-                lock.snapshot_with_wave(
-                    None,
-                    runtime,
-                    Some(crate::server::metrics::WaveMetricsSnapshot {
-                        target_intensity,
-                        target_rps_limit,
-                        in_flight: in_flight.load(Ordering::SeqCst),
-                        runner_max_rps: load.runner_max_rps,
-                        tick_ms,
-                    }),
-                )
-            };
-            let _ = send_sse_or_cancel(
-                &tx,
-                "metrics",
-                serde_json::to_value(snapshot).unwrap_or(Value::Null),
-                &token,
-            );
-        }
+        let runtime = {
+            let mut lock = runtime_sampler.lock().await;
+            lock.snapshot()
+        };
+        let snapshot = {
+            let lock = metrics.lock().await;
+            lock.snapshot_with_wave(
+                None,
+                runtime,
+                Some(crate::server::metrics::WaveMetricsSnapshot {
+                    target_intensity,
+                    target_rps_limit,
+                    in_flight: in_flight.load(Ordering::SeqCst),
+                    runner_max_rps: load.runner_max_rps,
+                    tick_ms,
+                }),
+            )
+        };
+        let _ = send_sse_or_cancel(
+            &tx,
+            "metrics",
+            serde_json::to_value(snapshot).unwrap_or(Value::Null),
+            &token,
+        );
 
         tokio::time::sleep(tokio::time::Duration::from_millis(tick_ms)).await;
     }

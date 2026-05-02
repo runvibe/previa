@@ -34,6 +34,8 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         total_sent,
         total_success,
         total_error,
+        http_started: get_usize_field(payload, "httpStarted"),
+        http_completed: get_usize_field(payload, "httpCompleted"),
         rps,
         start_time,
         elapsed_ms,

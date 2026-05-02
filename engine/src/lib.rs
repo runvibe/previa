@@ -14,7 +14,7 @@ pub use core::types::{
 pub use execution::{
     execute_pipeline, execute_pipeline_with_client, execute_pipeline_with_client_hooks,
     execute_pipeline_with_hooks, execute_pipeline_with_runtime_hooks,
-    execute_pipeline_with_specs_hooks,
+    execute_pipeline_with_runtime_request_gate, execute_pipeline_with_specs_hooks,
 };
 
 pub fn render_template_value(

@@ -788,6 +788,8 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     totalSent: consolidated?.totalSent ?? 0,
     totalSuccess: consolidated?.totalSuccess ?? 0,
     totalError: consolidated?.totalError ?? 0,
+    httpStarted: consolidated?.httpStarted,
+    httpCompleted: consolidated?.httpCompleted,
     avgLatency: consolidated?.avgLatency ?? 0,
     p95: consolidated?.p95 ?? 0,
     p99: consolidated?.p99 ?? 0,

@@ -134,7 +134,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
     latency: p.latency,
   }));
 
-  const rpsChartData = buildRpsChartData(metrics, waveConfig);
+  const rpsChart = buildRpsChartData(metrics, waveConfig);
+  const rpsChartData = rpsChart.data;
   const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
   const runnerNames = getRunnerNames(runnerResourceHistory);
@@ -292,15 +293,27 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
       {rpsChartData.length > 1 && (
         <div className="glass rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.rpsOverTime")}</p>
-            <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              {rpsChart.usesHttpRps ? t("loadTestResults.httpRpsOverTime") : t("loadTestResults.rpsOverTime")}
+            </p>
+            <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
+              {rpsChart.runnerSeries.slice(0, 4).map((runner, index) => (
+                <span key={runner.key} className="inline-flex items-center gap-1">
+                  <span
+                    className="h-0 w-3 border-t"
+                    style={{ borderColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
+                  />
+                  {runner.label}
+                </span>
+              ))}
+              {rpsChart.runnerSeries.length > 4 && <span>+{rpsChart.runnerSeries.length - 4}</span>}
               <span className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-3 rounded-full bg-success" />
-                {t("loadTestResults.rpsActual")}
+                <span className="h-0 w-3 border-t border-dashed border-success" />
+                {rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")}
               </span>
               {hasTargetRpsLine && (
                 <span data-testid="rps-target-legend" className="inline-flex items-center gap-1">
-                  <span className="h-0 w-3 border-t border-dashed border-primary" />
+                  <span className="h-0 w-3 border-t border-dotted border-primary" />
                   {t("loadTestResults.rpsTarget")}
                 </span>
               )}
@@ -320,17 +333,39 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                 }}
                 formatter={(v: number, name: string) => [
                   typeof v === "number" ? v.toFixed(1) : v,
-                  name === "targetRpsLimit" ? t("loadTestResults.rpsTarget") : t("loadTestResults.rpsActual"),
+                  name === "targetRpsLimit"
+                    ? t("loadTestResults.rpsTarget")
+                    : name === "rpsTotal"
+                      ? rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")
+                      : rpsChart.runnerSeries.find((runner) => runner.key === name)?.label ?? name,
                 ]}
                 labelFormatter={(v) => `${v}s`}
               />
-              <Area type="monotone" dataKey="rps" stroke="hsl(var(--status-success))" fill="hsl(var(--status-success) / 0.15)" strokeWidth={1.5} />
+              {rpsChart.runnerSeries.map((runner, index) => (
+                <Line
+                  key={runner.key}
+                  type="monotone"
+                  dataKey={runner.key}
+                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                  strokeWidth={1.5}
+                  dot={false}
+                  connectNulls
+                />
+              ))}
+              <Area
+                type="monotone"
+                dataKey="rpsTotal"
+                stroke="hsl(var(--status-success))"
+                fill="hsl(var(--status-success) / 0.10)"
+                strokeWidth={1.75}
+                strokeDasharray={rpsChart.usesHttpRps ? "5 4" : undefined}
+              />
               {hasTargetRpsLine && (
                 <Line
                   type={waveConfig ? waveChartType(waveConfig.interpolation) : "monotone"}
                   dataKey="targetRpsLimit"
                   stroke="hsl(var(--primary))"
-                  strokeDasharray="4 4"
+                  strokeDasharray="2 5"
                   strokeWidth={1.5}
                   dot={false}
                   connectNulls

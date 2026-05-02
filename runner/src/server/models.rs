@@ -94,6 +94,8 @@ pub struct LoadTestMetrics {
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,
+    pub http_started: usize,
+    pub http_completed: usize,
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,

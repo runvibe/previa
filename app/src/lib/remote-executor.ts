@@ -195,6 +195,8 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
   const totalStarted = toNumber(value.totalStarted);
   const totalSuccess = toNumber(value.totalSuccess);
   const totalError = toNumber(value.totalError);
+  const httpStarted = toNumber(value.httpStarted);
+  const httpCompleted = toNumber(value.httpCompleted);
   const rps = toNumber(value.rps);
 
   if (
@@ -211,6 +213,8 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     totalStarted,
     totalSuccess: totalSuccess ?? 0,
     totalError: totalError ?? 0,
+    httpStarted,
+    httpCompleted,
     rps: rps ?? 0,
     startTime: toNumber(value.startTime) ?? Date.now(),
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
@@ -316,6 +320,12 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
           : acc.totalStarted,
         totalSuccess: acc.totalSuccess + item.totalSuccess,
         totalError: acc.totalError + item.totalError,
+        httpStarted: item.httpStarted !== undefined
+          ? (acc.httpStarted ?? 0) + item.httpStarted
+          : acc.httpStarted,
+        httpCompleted: item.httpCompleted !== undefined
+          ? (acc.httpCompleted ?? 0) + item.httpCompleted
+          : acc.httpCompleted,
         rps: acc.rps + item.rps,
         startTime: Math.min(acc.startTime, item.startTime),
         elapsedMs: Math.max(acc.elapsedMs, item.elapsedMs),
@@ -369,12 +379,16 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const rps = toNumber(consolidated?.rps) ?? aggregated?.rps ?? 0;
   const totalSent = toNumber(consolidated?.totalSent) ?? aggregated?.totalSent ?? 0;
   const totalStarted = toNumber(consolidated?.totalStarted) ?? aggregated?.totalStarted;
+  const httpStarted = toNumber(consolidated?.httpStarted) ?? aggregated?.httpStarted;
+  const httpCompleted = toNumber(consolidated?.httpCompleted) ?? aggregated?.httpCompleted;
   const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
   const targetRpsLimit = toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit;
 
   return {
     totalSent,
     totalStarted,
+    httpStarted,
+    httpCompleted,
     totalSuccess: toNumber(consolidated?.totalSuccess) ?? aggregated?.totalSuccess ?? 0,
     totalError: toNumber(consolidated?.totalError) ?? aggregated?.totalError ?? 0,
     avgLatency: toNumber(consolidated?.avgLatency) ?? 0,
@@ -382,7 +396,7 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     p99: toNumber(consolidated?.p99) ?? 0,
     rps,
     latencyHistory: [],
-    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalStarted, totalSent, targetIntensity, targetRpsLimit }] : [],
+    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalStarted, totalSent, httpStarted, httpCompleted, targetIntensity, targetRpsLimit }] : [],
     runnerResourceHistory: Array.isArray(snapshot.lines)
       ? extractRunnerResourcePoints(snapshot.lines)
       : [],
@@ -767,14 +781,33 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
   };
 }
 
-function buildRpsHistoryPoint(now: number, event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): RpsPoint {
+function buildRpsHistoryPoint(
+  now: number,
+  event: RemoteMetricsEvent,
+  consolidated?: ConsolidatedLoadMetrics | null,
+  nodes?: Map<string, RemoteMetricsEvent>,
+): RpsPoint {
+  const runners = nodes
+    ? Array.from(nodes.entries()).map(([runnerId, metrics]) => ({
+      runnerId,
+      httpStarted: metrics.httpStarted,
+      httpCompleted: metrics.httpCompleted,
+      totalStarted: metrics.totalStarted,
+      totalSent: metrics.totalSent,
+      rps: metrics.rps,
+    }))
+    : undefined;
+
   return {
     timestamp: now,
     rps: consolidated?.rps ?? event.rps,
     totalStarted: consolidated?.totalStarted ?? event.totalStarted,
     totalSent: consolidated?.totalSent ?? event.totalSent,
+    httpStarted: consolidated?.httpStarted ?? event.httpStarted,
+    httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
     targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
     targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
+    runners,
   };
 }
 
@@ -803,12 +836,14 @@ export function runRemoteLoadTest(
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
     const now = Date.now();
     if (now - lastRpsPointTime >= 500) {
-      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated));
+      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated, lastKnownNodeMetrics));
       lastRpsPointTime = now;
     }
     return {
       totalSent: consolidated?.totalSent ?? event.totalSent,
       totalStarted: consolidated?.totalStarted ?? event.totalStarted,
+      httpStarted: consolidated?.httpStarted ?? event.httpStarted,
+      httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,
@@ -1159,12 +1194,14 @@ export function reconnectToLoadExecution(
   function toFullMetrics(event: RemoteMetricsEvent, consolidated?: ConsolidatedLoadMetrics | null): LoadTestMetrics {
     const now = Date.now();
     if (now - lastRpsPointTime >= 500) {
-      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated));
+      rpsHistory.push(buildRpsHistoryPoint(now, event, consolidated, lastKnownNodeMetrics));
       lastRpsPointTime = now;
     }
     return {
       totalSent: consolidated?.totalSent ?? event.totalSent,
       totalStarted: consolidated?.totalStarted ?? event.totalStarted,
+      httpStarted: consolidated?.httpStarted ?? event.httpStarted,
+      httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,

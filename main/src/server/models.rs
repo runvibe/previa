@@ -675,6 +675,10 @@ pub struct ConsolidatedLoadMetrics {
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_started: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_completed: Option<usize>,
     pub rps: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_intensity: Option<f64>,
@@ -755,6 +759,8 @@ pub struct RunnerLoadMetricsPoint {
     pub total_sent: usize,
     pub total_success: usize,
     pub total_error: usize,
+    pub http_started: Option<usize>,
+    pub http_completed: Option<usize>,
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,

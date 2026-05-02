@@ -17,6 +17,8 @@ pub struct MetricsAccumulator {
     total_sent: usize,
     total_success: usize,
     total_error: usize,
+    http_started: usize,
+    http_completed: usize,
     start_time: u64,
     network_tx_bytes: u64,
     network_rx_bytes: u64,
@@ -29,6 +31,8 @@ impl MetricsAccumulator {
             total_sent: 0,
             total_success: 0,
             total_error: 0,
+            http_started: 0,
+            http_completed: 0,
             start_time: now_ms(),
             network_tx_bytes: 0,
             network_rx_bytes: 0,
@@ -46,6 +50,14 @@ impl MetricsAccumulator {
         } else {
             self.total_error += 1;
         }
+    }
+
+    pub fn record_http_start(&mut self) {
+        self.http_started += 1;
+    }
+
+    pub fn record_http_completed_count(&mut self, count: usize) {
+        self.http_completed = self.http_completed.saturating_add(count);
     }
 
     pub fn add_network_bytes(&mut self, tx_bytes: u64, rx_bytes: u64) {
@@ -71,8 +83,13 @@ impl MetricsAccumulator {
         let elapsed_ms = now.saturating_sub(self.start_time);
 
         let elapsed = (elapsed_ms as f64) / 1000.0;
+        let rps_total = if self.http_started > 0 {
+            self.http_started
+        } else {
+            self.total_sent
+        };
         let rps = if elapsed > 0.0 {
-            round2((self.total_sent as f64) / elapsed)
+            round2((rps_total as f64) / elapsed)
         } else {
             0.0
         };
@@ -90,6 +107,8 @@ impl MetricsAccumulator {
             total_sent: self.total_sent,
             total_success: self.total_success,
             total_error: self.total_error,
+            http_started: self.http_started,
+            http_completed: self.http_completed,
             rps,
             start_time: self.start_time,
             elapsed_ms,

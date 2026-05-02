@@ -129,11 +129,15 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, null)).toEqual([
-      { time: 0, rps: 0, targetRpsLimit: undefined },
-      { time: 1, rps: 10, targetRpsLimit: 20 },
-      { time: 2, rps: 25, targetRpsLimit: 80 },
-    ]);
+    expect(buildRpsChartData(metrics, null)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 0, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 10, targetRpsLimit: 20 },
+        { time: 2, rpsTotal: 25, targetRpsLimit: 80 },
+      ],
+      runnerSeries: [],
+      usesHttpRps: false,
+    });
   });
 
   it("prefers started throughput for the RPS chart when it is available", () => {
@@ -146,11 +150,15 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, null)).toEqual([
-      { time: 0, rps: 0, targetRpsLimit: undefined },
-      { time: 1, rps: 50, targetRpsLimit: 50 },
-      { time: 2, rps: 50, targetRpsLimit: 50 },
-    ]);
+    expect(buildRpsChartData(metrics, null)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 0, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 50, targetRpsLimit: 50 },
+        { time: 2, rpsTotal: 50, targetRpsLimit: 50 },
+      ],
+      runnerSeries: [],
+      usesHttpRps: false,
+    });
   });
 
   it("estimates target RPS from the configured wave when history has no target samples", () => {
@@ -171,11 +179,54 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, config)).toEqual([
-      { time: 0, rps: 0, targetRpsLimit: 20 },
-      { time: 1, rps: 4, targetRpsLimit: 60 },
-      { time: 1, rps: 10, targetRpsLimit: 100 },
-    ]);
+    expect(buildRpsChartData(metrics, config)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 0, targetRpsLimit: 20 },
+        { time: 1, rpsTotal: 4, targetRpsLimit: 60 },
+        { time: 1, rpsTotal: 10, targetRpsLimit: 100 },
+      ],
+      runnerSeries: [],
+      usesHttpRps: false,
+    });
+  });
+
+  it("builds HTTP RPS chart lines from per-runner started counters", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 1_000,
+          rps: 0,
+          httpStarted: 0,
+          runners: [
+            { runnerId: "runner-a", httpStarted: 0, rps: 0 },
+            { runnerId: "runner-b", httpStarted: 0, rps: 0 },
+          ],
+        },
+        {
+          timestamp: 2_000,
+          rps: 0,
+          httpStarted: 30,
+          targetRpsLimit: 40,
+          runners: [
+            { runnerId: "runner-a", httpStarted: 10, rps: 10 },
+            { runnerId: "runner-b", httpStarted: 20, rps: 20 },
+          ],
+        },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 0, runner0: 0, runner1: 0, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 30, runner0: 10, runner1: 20, targetRpsLimit: 40 },
+      ],
+      runnerSeries: [
+        { key: "runner0", label: "runner-a" },
+        { key: "runner1", label: "runner-b" },
+      ],
+      usesHttpRps: true,
+    });
   });
 
   it("shows actual and target RPS legend when target data exists", () => {

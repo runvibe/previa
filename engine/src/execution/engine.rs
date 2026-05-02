@@ -1,6 +1,8 @@
 use reqwest::Client;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use crate::assertions::{evaluate_assertions, has_status_assertion};
@@ -11,6 +13,12 @@ use crate::execution::cancel::await_with_cancel;
 use crate::execution::http::{parse_absolute_http_url, parse_method};
 use crate::execution::logging::{log_step_request, log_step_response};
 use crate::template::resolve::resolve_template_variables;
+
+fn noop_request_start_gate<'a>(
+    _: &'a StepRequest,
+) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    Box::pin(async {})
+}
 
 pub async fn execute_pipeline(
     pipeline: &Pipeline,
@@ -27,6 +35,7 @@ pub async fn execute_pipeline(
         |_| {},
         |_| {},
         || false,
+        noop_request_start_gate,
     )
     .await
 }
@@ -46,6 +55,7 @@ pub async fn execute_pipeline_with_client(
         |_| {},
         |_| {},
         || false,
+        noop_request_start_gate,
     )
     .await
 }
@@ -73,6 +83,7 @@ where
         on_step_start,
         on_step_result,
         should_cancel,
+        noop_request_start_gate,
     )
     .await
 }
@@ -101,6 +112,7 @@ where
         on_step_start,
         on_step_result,
         should_cancel,
+        noop_request_start_gate,
     )
     .await
 }
@@ -131,6 +143,40 @@ where
         on_step_start,
         on_step_result,
         should_cancel,
+        noop_request_start_gate,
+    )
+    .await
+}
+
+pub async fn execute_pipeline_with_runtime_request_gate<FStart, FResult, FCancel, FGate>(
+    pipeline: &Pipeline,
+    selected_base_url_key: Option<&str>,
+    specs: Option<&[RuntimeSpec]>,
+    env_groups: Option<&[RuntimeEnvGroup]>,
+    selected_env_group_slug: Option<&str>,
+    on_step_start: FStart,
+    on_step_result: FResult,
+    should_cancel: FCancel,
+    on_request_start: FGate,
+) -> Vec<StepExecutionResult>
+where
+    FStart: FnMut(&str),
+    FResult: FnMut(&StepExecutionResult),
+    FCancel: FnMut() -> bool,
+    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send,
+{
+    let client = Client::new();
+    execute_pipeline_with_client_runtime_hooks(
+        &client,
+        pipeline,
+        selected_base_url_key,
+        specs,
+        env_groups,
+        selected_env_group_slug,
+        on_step_start,
+        on_step_result,
+        should_cancel,
+        on_request_start,
     )
     .await
 }
@@ -158,6 +204,7 @@ where
         on_step_start,
         on_step_result,
         should_cancel,
+        noop_request_start_gate,
     )
     .await
 }
@@ -179,7 +226,7 @@ where
     should_stop_pipeline
 }
 
-async fn execute_pipeline_with_client_runtime_hooks<FStart, FResult, FCancel>(
+async fn execute_pipeline_with_client_runtime_hooks<FStart, FResult, FCancel, FGate>(
     client: &Client,
     pipeline: &Pipeline,
     _selected_base_url_key: Option<&str>,
@@ -189,11 +236,13 @@ async fn execute_pipeline_with_client_runtime_hooks<FStart, FResult, FCancel>(
     mut on_step_start: FStart,
     mut on_step_result: FResult,
     mut should_cancel: FCancel,
+    mut on_request_start: FGate,
 ) -> Vec<StepExecutionResult>
 where
     FStart: FnMut(&str),
     FResult: FnMut(&StepExecutionResult),
     FCancel: FnMut() -> bool,
+    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send,
 {
     let mut context: HashMap<String, StepExecutionResult> = HashMap::new();
     let mut results = Vec::with_capacity(pipeline.steps.len());
@@ -366,6 +415,10 @@ where
                 body: resolved_body.clone(),
             };
             log_step_request(&step.id, &request);
+            on_request_start(&request).await;
+            if should_cancel() {
+                break 'steps;
+            }
 
             let Some(send_result) =
                 await_with_cancel(request_builder.send(), &mut should_cancel).await

@@ -35,8 +35,20 @@ export interface RpsPoint {
   rps: number;
   totalStarted?: number;
   totalSent?: number;
+  httpStarted?: number;
+  httpCompleted?: number;
   targetIntensity?: number;
   targetRpsLimit?: number;
+  runners?: RunnerRpsSample[];
+}
+
+export interface RunnerRpsSample {
+  runnerId: string;
+  httpStarted?: number;
+  httpCompleted?: number;
+  totalStarted?: number;
+  totalSent?: number;
+  rps?: number;
 }
 
 export interface RunnerRuntimeInfo {
@@ -68,6 +80,8 @@ export interface RemoteMetricsEvent {
   totalSent: number;
   totalSuccess: number;
   totalError: number;
+  httpStarted?: number;
+  httpCompleted?: number;
   rps: number;
   startTime: number;
   elapsedMs: number;
@@ -107,6 +121,8 @@ export interface ConsolidatedLoadMetrics {
   totalSent: number;
   totalSuccess: number;
   totalError: number;
+  httpStarted?: number;
+  httpCompleted?: number;
   rps: number;
   avgLatency: number;
   p95: number;

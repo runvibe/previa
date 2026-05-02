@@ -276,14 +276,25 @@ pub async fn flush_load_batches(
             continue;
         }
 
-        let consolidated = snapshot_consolidated_metrics(&load_latest, &load_latency).await;
+        let latest_snapshot = {
+            let lock = load_latest.lock().await;
+            lock.clone()
+        };
+        let consolidated = {
+            let latency_summary = {
+                let lock = load_latency.lock().await;
+                summarize_load_latency(&lock)
+            };
+            consolidate_load_metrics(&latest_snapshot, latency_summary)
+        };
         if let Some(metrics) = consolidated.as_ref() {
             let sample_at = now_ms();
             if sample_at.saturating_sub(last_rps_history_sample_at) >= 500 {
-                rps_history
-                    .lock()
-                    .await
-                    .push(build_rps_history_sample(sample_at, metrics));
+                rps_history.lock().await.push(build_rps_history_sample(
+                    sample_at,
+                    metrics,
+                    &latest_snapshot,
+                ));
                 last_rps_history_sample_at = sample_at;
             }
         }
@@ -307,14 +318,41 @@ pub async fn flush_load_batches(
     }
 }
 
-fn build_rps_history_sample(timestamp: u64, metrics: &ConsolidatedLoadMetrics) -> Value {
+fn build_rps_history_sample(
+    timestamp: u64,
+    metrics: &ConsolidatedLoadMetrics,
+    latest_by_node: &HashMap<String, RunnerLoadLine>,
+) -> Value {
+    let mut runners = latest_by_node
+        .values()
+        .filter_map(|line| {
+            let metrics = parse_runner_load_metrics(&line.payload)?;
+            Some(json!({
+                "runnerId": line.node,
+                "httpStarted": metrics.http_started,
+                "httpCompleted": metrics.http_completed,
+                "totalStarted": metrics.total_started,
+                "totalSent": metrics.total_sent,
+                "rps": metrics.rps
+            }))
+        })
+        .collect::<Vec<_>>();
+    runners.sort_by(|a, b| {
+        a.get("runnerId")
+            .and_then(Value::as_str)
+            .cmp(&b.get("runnerId").and_then(Value::as_str))
+    });
+
     json!({
         "timestamp": timestamp,
         "rps": metrics.rps,
         "totalStarted": metrics.total_started,
         "totalSent": metrics.total_sent,
+        "httpStarted": metrics.http_started,
+        "httpCompleted": metrics.http_completed,
         "targetIntensity": metrics.target_intensity,
-        "targetRpsLimit": metrics.target_rps_limit
+        "targetRpsLimit": metrics.target_rps_limit,
+        "runners": runners
     })
 }
 
@@ -384,6 +422,10 @@ pub fn consolidate_load_metrics(
     let mut total_started_nodes = 0usize;
     let mut total_success = 0usize;
     let mut total_error = 0usize;
+    let mut http_started = 0usize;
+    let mut http_started_nodes = 0usize;
+    let mut http_completed = 0usize;
+    let mut http_completed_nodes = 0usize;
     let mut rps = 0.0f64;
     let mut target_intensity = 0.0f64;
     let mut target_intensity_nodes = 0usize;
@@ -407,6 +449,14 @@ pub fn consolidate_load_metrics(
         total_sent = total_sent.saturating_add(metrics.total_sent);
         total_success = total_success.saturating_add(metrics.total_success);
         total_error = total_error.saturating_add(metrics.total_error);
+        if let Some(value) = metrics.http_started {
+            http_started = http_started.saturating_add(value);
+            http_started_nodes += 1;
+        }
+        if let Some(value) = metrics.http_completed {
+            http_completed = http_completed.saturating_add(value);
+            http_completed_nodes += 1;
+        }
         rps += metrics.rps;
         if let Some(value) = metrics.target_intensity {
             target_intensity += value;
@@ -438,6 +488,8 @@ pub fn consolidate_load_metrics(
         total_sent,
         total_success,
         total_error,
+        http_started: (http_started_nodes > 0).then_some(http_started),
+        http_completed: (http_completed_nodes > 0).then_some(http_completed),
         rps,
         target_intensity: (target_intensity_nodes > 0)
             .then(|| target_intensity / target_intensity_nodes as f64),
@@ -743,6 +795,8 @@ mod tests {
             total_sent: 42,
             total_success: 40,
             total_error: 2,
+            http_started: Some(60),
+            http_completed: Some(58),
             rps: 21.5,
             target_intensity: Some(75.0),
             target_rps_limit: Some(150.0),
@@ -756,16 +810,45 @@ mod tests {
             elapsed_ms: 2_000,
             nodes_reporting: 2,
         };
+        let latest = HashMap::from([(
+            "http://runner-a:3000".to_owned(),
+            RunnerLoadLine {
+                node: "http://runner-a:3000".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 42,
+                    "totalStarted": 45,
+                    "totalSuccess": 40,
+                    "totalError": 2,
+                    "httpStarted": 60,
+                    "httpCompleted": 58,
+                    "rps": 21.5,
+                    "startTime": 1_000,
+                    "elapsedMs": 2_000
+                }),
+            },
+        )]);
 
         assert_eq!(
-            build_rps_history_sample(1_500, &metrics),
+            build_rps_history_sample(1_500, &metrics, &latest),
             json!({
                 "timestamp": 1_500,
                 "rps": 21.5,
                 "totalStarted": 45,
                 "totalSent": 42,
+                "httpStarted": 60,
+                "httpCompleted": 58,
                 "targetIntensity": 75.0,
-                "targetRpsLimit": 150.0
+                "targetRpsLimit": 150.0,
+                "runners": [{
+                    "runnerId": "http://runner-a:3000",
+                    "httpStarted": 60,
+                    "httpCompleted": 58,
+                    "totalStarted": 45,
+                    "totalSent": 42,
+                    "rps": 21.5
+                }]
             })
         );
     }
