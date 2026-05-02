@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client;
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{Mutex, broadcast};
 use tokio_stream::StreamExt;
@@ -327,14 +328,24 @@ fn build_rps_history_sample(
         .values()
         .filter_map(|line| {
             let metrics = parse_runner_load_metrics(&line.payload)?;
-            Some(json!({
-                "runnerId": line.node,
-                "httpStarted": metrics.http_started,
-                "httpCompleted": metrics.http_completed,
-                "totalStarted": metrics.total_started,
-                "totalSent": metrics.total_sent,
-                "rps": metrics.rps
-            }))
+            let mut runner = Map::new();
+            runner.insert("runnerId".to_owned(), Value::String(line.node.clone()));
+            insert_optional(&mut runner, "httpStarted", metrics.http_started);
+            insert_optional(&mut runner, "httpCompleted", metrics.http_completed);
+            insert_optional(&mut runner, "totalStarted", metrics.total_started);
+            runner.insert("totalSent".to_owned(), json!(metrics.total_sent));
+            runner.insert("rps".to_owned(), json!(metrics.rps));
+            insert_optional(&mut runner, "scheduledStarts", metrics.scheduled_starts);
+            insert_optional(&mut runner, "missedStarts", metrics.missed_starts);
+            insert_optional(&mut runner, "readyRequests", metrics.ready_requests);
+            insert_optional(&mut runner, "activePipelines", metrics.active_pipelines);
+            insert_optional(
+                &mut runner,
+                "outstandingRequests",
+                metrics.outstanding_requests,
+            );
+            insert_optional(&mut runner, "curveAdherence", metrics.curve_adherence);
+            Some(Value::Object(runner))
         })
         .collect::<Vec<_>>();
     runners.sort_by(|a, b| {
@@ -343,17 +354,33 @@ fn build_rps_history_sample(
             .cmp(&b.get("runnerId").and_then(Value::as_str))
     });
 
-    json!({
-        "timestamp": timestamp,
-        "rps": metrics.rps,
-        "totalStarted": metrics.total_started,
-        "totalSent": metrics.total_sent,
-        "httpStarted": metrics.http_started,
-        "httpCompleted": metrics.http_completed,
-        "targetIntensity": metrics.target_intensity,
-        "targetRpsLimit": metrics.target_rps_limit,
-        "runners": runners
-    })
+    let mut sample = Map::new();
+    sample.insert("timestamp".to_owned(), json!(timestamp));
+    sample.insert("rps".to_owned(), json!(metrics.rps));
+    insert_optional(&mut sample, "totalStarted", metrics.total_started);
+    sample.insert("totalSent".to_owned(), json!(metrics.total_sent));
+    insert_optional(&mut sample, "httpStarted", metrics.http_started);
+    insert_optional(&mut sample, "httpCompleted", metrics.http_completed);
+    insert_optional(&mut sample, "targetIntensity", metrics.target_intensity);
+    insert_optional(&mut sample, "targetRpsLimit", metrics.target_rps_limit);
+    insert_optional(&mut sample, "scheduledStarts", metrics.scheduled_starts);
+    insert_optional(&mut sample, "missedStarts", metrics.missed_starts);
+    insert_optional(&mut sample, "readyRequests", metrics.ready_requests);
+    insert_optional(&mut sample, "activePipelines", metrics.active_pipelines);
+    insert_optional(
+        &mut sample,
+        "outstandingRequests",
+        metrics.outstanding_requests,
+    );
+    insert_optional(&mut sample, "curveAdherence", metrics.curve_adherence);
+    sample.insert("runners".to_owned(), Value::Array(runners));
+    Value::Object(sample)
+}
+
+fn insert_optional<T: Serialize>(map: &mut Map<String, Value>, key: &str, value: Option<T>) {
+    if let Some(value) = value {
+        map.insert(key.to_owned(), json!(value));
+    }
 }
 
 async fn refresh_load_snapshot(
@@ -433,6 +460,16 @@ pub fn consolidate_load_metrics(
     let mut in_flight = 0usize;
     let mut runner_max_rps = 0.0f64;
     let mut tick_ms = 0u64;
+    let mut scheduled_starts = 0usize;
+    let mut scheduled_starts_nodes = 0usize;
+    let mut missed_starts = 0usize;
+    let mut missed_starts_nodes = 0usize;
+    let mut ready_requests = 0usize;
+    let mut ready_requests_nodes = 0usize;
+    let mut active_pipelines = 0usize;
+    let mut active_pipelines_nodes = 0usize;
+    let mut outstanding_requests = 0usize;
+    let mut outstanding_requests_nodes = 0usize;
     let mut start_time = u64::MAX;
     let mut elapsed_ms = 0u64;
     let mut nodes_reporting = 0usize;
@@ -474,6 +511,26 @@ pub fn consolidate_load_metrics(
         if let Some(value) = metrics.tick_ms {
             tick_ms = tick_ms.max(value);
         }
+        if let Some(value) = metrics.scheduled_starts {
+            scheduled_starts = scheduled_starts.saturating_add(value);
+            scheduled_starts_nodes += 1;
+        }
+        if let Some(value) = metrics.missed_starts {
+            missed_starts = missed_starts.saturating_add(value);
+            missed_starts_nodes += 1;
+        }
+        if let Some(value) = metrics.ready_requests {
+            ready_requests = ready_requests.saturating_add(value);
+            ready_requests_nodes += 1;
+        }
+        if let Some(value) = metrics.active_pipelines {
+            active_pipelines = active_pipelines.saturating_add(value);
+            active_pipelines_nodes += 1;
+        }
+        if let Some(value) = metrics.outstanding_requests {
+            outstanding_requests = outstanding_requests.saturating_add(value);
+            outstanding_requests_nodes += 1;
+        }
         start_time = start_time.min(metrics.start_time);
         elapsed_ms = elapsed_ms.max(metrics.elapsed_ms);
         nodes_reporting += 1;
@@ -497,6 +554,21 @@ pub fn consolidate_load_metrics(
         in_flight: (in_flight > 0).then_some(in_flight),
         runner_max_rps: (runner_max_rps > 0.0).then_some(runner_max_rps),
         tick_ms: (tick_ms > 0).then_some(tick_ms),
+        scheduled_starts: (scheduled_starts_nodes > 0).then_some(scheduled_starts),
+        missed_starts: (missed_starts_nodes > 0).then_some(missed_starts),
+        ready_requests: (ready_requests_nodes > 0).then_some(ready_requests),
+        active_pipelines: (active_pipelines_nodes > 0).then_some(active_pipelines),
+        outstanding_requests: (outstanding_requests_nodes > 0).then_some(outstanding_requests),
+        curve_adherence: (scheduled_starts_nodes > 0).then(|| {
+            if scheduled_starts == 0 {
+                100.0
+            } else {
+                let value = ((scheduled_starts.saturating_sub(missed_starts)) as f64
+                    / scheduled_starts as f64)
+                    * 100.0;
+                (value * 100.0).round() / 100.0
+            }
+        }),
         avg_latency: latency.avg_latency,
         p95: latency.p95,
         p99: latency.p99,
@@ -789,6 +861,66 @@ mod tests {
     }
 
     #[test]
+    fn consolidates_dispatch_metrics() {
+        let latest = HashMap::from([
+            (
+                "http://runner-a:3000".to_owned(),
+                RunnerLoadLine {
+                    node: "http://runner-a:3000".to_owned(),
+                    runner_event: "metrics".to_owned(),
+                    received_at: 1,
+                    payload: json!({
+                        "totalSent": 10,
+                        "totalSuccess": 8,
+                        "totalError": 2,
+                        "rps": 100.0,
+                        "startTime": 1_000,
+                        "elapsedMs": 2_000,
+                        "scheduledStarts": 100,
+                        "missedStarts": 5,
+                        "readyRequests": 20,
+                        "activePipelines": 50,
+                        "outstandingRequests": 30,
+                        "curveAdherence": 95.0
+                    }),
+                },
+            ),
+            (
+                "http://runner-b:3000".to_owned(),
+                RunnerLoadLine {
+                    node: "http://runner-b:3000".to_owned(),
+                    runner_event: "metrics".to_owned(),
+                    received_at: 1,
+                    payload: json!({
+                        "totalSent": 20,
+                        "totalSuccess": 19,
+                        "totalError": 1,
+                        "rps": 120.0,
+                        "startTime": 900,
+                        "elapsedMs": 2_100,
+                        "scheduledStarts": 100,
+                        "missedStarts": 15,
+                        "readyRequests": 30,
+                        "activePipelines": 60,
+                        "outstandingRequests": 40,
+                        "curveAdherence": 85.0
+                    }),
+                },
+            ),
+        ]);
+
+        let consolidated = consolidate_load_metrics(&latest, LoadLatencySummary::default())
+            .expect("expected consolidated data");
+
+        assert_eq!(consolidated.scheduled_starts, Some(200));
+        assert_eq!(consolidated.missed_starts, Some(20));
+        assert_eq!(consolidated.ready_requests, Some(50));
+        assert_eq!(consolidated.active_pipelines, Some(110));
+        assert_eq!(consolidated.outstanding_requests, Some(70));
+        assert_eq!(consolidated.curve_adherence, Some(90.0));
+    }
+
+    #[test]
     fn builds_rps_history_sample_with_wave_targets() {
         let metrics = ConsolidatedLoadMetrics {
             total_started: Some(45),
@@ -803,6 +935,12 @@ mod tests {
             in_flight: Some(3),
             runner_max_rps: Some(200.0),
             tick_ms: Some(500),
+            scheduled_starts: None,
+            missed_starts: None,
+            ready_requests: None,
+            active_pipelines: None,
+            outstanding_requests: None,
+            curve_adherence: None,
             avg_latency: 10,
             p95: 20,
             p99: 30,

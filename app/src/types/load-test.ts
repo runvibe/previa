@@ -39,6 +39,12 @@ export interface RpsPoint {
   httpCompleted?: number;
   targetIntensity?: number;
   targetRpsLimit?: number;
+  scheduledStarts?: number;
+  missedStarts?: number;
+  readyRequests?: number;
+  activePipelines?: number;
+  outstandingRequests?: number;
+  curveAdherence?: number;
   runners?: RunnerRpsSample[];
 }
 
@@ -49,6 +55,12 @@ export interface RunnerRpsSample {
   totalStarted?: number;
   totalSent?: number;
   rps?: number;
+  scheduledStarts?: number;
+  missedStarts?: number;
+  readyRequests?: number;
+  activePipelines?: number;
+  outstandingRequests?: number;
+  curveAdherence?: number;
 }
 
 export interface RunnerRuntimeInfo {
@@ -90,6 +102,12 @@ export interface RemoteMetricsEvent {
   inFlight?: number;
   runnerMaxRps?: number;
   tickMs?: number;
+  scheduledStarts?: number;
+  missedStarts?: number;
+  readyRequests?: number;
+  activePipelines?: number;
+  outstandingRequests?: number;
+  curveAdherence?: number;
   runtime?: RunnerRuntimeInfo;
 }
 
@@ -113,6 +131,12 @@ export interface LoadTestMetrics {
   inFlight?: number;
   runnerMaxRps?: number;
   tickMs?: number;
+  scheduledStarts?: number;
+  missedStarts?: number;
+  readyRequests?: number;
+  activePipelines?: number;
+  outstandingRequests?: number;
+  curveAdherence?: number;
 }
 
 /** Consolidated metrics sent by the orchestrator (includes percentiles). */
@@ -135,6 +159,12 @@ export interface ConsolidatedLoadMetrics {
   inFlight?: number;
   runnerMaxRps?: number;
   tickMs?: number;
+  scheduledStarts?: number;
+  missedStarts?: number;
+  readyRequests?: number;
+  activePipelines?: number;
+  outstandingRequests?: number;
+  curveAdherence?: number;
 }
 
 export type LoadTestState = "idle" | "running" | "completed" | "cancelled";

@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge } from "lucide-react";
+import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge, AlertTriangle, ListChecks } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { buildRpsChartData } from "@/lib/load-rps-chart";
 import { isWaveLoadConfig } from "@/types/load-test";
@@ -214,6 +214,44 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
           )}
           {typeof metrics.inFlight === "number" && (
             <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
+          )}
+        </div>
+      )}
+      {(typeof metrics.curveAdherence === "number" ||
+        typeof metrics.missedStarts === "number" ||
+        typeof metrics.readyRequests === "number" ||
+        typeof metrics.outstandingRequests === "number") && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {typeof metrics.curveAdherence === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.curveAdherence")}
+              value={`${parseFloat(metrics.curveAdherence.toFixed(1))}%`}
+              color="text-success"
+            />
+          )}
+          {typeof metrics.missedStarts === "number" && (
+            <MetricCard
+              icon={AlertTriangle}
+              label={t("loadTestResults.missedStarts")}
+              value={metrics.missedStarts}
+              color="text-warning"
+            />
+          )}
+          {typeof metrics.readyRequests === "number" && (
+            <MetricCard
+              icon={ListChecks}
+              label={t("loadTestResults.readyRequests")}
+              value={metrics.readyRequests}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.outstandingRequests === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.outstandingRequests")}
+              value={metrics.outstandingRequests}
+            />
           )}
         </div>
       )}

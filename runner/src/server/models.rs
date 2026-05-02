@@ -110,6 +110,18 @@ pub struct LoadTestMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tick_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missed_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_requests: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_pipelines: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outstanding_requests: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curve_adherence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RunnerInfoResponse>,

@@ -804,6 +804,12 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     inFlight: consolidated?.inFlight,
     runnerMaxRps: consolidated?.runnerMaxRps,
     tickMs: consolidated?.tickMs,
+    scheduledStarts: consolidated?.scheduledStarts,
+    missedStarts: consolidated?.missedStarts,
+    readyRequests: consolidated?.readyRequests,
+    activePipelines: consolidated?.activePipelines,
+    outstandingRequests: consolidated?.outstandingRequests,
+    curveAdherence: consolidated?.curveAdherence,
   };
 
   const state: LoadTestState =

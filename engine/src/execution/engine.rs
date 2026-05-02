@@ -16,8 +16,8 @@ use crate::template::resolve::resolve_template_variables;
 
 fn noop_request_start_gate<'a>(
     _: &'a StepRequest,
-) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-    Box::pin(async {})
+) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+    Box::pin(async { true })
 }
 
 pub async fn execute_pipeline(
@@ -163,7 +163,7 @@ where
     FStart: FnMut(&str),
     FResult: FnMut(&StepExecutionResult),
     FCancel: FnMut() -> bool,
-    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send,
+    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> + Send,
 {
     let client = Client::new();
     execute_pipeline_with_client_runtime_hooks(
@@ -242,7 +242,7 @@ where
     FStart: FnMut(&str),
     FResult: FnMut(&StepExecutionResult),
     FCancel: FnMut() -> bool,
-    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> + Send,
+    FGate: for<'a> FnMut(&'a StepRequest) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> + Send,
 {
     let mut context: HashMap<String, StepExecutionResult> = HashMap::new();
     let mut results = Vec::with_capacity(pipeline.steps.len());
@@ -415,7 +415,10 @@ where
                 body: resolved_body.clone(),
             };
             log_step_request(&step.id, &request);
-            on_request_start(&request).await;
+            let request_admitted = on_request_start(&request).await;
+            if !request_admitted {
+                break 'steps;
+            }
             if should_cancel() {
                 break 'steps;
             }
@@ -781,6 +784,52 @@ mod tests {
             results[0].response.as_ref().map(|r| r.body.clone()),
             Some(Value::String("prod".to_owned()))
         );
+    }
+
+    #[tokio::test]
+    async fn request_gate_can_decline_before_http_send() {
+        let server = MockServer::start_async().await;
+        let call = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/blocked");
+                then.status(200).body("should not be called");
+            })
+            .await;
+
+        let pipeline = Pipeline {
+            id: None,
+            name: "Gate".to_owned(),
+            description: None,
+            steps: vec![PipelineStep {
+                id: "blocked".to_owned(),
+                name: "Blocked".to_owned(),
+                description: None,
+                method: "GET".to_owned(),
+                url: format!("{}/blocked", server.base_url()),
+                headers: HashMap::new(),
+                body: None,
+                operation_id: None,
+                delay: None,
+                retry: None,
+                asserts: vec![],
+            }],
+        };
+
+        let results = execute_pipeline_with_runtime_request_gate(
+            &pipeline,
+            None,
+            None,
+            None,
+            None,
+            |_| {},
+            |_| {},
+            || false,
+            |_| Box::pin(async { false }),
+        )
+        .await;
+
+        assert!(results.is_empty());
+        call.assert_calls_async(0).await;
     }
 
     #[tokio::test]

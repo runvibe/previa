@@ -50,14 +50,17 @@ function estimateTargetRpsLimit(
   waveConfig: WaveLoadConfig | null,
   elapsedMs: number,
 ) {
+  if (waveConfig && typeof metrics.runnerMaxRps === "number") {
+    const intensity = sampleWaveIntensity(waveConfig, elapsedMs);
+    return typeof intensity === "number" ? roundOne((metrics.runnerMaxRps * intensity) / 100) : undefined;
+  }
+
   if (typeof point.targetRpsLimit === "number") return roundOne(point.targetRpsLimit);
   if (typeof metrics.runnerMaxRps !== "number") return undefined;
 
   const intensity = typeof point.targetIntensity === "number"
     ? point.targetIntensity
-    : waveConfig
-      ? sampleWaveIntensity(waveConfig, elapsedMs)
-      : undefined;
+    : undefined;
 
   return typeof intensity === "number" ? roundOne((metrics.runnerMaxRps * intensity) / 100) : undefined;
 }
@@ -121,7 +124,7 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
           && typeof runner.httpStarted === "number"
           && intervalSeconds > 0
           ? Math.max(0, (runner.httpStarted - previousRunner.httpStarted) / intervalSeconds)
-          : runner.rps ?? 0;
+          : 0;
         const rounded = roundOne(intervalRps);
         row[key] = rounded;
         total += rounded;
@@ -135,7 +138,7 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
       && typeof point.httpStarted === "number"
       && intervalSeconds > 0
       ? Math.max(0, (point.httpStarted - previousHttpStarted) / intervalSeconds)
-      : point.rps;
+      : 0;
     row.rpsTotal = roundOne(total);
     return row;
   });

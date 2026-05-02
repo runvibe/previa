@@ -229,6 +229,73 @@ describe("LoadTestResultsPanel", () => {
     });
   });
 
+  it("does not use cumulative runner RPS for the first HTTP chart sample", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 1_000,
+          rps: 50_000,
+          httpStarted: 300,
+          runners: [
+            { runnerId: "runner-a", httpStarted: 100, rps: 16_000 },
+            { runnerId: "runner-b", httpStarted: 200, rps: 34_000 },
+          ],
+        },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null).data[0]).toEqual({
+      time: 0,
+      rpsTotal: 0,
+      runner0: 0,
+      runner1: 0,
+      targetRpsLimit: undefined,
+    });
+  });
+
+  it("uses the configured wave for target RPS instead of stale samples", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 3_000, intensity: 80 },
+      ],
+      interpolation: "smooth",
+    };
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      runnerMaxRps: 3_000,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0, httpStarted: 0, targetRpsLimit: 300 },
+        { timestamp: 4_000, rps: 0, httpStarted: 2_400, targetRpsLimit: 300 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, config).data[1].targetRpsLimit).toBe(2400);
+  });
+
+  it("shows wave dispatch adherence metrics when available", () => {
+    render(
+      <LoadTestResultsPanel
+        metrics={{
+          ...emptyMetrics,
+          curveAdherence: 95,
+          missedStarts: 20,
+          readyRequests: 50,
+        }}
+        state="running"
+        totalRequests={0}
+      />,
+    );
+
+    expect(screen.getByText("loadTestResults.curveAdherence")).toBeInTheDocument();
+    expect(screen.getByText("95%")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.missedStarts")).toBeInTheDocument();
+    expect(screen.getByText("20")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.readyRequests")).toBeInTheDocument();
+    expect(screen.getByText("50")).toBeInTheDocument();
+  });
+
   it("shows actual and target RPS legend when target data exists", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,

@@ -18,7 +18,7 @@ use previa_runner::{
 };
 
 use crate::server::errors::{bad_request_message_response, bad_request_response};
-use crate::server::load_bucket::FlowBucket;
+use crate::server::load_dispatch::{DispatchClock, DispatchRuntimeState};
 use crate::server::load_wave::{
     calculate_tick_ms, local_rps_limit, sample_intensity, timeline_end_ms, validate_load_profile,
 };
@@ -241,6 +241,7 @@ async fn run_classic_load(
                         Box::pin(async move {
                             let mut lock = metrics.lock().await;
                             lock.record_http_start();
+                            true
                         })
                     },
                 )
@@ -304,6 +305,40 @@ async fn run_classic_load(
     }
 }
 
+fn wave_snapshot(
+    load: &LoadProfile,
+    elapsed_ms: u64,
+    tick_ms: u64,
+    in_flight: usize,
+    dispatch: &DispatchRuntimeState,
+    missed_starts: usize,
+    outstanding_requests: usize,
+) -> crate::server::metrics::WaveMetricsSnapshot {
+    crate::server::metrics::WaveMetricsSnapshot {
+        target_intensity: sample_intensity(load, elapsed_ms),
+        target_rps_limit: local_rps_limit(load, elapsed_ms),
+        in_flight,
+        runner_max_rps: load.runner_max_rps,
+        tick_ms,
+        scheduled_starts: dispatch.scheduled_total(),
+        missed_starts,
+        ready_requests: dispatch.waiting_ready_requests(),
+        active_pipelines: in_flight,
+        outstanding_requests,
+    }
+}
+
+fn saturating_fetch_sub(value: &AtomicUsize, amount: usize) {
+    let mut current = value.load(Ordering::SeqCst);
+    loop {
+        let next = current.saturating_sub(amount);
+        match value.compare_exchange(current, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 async fn run_wave_load(
     load: LoadProfile,
     pipeline: Pipeline,
@@ -320,10 +355,10 @@ async fn run_wave_load(
     let metrics = Arc::new(tokio::sync::Mutex::new(MetricsAccumulator::new()));
     let runtime_sampler = Arc::new(tokio::sync::Mutex::new(RuntimeSampler::new()));
     let in_flight = Arc::new(AtomicUsize::new(0));
-    let bucket = Arc::new(tokio::sync::Mutex::new(FlowBucket::new(
-        local_rps_limit(&load, 0),
-        0,
-    )));
+    let dispatch = Arc::new(DispatchRuntimeState::new());
+    let missed_starts = Arc::new(AtomicUsize::new(0));
+    let outstanding_requests = Arc::new(AtomicUsize::new(0));
+    let mut dispatch_clock = DispatchClock::new(tick_ms);
     let mut tasks = JoinSet::new();
 
     loop {
@@ -341,10 +376,20 @@ async fn run_wave_load(
             break;
         }
 
-        let target_intensity = sample_intensity(&load, elapsed_ms);
         let target_rps_limit = local_rps_limit(&load, elapsed_ms);
+        let tick = dispatch_clock.plan_tick(elapsed_ms, target_rps_limit);
+        dispatch.open_tick(tick);
 
-        while in_flight.load(Ordering::SeqCst) < load.max_in_flight {
+        let desired_ready = ((target_rps_limit * tick_ms as f64 / 1000.0).ceil() as usize)
+            .saturating_mul(2)
+            .max(1);
+        let spawn_needed = desired_ready.saturating_sub(dispatch.waiting_ready_requests());
+        let desired_active = in_flight
+            .load(Ordering::SeqCst)
+            .saturating_add(spawn_needed)
+            .min(load.max_in_flight);
+
+        while in_flight.load(Ordering::SeqCst) < desired_active {
             let pipeline = pipeline.clone();
             let selected_key = selected_key.clone();
             let selected_env_group_slug = selected_env_group_slug.clone();
@@ -355,15 +400,10 @@ async fn run_wave_load(
             let metrics = Arc::clone(&metrics);
             let runtime_sampler = Arc::clone(&runtime_sampler);
             let in_flight = Arc::clone(&in_flight);
-            let bucket = Arc::clone(&bucket);
-            let load_for_gate = load.clone();
-            let wave_snapshot = crate::server::metrics::WaveMetricsSnapshot {
-                target_intensity,
-                target_rps_limit,
-                in_flight: in_flight.load(Ordering::SeqCst) + 1,
-                runner_max_rps: load.runner_max_rps,
-                tick_ms,
-            };
+            let dispatch = Arc::clone(&dispatch);
+            let missed_starts = Arc::clone(&missed_starts);
+            let outstanding_requests = Arc::clone(&outstanding_requests);
+            let load_for_snapshot = load.clone();
 
             in_flight.fetch_add(1, Ordering::SeqCst);
             {
@@ -374,6 +414,8 @@ async fn run_wave_load(
                 let start = Instant::now();
                 let metrics_for_gate = Arc::clone(&metrics);
                 let token_for_gate = token.clone();
+                let dispatch_for_gate = Arc::clone(&dispatch);
+                let outstanding_for_gate = Arc::clone(&outstanding_requests);
                 let results = execute_pipeline_with_runtime_request_gate(
                     &pipeline,
                     selected_key.as_deref(),
@@ -384,54 +426,58 @@ async fn run_wave_load(
                     |_| {},
                     || token.is_cancelled(),
                     move |_| {
-                        let bucket = Arc::clone(&bucket);
+                        let dispatch = Arc::clone(&dispatch_for_gate);
                         let metrics = Arc::clone(&metrics_for_gate);
                         let token = token_for_gate.clone();
-                        let load = load_for_gate.clone();
+                        let outstanding_requests = Arc::clone(&outstanding_for_gate);
                         Box::pin(async move {
-                            loop {
-                                if token.is_cancelled() {
-                                    return;
-                                }
-                                let elapsed_ms = started.elapsed().as_millis() as u64;
-                                let target_rps_limit = local_rps_limit(&load, elapsed_ms);
-                                let acquired = {
-                                    let mut bucket = bucket.lock().await;
-                                    bucket.refill(target_rps_limit, elapsed_ms);
-                                    bucket.try_acquire()
-                                };
-                                if acquired {
-                                    let mut lock = metrics.lock().await;
-                                    lock.record_http_start();
-                                    return;
-                                }
-                                tokio::time::sleep(tokio::time::Duration::from_millis(
-                                    tick_ms.min(100),
-                                ))
-                                .await;
+                            if dispatch.acquire(|| token.is_cancelled()).await {
+                                outstanding_requests.fetch_add(1, Ordering::SeqCst);
+                                let mut lock = metrics.lock().await;
+                                lock.record_http_start();
+                                true
+                            } else {
+                                false
                             }
                         })
                     },
                 )
                 .await;
                 let duration_ms = start.elapsed().as_millis() as u64;
-                let success = !results.iter().any(|result| result.status == "error");
+                let has_error = results.iter().any(|result| result.status == "error");
+                let completed_pipeline = results.len() == pipeline.steps.len();
+                let success = completed_pipeline && !has_error;
                 let (network_tx_bytes, network_rx_bytes) = estimate_results_network_bytes(&results);
                 let runtime = {
                     let mut lock = runtime_sampler.lock().await;
                     lock.snapshot()
                 };
+                let completed_http = results
+                    .iter()
+                    .filter(|result| result.request.is_some())
+                    .count();
+                saturating_fetch_sub(&outstanding_requests, completed_http);
                 let snapshot = {
                     let mut lock = metrics.lock().await;
-                    lock.update(duration_ms as f64, success);
-                    lock.record_http_completed_count(
-                        results
-                            .iter()
-                            .filter(|result| result.request.is_some())
-                            .count(),
-                    );
+                    if completed_pipeline || has_error {
+                        lock.update(duration_ms as f64, success);
+                    }
+                    lock.record_http_completed_count(completed_http);
                     lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
-                    lock.snapshot_with_wave(Some(duration_ms), runtime, Some(wave_snapshot))
+                    let elapsed_ms = started.elapsed().as_millis() as u64;
+                    lock.snapshot_with_wave(
+                        Some(duration_ms),
+                        runtime,
+                        Some(wave_snapshot(
+                            &load_for_snapshot,
+                            elapsed_ms,
+                            tick_ms,
+                            in_flight.load(Ordering::SeqCst),
+                            &dispatch,
+                            missed_starts.load(Ordering::SeqCst),
+                            outstanding_requests.load(Ordering::SeqCst),
+                        )),
+                    )
                 };
                 in_flight.fetch_sub(1, Ordering::SeqCst);
                 let _ = send_sse_or_cancel(
@@ -452,13 +498,15 @@ async fn run_wave_load(
             lock.snapshot_with_wave(
                 None,
                 runtime,
-                Some(crate::server::metrics::WaveMetricsSnapshot {
-                    target_intensity,
-                    target_rps_limit,
-                    in_flight: in_flight.load(Ordering::SeqCst),
-                    runner_max_rps: load.runner_max_rps,
+                Some(wave_snapshot(
+                    &load,
+                    elapsed_ms,
                     tick_ms,
-                }),
+                    in_flight.load(Ordering::SeqCst),
+                    &dispatch,
+                    missed_starts.load(Ordering::SeqCst),
+                    outstanding_requests.load(Ordering::SeqCst),
+                )),
             )
         };
         let _ = send_sse_or_cancel(
@@ -469,7 +517,10 @@ async fn run_wave_load(
         );
 
         tokio::time::sleep(tokio::time::Duration::from_millis(tick_ms)).await;
+        let report = dispatch.finish_tick();
+        missed_starts.fetch_add(report.missed_starts, Ordering::SeqCst);
     }
+    dispatch.close();
 
     let grace_deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(load.grace_period_ms);
@@ -499,13 +550,15 @@ async fn run_wave_load(
         lock.snapshot_with_wave(
             None,
             runtime,
-            Some(crate::server::metrics::WaveMetricsSnapshot {
-                target_intensity: sample_intensity(&load, end_ms),
-                target_rps_limit: local_rps_limit(&load, end_ms),
-                in_flight: in_flight.load(Ordering::SeqCst),
-                runner_max_rps: load.runner_max_rps,
+            Some(wave_snapshot(
+                &load,
+                end_ms,
                 tick_ms,
-            }),
+                in_flight.load(Ordering::SeqCst),
+                &dispatch,
+                missed_starts.load(Ordering::SeqCst),
+                outstanding_requests.load(Ordering::SeqCst),
+            )),
         )
     };
 

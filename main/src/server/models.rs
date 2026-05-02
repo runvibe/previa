@@ -690,6 +690,18 @@ pub struct ConsolidatedLoadMetrics {
     pub runner_max_rps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tick_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missed_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_requests: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_pipelines: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outstanding_requests: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curve_adherence: Option<f64>,
     pub avg_latency: u64,
     pub p95: u64,
     pub p99: u64,
@@ -769,6 +781,12 @@ pub struct RunnerLoadMetricsPoint {
     pub in_flight: Option<usize>,
     pub runner_max_rps: Option<f64>,
     pub tick_ms: Option<u64>,
+    pub scheduled_starts: Option<usize>,
+    pub missed_starts: Option<usize>,
+    pub ready_requests: Option<usize>,
+    pub active_pipelines: Option<usize>,
+    pub outstanding_requests: Option<usize>,
+    pub curve_adherence: Option<f64>,
 }
 
 #[derive(Debug, Clone)]

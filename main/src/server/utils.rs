@@ -44,6 +44,12 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         in_flight: get_usize_field(payload, "inFlight"),
         runner_max_rps: get_f64_field(payload, "runnerMaxRps"),
         tick_ms: get_u64_field(payload, "tickMs"),
+        scheduled_starts: get_usize_field(payload, "scheduledStarts"),
+        missed_starts: get_usize_field(payload, "missedStarts"),
+        ready_requests: get_usize_field(payload, "readyRequests"),
+        active_pipelines: get_usize_field(payload, "activePipelines"),
+        outstanding_requests: get_usize_field(payload, "outstandingRequests"),
+        curve_adherence: get_f64_field(payload, "curveAdherence"),
     })
 }
 

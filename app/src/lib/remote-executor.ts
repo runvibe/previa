@@ -223,6 +223,12 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     inFlight: toNumber(value.inFlight),
     runnerMaxRps: toNumber(value.runnerMaxRps),
     tickMs: toNumber(value.tickMs),
+    scheduledStarts: toNumber(value.scheduledStarts),
+    missedStarts: toNumber(value.missedStarts),
+    readyRequests: toNumber(value.readyRequests),
+    activePipelines: toNumber(value.activePipelines),
+    outstandingRequests: toNumber(value.outstandingRequests),
+    curveAdherence: toNumber(value.curveAdherence),
     runtime: extractRunnerRuntime(value.runtime),
   };
 }
@@ -287,6 +293,12 @@ function extractRunnerResourcePoints(lines: unknown[]): RunnerResourcePoint[] {
 
 const MAX_RUNNER_RESOURCE_POINTS = 800;
 
+function computeCurveAdherence(scheduledStarts?: number, missedStarts?: number): number | undefined {
+  if (scheduledStarts === undefined) return undefined;
+  if (scheduledStarts === 0) return 100;
+  return Math.round(((scheduledStarts - (missedStarts ?? 0)) / scheduledStarts) * 10_000) / 100;
+}
+
 function appendRunnerResourceHistory(history: RunnerResourcePoint[], lines: unknown[] | undefined) {
   if (!lines) return;
   const points = extractRunnerResourcePoints(lines);
@@ -307,7 +319,7 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
 
   if (metrics.length === 0) return null;
 
-  return metrics.reduce<RemoteMetricsEvent>(
+  const aggregated = metrics.reduce<RemoteMetricsEvent>(
     (acc, item) => {
       const nextTargetIntensity =
         item.targetIntensity !== undefined
@@ -334,6 +346,12 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
         inFlight: (acc.inFlight ?? 0) + (item.inFlight ?? 0) || undefined,
         runnerMaxRps: (acc.runnerMaxRps ?? 0) + (item.runnerMaxRps ?? 0) || undefined,
         tickMs: Math.max(acc.tickMs ?? 0, item.tickMs ?? 0) || undefined,
+        scheduledStarts: (acc.scheduledStarts ?? 0) + (item.scheduledStarts ?? 0) || undefined,
+        missedStarts: (acc.missedStarts ?? 0) + (item.missedStarts ?? 0) || undefined,
+        readyRequests: (acc.readyRequests ?? 0) + (item.readyRequests ?? 0) || undefined,
+        activePipelines: (acc.activePipelines ?? 0) + (item.activePipelines ?? 0) || undefined,
+        outstandingRequests: (acc.outstandingRequests ?? 0) + (item.outstandingRequests ?? 0) || undefined,
+        curveAdherence: item.curveAdherence ?? acc.curveAdherence,
       };
     },
     {
@@ -345,6 +363,14 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
       elapsedMs: 0,
     },
   );
+
+  return {
+    ...aggregated,
+    curveAdherence: computeCurveAdherence(
+      aggregated.scheduledStarts,
+      aggregated.missedStarts,
+    ) ?? aggregated.curveAdherence,
+  };
 }
 
 function extractNodesInfo(context: unknown): RemoteNodesInfo | null {
@@ -383,6 +409,12 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const httpCompleted = toNumber(consolidated?.httpCompleted) ?? aggregated?.httpCompleted;
   const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
   const targetRpsLimit = toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit;
+  const scheduledStarts = toNumber(consolidated?.scheduledStarts) ?? aggregated?.scheduledStarts;
+  const missedStarts = toNumber(consolidated?.missedStarts) ?? aggregated?.missedStarts;
+  const readyRequests = toNumber(consolidated?.readyRequests) ?? aggregated?.readyRequests;
+  const activePipelines = toNumber(consolidated?.activePipelines) ?? aggregated?.activePipelines;
+  const outstandingRequests = toNumber(consolidated?.outstandingRequests) ?? aggregated?.outstandingRequests;
+  const curveAdherence = toNumber(consolidated?.curveAdherence) ?? aggregated?.curveAdherence;
 
   return {
     totalSent,
@@ -396,7 +428,22 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     p99: toNumber(consolidated?.p99) ?? 0,
     rps,
     latencyHistory: [],
-    rpsHistory: rps > 0 ? [{ timestamp: Date.now(), rps, totalStarted, totalSent, httpStarted, httpCompleted, targetIntensity, targetRpsLimit }] : [],
+    rpsHistory: rps > 0 ? [{
+      timestamp: Date.now(),
+      rps,
+      totalStarted,
+      totalSent,
+      httpStarted,
+      httpCompleted,
+      targetIntensity,
+      targetRpsLimit,
+      scheduledStarts,
+      missedStarts,
+      readyRequests,
+      activePipelines,
+      outstandingRequests,
+      curveAdherence,
+    }] : [],
     runnerResourceHistory: Array.isArray(snapshot.lines)
       ? extractRunnerResourcePoints(snapshot.lines)
       : [],
@@ -407,6 +454,12 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     inFlight: toNumber(consolidated?.inFlight) ?? aggregated?.inFlight,
     runnerMaxRps: toNumber(consolidated?.runnerMaxRps) ?? aggregated?.runnerMaxRps,
     tickMs: toNumber(consolidated?.tickMs) ?? aggregated?.tickMs,
+    scheduledStarts,
+    missedStarts,
+    readyRequests,
+    activePipelines,
+    outstandingRequests,
+    curveAdherence,
   };
 }
 
@@ -732,6 +785,11 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
   let inFlight = 0, hasInFlight = false;
   let runnerMaxRps = 0, hasRunnerMaxRps = false;
   let tickMs = 0;
+  let scheduledStarts = 0, hasScheduledStarts = false;
+  let missedStarts = 0, hasMissedStarts = false;
+  let readyRequests = 0, hasReadyRequests = false;
+  let activePipelines = 0, hasActivePipelines = false;
+  let outstandingRequests = 0, hasOutstandingRequests = false;
 
   for (const p of nodeMap.values()) {
     totalSent += p.totalSent;
@@ -763,7 +821,31 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
     if (typeof p.tickMs === "number") {
       tickMs = Math.max(tickMs, p.tickMs);
     }
+    if (typeof p.scheduledStarts === "number") {
+      scheduledStarts += p.scheduledStarts;
+      hasScheduledStarts = true;
+    }
+    if (typeof p.missedStarts === "number") {
+      missedStarts += p.missedStarts;
+      hasMissedStarts = true;
+    }
+    if (typeof p.readyRequests === "number") {
+      readyRequests += p.readyRequests;
+      hasReadyRequests = true;
+    }
+    if (typeof p.activePipelines === "number") {
+      activePipelines += p.activePipelines;
+      hasActivePipelines = true;
+    }
+    if (typeof p.outstandingRequests === "number") {
+      outstandingRequests += p.outstandingRequests;
+      hasOutstandingRequests = true;
+    }
   }
+  const curveAdherence = computeCurveAdherence(
+    hasScheduledStarts ? scheduledStarts : undefined,
+    hasMissedStarts ? missedStarts : undefined,
+  );
 
   return {
     totalSent,
@@ -778,6 +860,12 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
     inFlight: hasInFlight ? inFlight : undefined,
     runnerMaxRps: hasRunnerMaxRps ? runnerMaxRps : undefined,
     tickMs: tickMs > 0 ? tickMs : undefined,
+    scheduledStarts: hasScheduledStarts ? scheduledStarts : undefined,
+    missedStarts: hasMissedStarts ? missedStarts : undefined,
+    readyRequests: hasReadyRequests ? readyRequests : undefined,
+    activePipelines: hasActivePipelines ? activePipelines : undefined,
+    outstandingRequests: hasOutstandingRequests ? outstandingRequests : undefined,
+    curveAdherence,
   };
 }
 
@@ -795,6 +883,12 @@ function buildRpsHistoryPoint(
       totalStarted: metrics.totalStarted,
       totalSent: metrics.totalSent,
       rps: metrics.rps,
+      scheduledStarts: metrics.scheduledStarts,
+      missedStarts: metrics.missedStarts,
+      readyRequests: metrics.readyRequests,
+      activePipelines: metrics.activePipelines,
+      outstandingRequests: metrics.outstandingRequests,
+      curveAdherence: metrics.curveAdherence,
     }))
     : undefined;
 
@@ -807,6 +901,12 @@ function buildRpsHistoryPoint(
     httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
     targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
     targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
+    scheduledStarts: consolidated?.scheduledStarts ?? event.scheduledStarts,
+    missedStarts: consolidated?.missedStarts ?? event.missedStarts,
+    readyRequests: consolidated?.readyRequests ?? event.readyRequests,
+    activePipelines: consolidated?.activePipelines ?? event.activePipelines,
+    outstandingRequests: consolidated?.outstandingRequests ?? event.outstandingRequests,
+    curveAdherence: consolidated?.curveAdherence ?? event.curveAdherence,
     runners,
   };
 }
@@ -860,6 +960,12 @@ export function runRemoteLoadTest(
       inFlight: consolidated?.inFlight ?? event.inFlight,
       runnerMaxRps: consolidated?.runnerMaxRps ?? event.runnerMaxRps,
       tickMs: consolidated?.tickMs ?? event.tickMs,
+      scheduledStarts: consolidated?.scheduledStarts ?? event.scheduledStarts,
+      missedStarts: consolidated?.missedStarts ?? event.missedStarts,
+      readyRequests: consolidated?.readyRequests ?? event.readyRequests,
+      activePipelines: consolidated?.activePipelines ?? event.activePipelines,
+      outstandingRequests: consolidated?.outstandingRequests ?? event.outstandingRequests,
+      curveAdherence: consolidated?.curveAdherence ?? event.curveAdherence,
     };
   }
 
@@ -1218,6 +1324,12 @@ export function reconnectToLoadExecution(
       inFlight: consolidated?.inFlight ?? event.inFlight,
       runnerMaxRps: consolidated?.runnerMaxRps ?? event.runnerMaxRps,
       tickMs: consolidated?.tickMs ?? event.tickMs,
+      scheduledStarts: consolidated?.scheduledStarts ?? event.scheduledStarts,
+      missedStarts: consolidated?.missedStarts ?? event.missedStarts,
+      readyRequests: consolidated?.readyRequests ?? event.readyRequests,
+      activePipelines: consolidated?.activePipelines ?? event.activePipelines,
+      outstandingRequests: consolidated?.outstandingRequests ?? event.outstandingRequests,
+      curveAdherence: consolidated?.curveAdherence ?? event.curveAdherence,
     };
   }
 

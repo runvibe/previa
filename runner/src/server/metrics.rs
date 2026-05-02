@@ -9,6 +9,11 @@ pub struct WaveMetricsSnapshot {
     pub in_flight: usize,
     pub runner_max_rps: f64,
     pub tick_ms: u64,
+    pub scheduled_starts: usize,
+    pub missed_starts: usize,
+    pub ready_requests: usize,
+    pub active_pipelines: usize,
+    pub outstanding_requests: usize,
 }
 
 #[derive(Debug)]
@@ -101,6 +106,17 @@ impl MetricsAccumulator {
                 self.network_tx_bytes.saturating_add(self.network_rx_bytes);
             runtime
         });
+        let curve_adherence = wave.as_ref().map(|value| {
+            if value.scheduled_starts == 0 {
+                100.0
+            } else {
+                round2(
+                    ((value.scheduled_starts.saturating_sub(value.missed_starts)) as f64
+                        / value.scheduled_starts as f64)
+                        * 100.0,
+                )
+            }
+        });
 
         LoadTestMetrics {
             total_started: self.total_started,
@@ -117,6 +133,12 @@ impl MetricsAccumulator {
             in_flight: wave.as_ref().map(|value| value.in_flight),
             runner_max_rps: wave.as_ref().map(|value| round2(value.runner_max_rps)),
             tick_ms: wave.as_ref().map(|value| value.tick_ms),
+            scheduled_starts: wave.as_ref().map(|value| value.scheduled_starts),
+            missed_starts: wave.as_ref().map(|value| value.missed_starts),
+            ready_requests: wave.as_ref().map(|value| value.ready_requests),
+            active_pipelines: wave.as_ref().map(|value| value.active_pipelines),
+            outstanding_requests: wave.as_ref().map(|value| value.outstanding_requests),
+            curve_adherence,
             duration_ms,
             runtime,
         }
@@ -200,6 +222,31 @@ mod tests {
 
         assert_eq!(snapshot.total_sent, 1);
         assert_eq!(snapshot.duration_ms, Some(150));
+    }
+
+    #[test]
+    fn snapshot_includes_dispatch_adherence() {
+        let metrics = MetricsAccumulator::new();
+        let snapshot = metrics.snapshot_with_wave(
+            None,
+            None,
+            Some(WaveMetricsSnapshot {
+                target_intensity: 80.0,
+                target_rps_limit: 800.0,
+                in_flight: 50,
+                runner_max_rps: 1000.0,
+                tick_ms: 100,
+                scheduled_starts: 80,
+                missed_starts: 4,
+                ready_requests: 20,
+                active_pipelines: 200,
+                outstanding_requests: 150,
+            }),
+        );
+
+        assert_eq!(snapshot.scheduled_starts, Some(80));
+        assert_eq!(snapshot.missed_starts, Some(4));
+        assert_eq!(snapshot.curve_adherence, Some(95.0));
     }
 
     #[test]

@@ -231,6 +231,10 @@
   "loadTestResults.targetIntensity": "Target",
   "loadTestResults.targetRpsLimit": "RPS limit",
   "loadTestResults.inFlight": "In flight",
+  "loadTestResults.curveAdherence": "Adherence",
+  "loadTestResults.missedStarts": "Missed starts",
+  "loadTestResults.readyRequests": "Ready",
+  "loadTestResults.outstandingRequests": "Outstanding",
   "loadTestResults.configuredWave": "Configured wave",
 
   "pipeline.editPipeline": "Edit pipeline",
