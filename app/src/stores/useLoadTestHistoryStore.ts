@@ -9,7 +9,7 @@ import {
 import { runRemoteLoadTest, reconnectToLoadExecution, type RemoteLoadTestController } from "@/lib/remote-executor";
 import * as apiClient from "@/lib/api-client";
 import type { Pipeline } from "@/types/pipeline";
-import type { LoadTestConfig, LoadTestMetrics, LoadTestState } from "@/types/load-test";
+import type { LoadRunConfig, LoadTestMetrics, LoadTestState } from "@/types/load-test";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 
@@ -34,7 +34,7 @@ interface LoadTestHistoryState {
   // Execution state — what the UI displays
   state: LoadTestState;
   metrics: LoadTestMetrics;
-  config: LoadTestConfig | null;
+  config: LoadRunConfig | null;
   nodesInfo: NodesInfo | null;
 
   // Live state — always reflects real execution (decoupled from display when browsing history)
@@ -55,7 +55,7 @@ interface LoadTestHistoryState {
     pipeline: Pipeline,
     pipelineIndex: number,
     projectId: string,
-    cfg: LoadTestConfig,
+    cfg: LoadRunConfig,
     executionBackendUrl?: string,
     selectedBaseUrlKey?: string,
     specs?: import("@/types/project").ProjectSpec[],

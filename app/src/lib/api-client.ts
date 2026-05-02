@@ -796,6 +796,11 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     runnerResourceHistory: consolidated?.runnerResourceHistory ?? buildRunnerResourceHistoryFromLines(r.finalLines),
     startTime: consolidated?.startTime ?? r.startedAtMs,
     elapsedMs: consolidated?.elapsedMs ?? r.durationMs,
+    targetIntensity: consolidated?.targetIntensity,
+    targetRpsLimit: consolidated?.targetRpsLimit,
+    inFlight: consolidated?.inFlight,
+    runnerMaxRps: consolidated?.runnerMaxRps,
+    tickMs: consolidated?.tickMs,
   };
 
   const state: LoadTestState =
@@ -808,7 +813,7 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     projectId: r.projectId ?? "",
     pipelineIndex: r.pipelineIndex ?? 0,
     pipelineName: r.pipelineName,
-    config: {
+    config: cfg?.load ?? {
       totalRequests: cfg?.totalRequests ?? 0,
       concurrency: cfg?.concurrency ?? 1,
       rampUpSeconds: cfg?.rampUpSeconds ?? 0,

@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import type { LoadTestRunRecord } from "@/lib/load-test-store";
+import { isWaveLoadConfig } from "@/types/load-test";
 
 export function buildLatencyHistory(runs: LoadTestRunRecord[]) {
   return runs
@@ -54,7 +55,9 @@ export function buildLatencyDistribution(runs: LoadTestRunRecord[]) {
 export function buildConfigComparison(runs: LoadTestRunRecord[]) {
   const groups = new Map<number, { avgLatencies: number[]; p95s: number[]; rpsList: number[] }>();
   for (const r of runs) {
-    const c = r.config.concurrency;
+    const c = isWaveLoadConfig(r.config)
+      ? Math.max(...r.config.points.map((point) => point.intensity))
+      : r.config.concurrency;
     if (!groups.has(c)) groups.set(c, { avgLatencies: [], p95s: [], rpsList: [] });
     const g = groups.get(c)!;
     if (r.metrics.avgLatency > 0) {
@@ -67,7 +70,7 @@ export function buildConfigComparison(runs: LoadTestRunRecord[]) {
   return Array.from(groups.entries())
     .sort(([a], [b]) => a - b)
     .map(([concurrency, g]) => ({
-      config: `${concurrency} conc.`,
+      config: `${concurrency}${runs.some((run) => isWaveLoadConfig(run.config)) ? "% peak" : " conc."}`,
       avgLatency: avg(g.avgLatencies),
       p95: avg(g.p95s),
       rps: Math.round((g.rpsList.reduce((a, b) => a + b, 0) / g.rpsList.length) * 100) / 100,
@@ -78,7 +81,9 @@ export function buildThroughputVsLatency(runs: LoadTestRunRecord[]) {
   return runs.map((r) => ({
     rps: Math.round(r.metrics.rps * 100) / 100,
     avgLatency: Math.round(r.metrics.avgLatency),
-    label: `${r.config.concurrency} conc.`,
+    label: isWaveLoadConfig(r.config)
+      ? `${Math.max(...r.config.points.map((point) => point.intensity))}% peak`
+      : `${r.config.concurrency} conc.`,
   }));
 }
 

@@ -6,17 +6,18 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Zap, AlertTriangle, HelpCircle, Pencil } from "lucide-react";
-import type { LoadTestConfig } from "@/types/load-test";
+import { HelpCircle, Pencil, Plus, Trash2 } from "lucide-react";
+import type { LoadInterpolation, LoadPoint, LoadRunConfig, WaveLoadConfig } from "@/types/load-test";
+import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
 import type { ProjectEnvGroup } from "@/types/project";
 
 interface LoadTestConfigPanelProps {
   pipeline: Pipeline;
-  onStart: (config: LoadTestConfig, selectedBaseUrlKey?: string) => void;
-  onConfigChange?: (config: LoadTestConfig, selectedBaseUrlKey?: string) => void;
+  onStart: (config: LoadRunConfig, selectedBaseUrlKey?: string) => void;
+  onConfigChange?: (config: LoadRunConfig, selectedBaseUrlKey?: string) => void;
   lastAvgLatencyMs?: number;
-  initialConfig?: LoadTestConfig | null;
+  initialConfig?: LoadRunConfig | null;
   envGroups?: ProjectEnvGroup[];
   selectedEnvGroupSlug?: string | null;
 }
@@ -96,54 +97,145 @@ function SliderWithManual({
 
 export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, envGroups = [], selectedEnvGroupSlug }: LoadTestConfigPanelProps) {
   const { t } = useTranslation();
-  const [totalRequests, setTotalRequests] = useState(initialConfig?.totalRequests ?? 50);
-  const [concurrency, setConcurrency] = useState(initialConfig?.concurrency ?? 10);
-  const [rampUpSeconds, setRampUpSeconds] = useState(initialConfig?.rampUpSeconds ?? 5);
+  const initialWave = isWaveLoadConfig(initialConfig) ? initialConfig : defaultWaveConfig();
+  const [points, setPoints] = useState<LoadPoint[]>(initialWave.points);
+  const [interpolation, setInterpolation] = useState<LoadInterpolation>(initialWave.interpolation);
+  const [maxInFlight, setMaxInFlight] = useState(initialWave.maxInFlight ?? 200);
+  const [gracePeriodMs, setGracePeriodMs] = useState(initialWave.gracePeriodMs ?? 30_000);
   const [selectedEnv, setSelectedEnv] = useState<string | undefined>(undefined);
 
-  const hasMultipleEnvs = false;
   const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
-  const avgLatencySec = (lastAvgLatencyMs ?? 300) / 1000;
-  const batches = Math.ceil(totalRequests / concurrency);
-  const estimatedTime = (batches * avgLatencySec) + rampUpSeconds;
+  const sortedPoints = normalizeWavePoints(points);
+  const durationMs = sortedPoints.at(-1)?.atMs ?? 0;
+  const maxMs = Math.max(durationMs, 1);
+  const waveConfig: WaveLoadConfig = {
+    points: sortedPoints,
+    interpolation,
+    maxInFlight,
+    gracePeriodMs,
+  };
 
   useEffect(() => {
-    onConfigChange?.({ totalRequests, concurrency, rampUpSeconds }, selectedEnv);
-  }, [totalRequests, concurrency, rampUpSeconds, selectedEnv, onConfigChange]);
+    onConfigChange?.(waveConfig, selectedEnv);
+  }, [points, interpolation, maxInFlight, gracePeriodMs, selectedEnv, onConfigChange]);
+
+  const setPoint = (index: number, patch: Partial<LoadPoint>) => {
+    setPoints((current) =>
+      normalizeWavePoints(current.map((point, currentIndex) =>
+        currentIndex === index ? { ...point, ...patch } : point
+      )),
+    );
+  };
 
   return (
     <div className="space-y-6 p-1">
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Label className="text-xs font-medium">{t("loadTest.totalRequests")}</Label>
-            <HelpPopover text={t("loadTest.totalRequests.help")} />
+            <Label className="text-xs font-medium">{t("loadTest.wavePoints")}</Label>
+            <HelpPopover text={t("loadTest.wavePoints.help")} />
           </div>
-          <span className="text-xs font-bold text-primary">{totalRequests.toLocaleString()}</span>
         </div>
-        <SliderWithManual value={totalRequests} onChange={setTotalRequests} min={1} max={100000} step={100} />
+        <div className="space-y-2">
+          {sortedPoints.map((point, index) => (
+            <div key={`${point.atMs}-${index}`} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <Input
+                type="number"
+                min={0}
+                value={point.atMs}
+                onChange={(event) => setPoint(index, { atMs: Math.max(0, Number(event.target.value)) })}
+                className="h-8 text-xs"
+                aria-label={t("loadTest.pointTimeMs")}
+              />
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={point.intensity}
+                onChange={(event) => setPoint(index, { intensity: Math.min(100, Math.max(0, Number(event.target.value))) })}
+                className="h-8 text-xs"
+                aria-label={t("loadTest.pointIntensity")}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={sortedPoints.length <= 2}
+                onClick={() => setPoints((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                aria-label={t("loadTest.removePoint")}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            const last = sortedPoints.at(-1) ?? { atMs: 0, intensity: 30 };
+            setPoints([...sortedPoints, { atMs: last.atMs + 60_000, intensity: last.intensity }]);
+          }}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          {t("loadTest.addPoint")}
+        </Button>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Label className="text-xs font-medium">{t("loadTest.concurrency")}</Label>
-            <HelpPopover text={t("loadTest.concurrency.help")} />
+            <Label className="text-xs font-medium">{t("loadTest.interpolation")}</Label>
           </div>
-          <span className="text-xs font-bold text-primary">{concurrency.toLocaleString()}</span>
         </div>
-        <SliderWithManual value={concurrency} onChange={setConcurrency} min={1} max={100} step={1} />
+        <Select value={interpolation} onValueChange={(value) => setInterpolation(value as LoadInterpolation)}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="smooth">{t("loadTest.interpolationSmooth")}</SelectItem>
+            <SelectItem value="linear">{t("loadTest.interpolationLinear")}</SelectItem>
+            <SelectItem value="step">{t("loadTest.interpolationStep")}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Label className="text-xs font-medium">{t("loadTest.rampUp")}</Label>
-            <HelpPopover text={t("loadTest.rampUp.help")} />
+            <Label className="text-xs font-medium">{t("loadTest.maxInFlight")}</Label>
+            <HelpPopover text={t("loadTest.maxInFlight.help")} />
           </div>
-          <span className="text-xs font-bold text-primary">{rampUpSeconds}s</span>
+          <span className="text-xs font-bold text-primary">{maxInFlight.toLocaleString()}</span>
         </div>
-        <SliderWithManual value={rampUpSeconds} onChange={setRampUpSeconds} min={0} max={60} step={1} suffix="s" />
+        <SliderWithManual value={maxInFlight} onChange={setMaxInFlight} min={1} max={5000} step={10} />
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-medium">{t("loadTest.gracePeriod")}</Label>
+          <span className="text-xs font-bold text-primary">{Math.round(gracePeriodMs / 1000)}s</span>
+        </div>
+        <SliderWithManual value={Math.round(gracePeriodMs / 1000)} onChange={(seconds) => setGracePeriodMs(seconds * 1000)} min={0} max={120} step={1} suffix="s" />
+      </div>
+
+      <div className="rounded-md border border-border/60 p-3 text-primary">
+        <svg viewBox="0 0 100 40" className="h-24 w-full" role="img" aria-label={t("loadTest.wavePreview")}>
+          <polyline
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            points={sortedPoints
+              .map((point) => {
+                const x = (point.atMs / maxMs) * 100;
+                const y = 40 - (point.intensity / 100) * 40;
+                return `${x},${y}`;
+              })
+              .join(" ")}
+          />
+        </svg>
       </div>
 
       {selectedEnvGroup && (
@@ -156,9 +248,25 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
       <div className="rounded-lg p-3 text-center">
         <p className="text-[10px] text-muted-foreground">{t("loadTest.estimatedTime")}</p>
         <p className="text-sm font-semibold">
-          ~{estimatedTime < 60 ? `${Math.ceil(estimatedTime)}s` : `${Math.ceil(estimatedTime / 60)}min`}
+          ~{durationMs < 60_000 ? `${Math.ceil(durationMs / 1000)}s` : `${Math.ceil(durationMs / 60_000)}min`}
         </p>
       </div>
     </div>
   );
+}
+
+function defaultWaveConfig(): WaveLoadConfig {
+  return {
+    points: [
+      { atMs: 0, intensity: 10 },
+      { atMs: 120_000, intensity: 80 },
+    ],
+    interpolation: "smooth",
+    maxInFlight: 200,
+    gracePeriodMs: 30_000,
+  };
+}
+
+function normalizeWavePoints(points: LoadPoint[]): LoadPoint[] {
+  return [...points].sort((a, b) => a.atMs - b.atMs);
 }

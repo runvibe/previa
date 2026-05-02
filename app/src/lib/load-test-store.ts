@@ -1,4 +1,4 @@
-import type { LoadTestConfig, LoadTestMetrics, LoadTestState } from "@/types/load-test";
+import type { LoadRunConfig, LoadTestMetrics, LoadTestState } from "@/types/load-test";
 import { generateUUID } from "@/lib/uuid";
 
 export interface LoadTestRunRecord {
@@ -6,7 +6,7 @@ export interface LoadTestRunRecord {
   projectId: string;
   pipelineIndex: number;
   pipelineName: string;
-  config: LoadTestConfig;
+  config: LoadRunConfig;
   metrics: LoadTestMetrics;
   state: LoadTestState;
   timestamp: string;

@@ -1,6 +1,6 @@
 import type { Pipeline, StepExecutionResult } from "@/types/pipeline";
 import type {
-  LoadTestConfig,
+  LoadRunConfig,
   LoadTestMetrics,
   LoadTestState,
   RemoteMetricsEvent,
@@ -9,6 +9,7 @@ import type {
   RunnerResourcePoint,
   RunnerRuntimeInfo,
 } from "@/types/load-test";
+import { isWaveLoadConfig } from "@/types/load-test";
 import { generateUUID } from "./uuid";
 import { cancelExecution, ensureApiPrefix } from "./api-client";
 
@@ -211,6 +212,11 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     rps: rps ?? 0,
     startTime: toNumber(value.startTime) ?? Date.now(),
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
+    targetIntensity: toNumber(value.targetIntensity),
+    targetRpsLimit: toNumber(value.targetRpsLimit),
+    inFlight: toNumber(value.inFlight),
+    runnerMaxRps: toNumber(value.runnerMaxRps),
+    tickMs: toNumber(value.tickMs),
     runtime: extractRunnerRuntime(value.runtime),
   };
 }
@@ -296,14 +302,25 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
   if (metrics.length === 0) return null;
 
   return metrics.reduce<RemoteMetricsEvent>(
-    (acc, item) => ({
-      totalSent: acc.totalSent + item.totalSent,
-      totalSuccess: acc.totalSuccess + item.totalSuccess,
-      totalError: acc.totalError + item.totalError,
-      rps: acc.rps + item.rps,
-      startTime: Math.min(acc.startTime, item.startTime),
-      elapsedMs: Math.max(acc.elapsedMs, item.elapsedMs),
-    }),
+    (acc, item) => {
+      const nextTargetIntensity =
+        item.targetIntensity !== undefined
+          ? ((acc.targetIntensity ?? 0) + item.targetIntensity) / ((acc.targetIntensity === undefined ? 0 : 1) + 1)
+          : acc.targetIntensity;
+      return {
+        totalSent: acc.totalSent + item.totalSent,
+        totalSuccess: acc.totalSuccess + item.totalSuccess,
+        totalError: acc.totalError + item.totalError,
+        rps: acc.rps + item.rps,
+        startTime: Math.min(acc.startTime, item.startTime),
+        elapsedMs: Math.max(acc.elapsedMs, item.elapsedMs),
+        targetIntensity: nextTargetIntensity,
+        targetRpsLimit: (acc.targetRpsLimit ?? 0) + (item.targetRpsLimit ?? 0) || undefined,
+        inFlight: (acc.inFlight ?? 0) + (item.inFlight ?? 0) || undefined,
+        runnerMaxRps: (acc.runnerMaxRps ?? 0) + (item.runnerMaxRps ?? 0) || undefined,
+        tickMs: Math.max(acc.tickMs ?? 0, item.tickMs ?? 0) || undefined,
+      };
+    },
     {
       totalSent: 0,
       totalSuccess: 0,
@@ -361,6 +378,11 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
       : [],
     startTime,
     elapsedMs: toNumber(consolidated?.elapsedMs) ?? aggregated?.elapsedMs ?? 0,
+    targetIntensity: toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity,
+    targetRpsLimit: toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit,
+    inFlight: toNumber(consolidated?.inFlight) ?? aggregated?.inFlight,
+    runnerMaxRps: toNumber(consolidated?.runnerMaxRps) ?? aggregated?.runnerMaxRps,
+    tickMs: toNumber(consolidated?.tickMs) ?? aggregated?.tickMs,
   };
 }
 
@@ -696,7 +718,7 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
 export function runRemoteLoadTest(
   backendUrl: string,
   pipeline: Pipeline,
-  config: LoadTestConfig,
+  config: LoadRunConfig,
   callbacks: RemoteLoadTestCallbacks,
   projectId: string,
   selectedBaseUrlKey?: string,
@@ -734,6 +756,11 @@ export function runRemoteLoadTest(
       runnerResourceHistory: [...runnerResourceHistory],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
+      targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
+      targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
+      inFlight: consolidated?.inFlight ?? event.inFlight,
+      runnerMaxRps: consolidated?.runnerMaxRps ?? event.runnerMaxRps,
+      tickMs: consolidated?.tickMs ?? event.tickMs,
     };
   }
 
@@ -743,7 +770,7 @@ export function runRemoteLoadTest(
       const basePath = `${base}/projects/${projectId}/tests/load`;
       const body = {
         pipelineId: pipeline.id,
-        config,
+        ...(isWaveLoadConfig(config) ? { load: config } : { config }),
         selectedBaseUrlKey,
         selectedEnvGroupSlug,
         pipelineIndex,
@@ -1084,6 +1111,11 @@ export function reconnectToLoadExecution(
       runnerResourceHistory: [...runnerResourceHistory],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
+      targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
+      targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
+      inFlight: consolidated?.inFlight ?? event.inFlight,
+      runnerMaxRps: consolidated?.runnerMaxRps ?? event.runnerMaxRps,
+      tickMs: consolidated?.tickMs ?? event.tickMs,
     };
   }
 

@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AlertTriangle, X } from "lucide-react";
 import type { Pipeline } from "@/types/pipeline";
-import type { LoadTestConfig, LoadTestState } from "@/types/load-test";
+import { isWaveLoadConfig, type LoadRunConfig, type LoadTestState } from "@/types/load-test";
 import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
 
 interface LoadTestTabProps {
@@ -33,7 +33,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   const { t } = useTranslation();
   const store = useLoadTestHistoryStore();
   const isMobile = useIsMobile();
-  const pendingConfigRef = useRef<{ config: LoadTestConfig; selectedBaseUrlKey?: string } | null>(null);
+  const pendingConfigRef = useRef<{ config: LoadRunConfig; selectedBaseUrlKey?: string } | null>(null);
 
   const { state, metrics, config, nodesInfo, runs, activeRunId, viewingHistoricRun, liveState } = store;
 
@@ -72,7 +72,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   }, [projectId, pipelineIndex, executionBackendUrl]);
 
 
-  const handleStart = useCallback((cfg: LoadTestConfig, selectedBaseUrlKey?: string) => {
+  const handleStart = useCallback((cfg: LoadRunConfig, selectedBaseUrlKey?: string) => {
     store.runTest(pipeline, pipelineIndex, projectId, cfg, executionBackendUrl, selectedBaseUrlKey, specs, envGroups, selectedEnvGroupSlug);
   }, [pipeline, pipelineIndex, projectId, executionBackendUrl, specs, envGroups, selectedEnvGroupSlug]);
 
@@ -151,7 +151,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
         <LoadTestResultsPanel
           metrics={metrics}
           state={state}
-          totalRequests={config?.totalRequests ?? 0}
+          totalRequests={config && !isWaveLoadConfig(config) ? config.totalRequests : 0}
           nodesInfo={nodesInfo}
         />
       </div>

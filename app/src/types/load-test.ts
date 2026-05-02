@@ -4,6 +4,26 @@ export interface LoadTestConfig {
   rampUpSeconds: number;
 }
 
+export type LoadInterpolation = "smooth" | "linear" | "step";
+
+export interface LoadPoint {
+  atMs: number;
+  intensity: number;
+}
+
+export interface WaveLoadConfig {
+  points: LoadPoint[];
+  interpolation: LoadInterpolation;
+  maxInFlight?: number;
+  gracePeriodMs?: number;
+}
+
+export type LoadRunConfig = LoadTestConfig | WaveLoadConfig;
+
+export function isWaveLoadConfig(config: LoadRunConfig | null | undefined): config is WaveLoadConfig {
+  return !!config && Array.isArray((config as WaveLoadConfig).points);
+}
+
 export interface LatencyPoint {
   index: number;
   latency: number;
@@ -46,6 +66,11 @@ export interface RemoteMetricsEvent {
   rps: number;
   startTime: number;
   elapsedMs: number;
+  targetIntensity?: number;
+  targetRpsLimit?: number;
+  inFlight?: number;
+  runnerMaxRps?: number;
+  tickMs?: number;
   runtime?: RunnerRuntimeInfo;
 }
 
@@ -63,6 +88,11 @@ export interface LoadTestMetrics {
   runnerResourceHistory: RunnerResourcePoint[];
   startTime: number;
   elapsedMs: number;
+  targetIntensity?: number;
+  targetRpsLimit?: number;
+  inFlight?: number;
+  runnerMaxRps?: number;
+  tickMs?: number;
 }
 
 /** Consolidated metrics sent by the orchestrator (includes percentiles). */
@@ -77,6 +107,11 @@ export interface ConsolidatedLoadMetrics {
   startTime: number;
   elapsedMs: number;
   nodesReporting: number;
+  targetIntensity?: number;
+  targetRpsLimit?: number;
+  inFlight?: number;
+  runnerMaxRps?: number;
+  tickMs?: number;
 }
 
 export type LoadTestState = "idle" | "running" | "completed" | "cancelled";
@@ -86,7 +121,7 @@ export interface LoadTestRun {
   projectId: string;
   pipelineIndex: number;
   pipelineName: string;
-  config: LoadTestConfig;
+  config: LoadRunConfig;
   metrics: LoadTestMetrics;
   state: LoadTestState;
   timestamp: string;

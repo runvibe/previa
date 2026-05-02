@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server } from "lucide-react";
+import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import type { LoadTestMetrics, LoadTestState, RunnerResourcePoint } from "@/types/load-test";
 
@@ -141,14 +141,16 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
         </div>
       )}
       {/* Progress */}
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Progress value={progressPercent} className="h-3.5 flex-1" />
-          <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-            {metrics.totalSent}/{totalRequests}
-          </span>
+      {totalRequests > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Progress value={progressPercent} className="h-3.5 flex-1" />
+            <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+              {metrics.totalSent}/{totalRequests}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Metric cards */}
       <div className="grid grid-cols-3 gap-2">
@@ -171,6 +173,21 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, nodesInfo 
           </>
         )}
       </div>
+      {(typeof metrics.targetIntensity === "number" ||
+        typeof metrics.targetRpsLimit === "number" ||
+        typeof metrics.inFlight === "number") && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {typeof metrics.targetIntensity === "number" && (
+            <MetricCard icon={Gauge} label={t("loadTestResults.targetIntensity")} value={`${metrics.targetIntensity.toFixed(1)}%`} color="text-primary" />
+          )}
+          {typeof metrics.targetRpsLimit === "number" && (
+            <MetricCard icon={Gauge} label={t("loadTestResults.targetRpsLimit")} value={metrics.targetRpsLimit.toFixed(1)} color="text-primary" />
+          )}
+          {typeof metrics.inFlight === "number" && (
+            <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
+          )}
+        </div>
+      )}
 
       {/* Latency chart */}
       {latencyChartData.length > 1 && (
