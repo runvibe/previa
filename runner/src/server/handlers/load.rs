@@ -20,7 +20,8 @@ use previa_runner::{
 use crate::server::errors::{bad_request_message_response, bad_request_response};
 use crate::server::load_dispatch::{DispatchClock, DispatchRuntimeState};
 use crate::server::load_wave::{
-    calculate_tick_ms, local_rps_limit, sample_intensity, timeline_end_ms, validate_load_profile,
+    calculate_dispatch_tick_ms, local_rps_limit, sample_intensity, timeline_end_ms,
+    validate_load_profile,
 };
 use crate::server::metrics::{MetricsAccumulator, estimate_results_network_bytes};
 use crate::server::middleware::transaction::{extract_transaction_id, with_transaction_header};
@@ -305,6 +306,16 @@ async fn run_classic_load(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wave_feeder_can_grow_beyond_configured_in_flight_to_keep_requests_ready() {
+        let desired = super::desired_wave_active_pipelines(200, 1000.0, 100, 0, 200);
+
+        assert!(desired > 200);
+    }
+}
+
 fn wave_snapshot(
     load: &LoadProfile,
     elapsed_ms: u64,
@@ -339,6 +350,23 @@ fn saturating_fetch_sub(value: &AtomicUsize, amount: usize) {
     }
 }
 
+fn desired_wave_active_pipelines(
+    current_in_flight: usize,
+    target_rps_limit: f64,
+    tick_ms: u64,
+    ready_requests: usize,
+    configured_max_in_flight: usize,
+) -> usize {
+    let desired_ready = ((target_rps_limit * tick_ms as f64 / 1000.0).ceil() as usize)
+        .saturating_mul(2)
+        .max(1);
+    let spawn_needed = desired_ready.saturating_sub(ready_requests);
+
+    current_in_flight
+        .saturating_add(spawn_needed)
+        .max(configured_max_in_flight)
+}
+
 async fn run_wave_load(
     load: LoadProfile,
     pipeline: Pipeline,
@@ -349,7 +377,7 @@ async fn run_wave_load(
     tx: mpsc::UnboundedSender<SseMessage>,
     token: tokio_util::sync::CancellationToken,
 ) {
-    let tick_ms = calculate_tick_ms(&load);
+    let tick_ms = calculate_dispatch_tick_ms(&load);
     let started = Instant::now();
     let end_ms = timeline_end_ms(&load);
     let metrics = Arc::new(tokio::sync::Mutex::new(MetricsAccumulator::new()));
@@ -380,14 +408,13 @@ async fn run_wave_load(
         let tick = dispatch_clock.plan_tick(elapsed_ms, target_rps_limit);
         dispatch.open_tick(tick);
 
-        let desired_ready = ((target_rps_limit * tick_ms as f64 / 1000.0).ceil() as usize)
-            .saturating_mul(2)
-            .max(1);
-        let spawn_needed = desired_ready.saturating_sub(dispatch.waiting_ready_requests());
-        let desired_active = in_flight
-            .load(Ordering::SeqCst)
-            .saturating_add(spawn_needed)
-            .min(load.max_in_flight);
+        let desired_active = desired_wave_active_pipelines(
+            in_flight.load(Ordering::SeqCst),
+            target_rps_limit,
+            tick_ms,
+            dispatch.waiting_ready_requests(),
+            load.max_in_flight,
+        );
 
         while in_flight.load(Ordering::SeqCst) < desired_active {
             let pipeline = pipeline.clone();
@@ -520,6 +547,8 @@ async fn run_wave_load(
         let report = dispatch.finish_tick();
         missed_starts.fetch_add(report.missed_starts, Ordering::SeqCst);
     }
+    let report = dispatch.finish_tick();
+    missed_starts.fetch_add(report.missed_starts, Ordering::SeqCst);
     dispatch.close();
 
     let grace_deadline =
@@ -561,6 +590,13 @@ async fn run_wave_load(
             )),
         )
     };
+
+    let _ = send_sse_or_cancel(
+        &tx,
+        "metrics",
+        serde_json::to_value(&complete).unwrap_or(Value::Null),
+        &token,
+    );
 
     if !token.is_cancelled() {
         let _ = send_sse_or_cancel(

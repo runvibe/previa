@@ -41,6 +41,10 @@ pub fn calculate_tick_ms(profile: &LoadProfile) -> u64 {
     (min_interval / 10).clamp(100, 1000)
 }
 
+pub fn calculate_dispatch_tick_ms(profile: &LoadProfile) -> u64 {
+    calculate_tick_ms(profile).min(100)
+}
+
 pub fn sample_intensity(profile: &LoadProfile, elapsed_ms: u64) -> f64 {
     let last = profile
         .points
@@ -235,6 +239,29 @@ mod tests {
             grace_period_ms: 30_000,
         };
         assert_eq!(super::calculate_tick_ms(&short_profile), 100);
+    }
+
+    #[test]
+    fn dispatch_tick_uses_fine_grained_100ms_cadence() {
+        let long_profile = LoadProfile {
+            points: vec![
+                LoadPoint {
+                    at_ms: 0,
+                    intensity: 10.0,
+                },
+                LoadPoint {
+                    at_ms: 120_000,
+                    intensity: 80.0,
+                },
+            ],
+            interpolation: LoadInterpolation::Smooth,
+            runner_max_rps: 1000.0,
+            max_in_flight: 200,
+            grace_period_ms: 30_000,
+        };
+
+        assert_eq!(super::calculate_tick_ms(&long_profile), 1000);
+        assert_eq!(super::calculate_dispatch_tick_ms(&long_profile), 100);
     }
 
     #[test]

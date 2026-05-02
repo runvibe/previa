@@ -95,9 +95,9 @@ impl DispatchRuntimeState {
     }
 
     pub fn finish_tick(&self) -> DispatchTickReport {
-        let scheduled_starts = self.scheduled_in_tick.load(Ordering::SeqCst);
-        let actual_starts = self.actual_in_tick.load(Ordering::SeqCst);
         self.slots.store(0, Ordering::SeqCst);
+        let scheduled_starts = self.scheduled_in_tick.swap(0, Ordering::SeqCst);
+        let actual_starts = self.actual_in_tick.swap(0, Ordering::SeqCst);
         DispatchTickReport {
             scheduled_starts,
             actual_starts,
@@ -210,6 +210,34 @@ mod tests {
                 scheduled_starts: 100,
                 actual_starts: 0,
                 missed_starts: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn finish_tick_reports_each_tick_once() {
+        let state = DispatchRuntimeState::new();
+        state.open_tick(DispatchTick {
+            elapsed_ms: 0,
+            target_rps: 1000.0,
+            scheduled_starts: 100,
+            scheduled_total: 100,
+        });
+
+        assert_eq!(
+            state.finish_tick(),
+            DispatchTickReport {
+                scheduled_starts: 100,
+                actual_starts: 0,
+                missed_starts: 100,
+            }
+        );
+        assert_eq!(
+            state.finish_tick(),
+            DispatchTickReport {
+                scheduled_starts: 0,
+                actual_starts: 0,
+                missed_starts: 0,
             }
         );
     }
