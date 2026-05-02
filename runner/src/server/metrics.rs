@@ -2,6 +2,15 @@ use crate::server::models::{LoadTestMetrics, RunnerInfoResponse};
 use crate::server::utils::{now_ms, round2};
 use previa_runner::{StepExecutionResult, StepRequest, StepResponse};
 
+#[derive(Debug, Clone, Copy)]
+pub struct WaveMetricsSnapshot {
+    pub target_intensity: f64,
+    pub target_rps_limit: f64,
+    pub in_flight: usize,
+    pub runner_max_rps: f64,
+    pub tick_ms: u64,
+}
+
 #[derive(Debug)]
 pub struct MetricsAccumulator {
     total_sent: usize,
@@ -43,6 +52,15 @@ impl MetricsAccumulator {
         duration_ms: Option<u64>,
         runtime: Option<RunnerInfoResponse>,
     ) -> LoadTestMetrics {
+        self.snapshot_with_wave(duration_ms, runtime, None)
+    }
+
+    pub fn snapshot_with_wave(
+        &self,
+        duration_ms: Option<u64>,
+        runtime: Option<RunnerInfoResponse>,
+        wave: Option<WaveMetricsSnapshot>,
+    ) -> LoadTestMetrics {
         let now = now_ms();
         let elapsed_ms = now.saturating_sub(self.start_time);
 
@@ -68,6 +86,11 @@ impl MetricsAccumulator {
             rps,
             start_time: self.start_time,
             elapsed_ms,
+            target_intensity: wave.as_ref().map(|value| round2(value.target_intensity)),
+            target_rps_limit: wave.as_ref().map(|value| round2(value.target_rps_limit)),
+            in_flight: wave.as_ref().map(|value| value.in_flight),
+            runner_max_rps: wave.as_ref().map(|value| round2(value.runner_max_rps)),
+            tick_ms: wave.as_ref().map(|value| value.tick_ms),
             duration_ms,
             runtime,
         }

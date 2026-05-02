@@ -21,7 +21,10 @@ pub struct E2eTestRequest {
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestRequest {
     pub pipeline: Pipeline,
-    pub config: LoadTestConfig,
+    #[serde(default)]
+    pub config: Option<LoadTestConfig>,
+    #[serde(default)]
+    pub load: Option<LoadProfile>,
     pub selected_base_url_key: Option<String>,
     pub selected_env_group_slug: Option<String>,
     #[serde(default)]
@@ -36,6 +39,43 @@ pub struct LoadTestConfig {
     pub total_requests: usize,
     pub concurrency: usize,
     pub ramp_up_seconds: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadProfile {
+    pub points: Vec<LoadPoint>,
+    #[serde(default)]
+    pub interpolation: LoadInterpolation,
+    pub runner_max_rps: f64,
+    pub max_in_flight: usize,
+    #[serde(default = "default_load_grace_period_ms")]
+    pub grace_period_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadPoint {
+    pub at_ms: u64,
+    pub intensity: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LoadInterpolation {
+    Smooth,
+    Linear,
+    Step,
+}
+
+impl Default for LoadInterpolation {
+    fn default() -> Self {
+        Self::Smooth
+    }
+}
+
+fn default_load_grace_period_ms() -> u64 {
+    30_000
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -56,6 +96,16 @@ pub struct LoadTestMetrics {
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_intensity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_rps_limit: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_flight: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runner_max_rps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tick_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]

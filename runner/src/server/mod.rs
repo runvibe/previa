@@ -15,6 +15,8 @@ use crate::server::state::AppState;
 pub mod docs;
 pub mod errors;
 pub mod handlers;
+pub mod load_bucket;
+pub mod load_wave;
 pub mod metrics;
 pub mod middleware;
 pub mod models;
