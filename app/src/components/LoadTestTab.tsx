@@ -7,10 +7,12 @@ import { RunHistoryPanel } from "./RunHistoryPanel";
 import { useLoadTestHistoryStore } from "@/stores/useLoadTestHistoryStore";
 import { getRuns } from "@/lib/execution-store";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, History, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Pipeline } from "@/types/pipeline";
 import { isWaveLoadConfig, type LoadRunConfig, type LoadTestState } from "@/types/load-test";
 import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
@@ -34,6 +36,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   const store = useLoadTestHistoryStore();
   const isMobile = useIsMobile();
   const pendingConfigRef = useRef<{ config: LoadRunConfig; selectedBaseUrlKey?: string } | null>(null);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
 
   const { state, metrics, config, nodesInfo, runs, activeRunId, viewingHistoricRun, liveState } = store;
 
@@ -85,6 +88,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       title={t("history.title")} 
       onClear={handleClearHistory} 
       isEmpty={runs.length === 0}
+      onCollapse={() => setHistoryCollapsed(true)}
+      collapsed={false}
     >
       {runs.map((run) => (
         <LoadTestRunHistoryItem
@@ -106,6 +111,27 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       ))}
     </RunHistoryPanel>
   );
+
+  const collapsedHistoryAside = runs.length > 0 ? (
+    <div
+      className={cn(
+        "shrink-0 border-l border-border/50 flex flex-col transition-[width] duration-300 ease-in-out overflow-hidden",
+        "w-8",
+      )}
+    >
+      <div className="flex flex-col items-center pt-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={() => setHistoryCollapsed(false)}
+          title="Show history"
+        >
+          <History className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  ) : null;
 
   const lastAvgLatencyMs = runs.length > 0 ? runs[0].metrics.avgLatency : undefined;
 
@@ -132,6 +158,17 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
     );
 
     if (!isMobile && runs.length > 0) {
+      if (historyCollapsed) {
+        return (
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {configContent}
+            </div>
+            {collapsedHistoryAside}
+          </div>
+        );
+      }
+
       return (
         <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1 overflow-hidden">
           <ResizablePanel defaultSize={75} minSize={40} className="min-h-0 overflow-hidden">
@@ -171,6 +208,17 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
             {historyPanel}
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (historyCollapsed && runs.length > 0) {
+    return (
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {resultsContent}
+        </div>
+        {collapsedHistoryAside}
       </div>
     );
   }

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 interface TestModeSidebarProps {
   compact?: boolean;
   collapsed?: boolean;
+  hideWhenCollapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
 }
 
@@ -25,10 +26,15 @@ interface TooltipState {
 export function TestModeSidebar({
   compact = false,
   collapsed = false,
+  hideWhenCollapsed = false,
   onCollapsedChange,
 }: TestModeSidebarProps) {
   const isCollapsed = collapsed;
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  if (hideWhenCollapsed && isCollapsed) {
+    return null;
+  }
 
   const showTooltip = (label: string, element: HTMLElement) => {
     const rect = element.getBoundingClientRect();

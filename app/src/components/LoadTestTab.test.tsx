@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LoadTestTab } from "@/components/LoadTestTab";
@@ -137,5 +137,25 @@ describe("LoadTestTab", () => {
       "min-h-0",
       "overflow-y-auto",
     );
+  });
+
+  it("collapses and reopens the load test history panel", () => {
+    render(
+      <LoadTestTab
+        pipeline={pipeline}
+        projectId="project-1"
+        pipelineIndex={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Collapse history"));
+
+    expect(screen.getByTitle("Show history")).toBeInTheDocument();
+    expect(screen.queryByText("1 reqs")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Show history"));
+
+    expect(screen.getByTitle("Collapse history")).toBeInTheDocument();
+    expect(screen.getByText("1 reqs")).toBeInTheDocument();
   });
 });

@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, History, LayoutGrid, ListOrdered } from "lucide-react";
+import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, PanelLeftOpen, History, LayoutGrid, ListOrdered } from "lucide-react";
 import { useStepAutoScroll, useStepVisibility } from "@/hooks/useStepAutoScroll";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPipelineOrder, savePipelineOrder, applyOrder } from "@/lib/pipeline-order";
@@ -1087,6 +1087,17 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                   {stepViewMode === "graph" ? <ListOrdered className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
                 </Button>
               )}
+              {!isMobile && testModeSidebarCollapsed && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setTestModeSidebarCollapsed(false)}
+                  title="Open navbar"
+                >
+                  <PanelLeftOpen className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {envGroups.length > 0 && (
                 <Select value={effectiveSelectedEnvGroupSlug ?? undefined} onValueChange={(value) => setSelectedEnvGroupSlug(value)}>
                   <SelectTrigger className="h-8 w-[140px] shrink-0 text-xs">
@@ -1132,6 +1143,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
             <TestModeSidebar
               compact={isMobile}
               collapsed={testModeSidebarCollapsed}
+              hideWhenCollapsed={!isMobile}
               onCollapsedChange={setTestModeSidebarCollapsed}
             />
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

@@ -72,4 +72,14 @@ describe("TestModeSidebar", () => {
     expect(tooltip).toHaveClass("bg-[hsl(var(--popover))]", "z-[2147483647]");
     expect(tooltip.parentElement).toBe(document.body);
   });
+
+  it("can be removed from layout when collapsed", () => {
+    render(
+      <Tabs defaultValue="integration">
+        <TestModeSidebar collapsed hideWhenCollapsed onCollapsedChange={vi.fn()} />
+      </Tabs>,
+    );
+
+    expect(screen.queryByLabelText("Test modes")).not.toBeInTheDocument();
+  });
 });
