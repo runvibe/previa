@@ -1,13 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LoadTestTab } from "@/components/LoadTestTab";
 import type { Pipeline } from "@/types/pipeline";
 
 const loadHistory = vi.fn();
+let isMobile = false;
 
 vi.mock("@/hooks/use-mobile", () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => isMobile,
 }));
 
 vi.mock("@/stores/useLoadTestHistoryStore", () => ({
@@ -123,6 +124,10 @@ const pipeline: Pipeline = {
 };
 
 describe("LoadTestTab", () => {
+  beforeEach(() => {
+    isMobile = false;
+  });
+
   it("keeps the load configuration panel scrollable when history is visible", () => {
     render(
       <LoadTestTab
@@ -157,5 +162,24 @@ describe("LoadTestTab", () => {
 
     expect(screen.getByTitle("Collapse history")).toBeInTheDocument();
     expect(screen.getByText("1 reqs")).toBeInTheDocument();
+  });
+
+  it("collapses load test history downward on mobile", () => {
+    isMobile = true;
+
+    render(
+      <LoadTestTab
+        pipeline={pipeline}
+        projectId="project-1"
+        pipelineIndex={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Collapse history"));
+
+    const collapsedRegion = screen.getByTestId("mobile-load-test-history");
+    expect(collapsedRegion).toHaveClass("max-h-10", "border-t");
+    expect(screen.getByTitle("Show history")).toBeInTheDocument();
+    expect(screen.queryByText("1 reqs")).not.toBeInTheDocument();
   });
 });

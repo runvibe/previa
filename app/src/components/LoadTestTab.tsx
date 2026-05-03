@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { AlertTriangle, History, X } from "lucide-react";
+import { AlertTriangle, History, PanelBottomOpen, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Pipeline } from "@/types/pipeline";
 import { isWaveLoadConfig, type LoadRunConfig, type LoadTestState } from "@/types/load-test";
@@ -90,6 +90,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       isEmpty={runs.length === 0}
       onCollapse={() => setHistoryCollapsed(true)}
       collapsed={false}
+      collapseDirection={isMobile ? "bottom" : "side"}
     >
       {runs.map((run) => (
         <LoadTestRunHistoryItem
@@ -130,6 +131,34 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
           <History className="h-3.5 w-3.5" />
         </Button>
       </div>
+    </div>
+  ) : null;
+
+  const mobileHistoryPanel = runs.length > 0 ? (
+    <div
+      data-testid="mobile-load-test-history"
+      className={cn(
+        "shrink-0 border-t border-border/50 transition-[max-height] duration-300 ease-in-out overflow-hidden",
+        historyCollapsed ? "max-h-10" : "max-h-[200px]",
+      )}
+    >
+      {historyCollapsed ? (
+        <div className="flex h-10 items-center justify-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setHistoryCollapsed(false)}
+            title="Show history"
+          >
+            <PanelBottomOpen className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <div className="h-[200px]">
+          {historyPanel}
+        </div>
+      )}
     </div>
   ) : null;
 
@@ -182,6 +211,15 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       );
     }
 
+    if (isMobile && runs.length > 0) {
+      return (
+        <div className="flex h-full min-h-0 flex-1 w-full flex-col overflow-hidden">
+          {configContent}
+          {mobileHistoryPanel}
+        </div>
+      );
+    }
+
     return <div className="flex h-full min-h-0 flex-1 w-full overflow-hidden">{configContent}</div>;
   }
 
@@ -204,9 +242,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       <div className="flex flex-1 flex-col overflow-hidden">
         {resultsContent}
         {runs.length > 0 && (
-          <div className="border-border/50 max-h-[200px]">
-            {historyPanel}
-          </div>
+          mobileHistoryPanel
         )}
       </div>
     );

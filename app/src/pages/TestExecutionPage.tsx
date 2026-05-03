@@ -10,7 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, PanelLeftOpen, History, LayoutGrid, ListOrdered } from "lucide-react";
+import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, RotateCcw, Server, Square, X, Sparkles, ArrowDown, ListChecks, List, MousePointerClick, PanelRightClose, PanelRightOpen, PanelLeftOpen, PanelBottomOpen, History, LayoutGrid, ListOrdered } from "lucide-react";
 import { useStepAutoScroll, useStepVisibility } from "@/hooks/useStepAutoScroll";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPipelineOrder, savePipelineOrder, applyOrder } from "@/lib/pipeline-order";
@@ -1189,15 +1189,40 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                             })}
                           />
                           {runHistory.length > 0 && (
-                            <div className="mt-6 max-h-[250px]">
-                              <RunHistoryPanel
-                                onClear={() => setConfirmClearOpen(true)}
-                                isEmpty={runHistory.length === 0}
-                              >
-                                {runHistory.map((run) => (
-                                  <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
-                                ))}
-                              </RunHistoryPanel>
+                            <div
+                              data-testid="mobile-integration-history"
+                              className={cn(
+                                "mt-6 border-t border-border/50 transition-[max-height] duration-300 ease-in-out overflow-hidden",
+                                historyCollapsed ? "max-h-10" : "max-h-[250px]"
+                              )}
+                            >
+                              {historyCollapsed ? (
+                                <div className="flex h-10 items-center justify-center">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => setHistoryCollapsed(false)}
+                                    title="Show history"
+                                  >
+                                    <PanelBottomOpen className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="h-[250px]">
+                                  <RunHistoryPanel
+                                    onClear={() => setConfirmClearOpen(true)}
+                                    isEmpty={runHistory.length === 0}
+                                    onCollapse={() => setHistoryCollapsed(true)}
+                                    collapsed={false}
+                                    collapseDirection="bottom"
+                                  >
+                                    {runHistory.map((run) => (
+                                      <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
+                                    ))}
+                                  </RunHistoryPanel>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

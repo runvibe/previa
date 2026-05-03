@@ -1,4 +1,4 @@
-import { Trash2, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { Trash2, PanelRightOpen, PanelRightClose, PanelBottomOpen, PanelBottomClose } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,11 +10,15 @@ interface RunHistoryPanelProps {
   children: React.ReactNode;
   onCollapse?: () => void;
   collapsed?: boolean;
+  collapseDirection?: "side" | "bottom";
 }
 
-export function RunHistoryPanel({ title, onClear, isEmpty, children, onCollapse, collapsed }: RunHistoryPanelProps) {
+export function RunHistoryPanel({ title, onClear, isEmpty, children, onCollapse, collapsed, collapseDirection = "side" }: RunHistoryPanelProps) {
   const { t } = useTranslation();
   const displayTitle = title ?? t("history.title");
+  const CollapseIcon = collapseDirection === "bottom"
+    ? (collapsed ? PanelBottomOpen : PanelBottomClose)
+    : (collapsed ? PanelRightOpen : PanelRightClose);
   if (isEmpty) return null;
 
   return (
@@ -40,7 +44,7 @@ export function RunHistoryPanel({ title, onClear, isEmpty, children, onCollapse,
               onClick={onCollapse}
               title={collapsed ? "Expand history" : "Collapse history"}
             >
-              {collapsed ? <PanelRightOpen className="h-3 w-3" /> : <PanelRightClose className="h-3 w-3" />}
+              <CollapseIcon className="h-3 w-3" />
             </Button>
           )}
         </div>
