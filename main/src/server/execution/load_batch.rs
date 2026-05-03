@@ -332,6 +332,23 @@ fn build_rps_history_sample(
             runner.insert("runnerId".to_owned(), Value::String(line.node.clone()));
             insert_optional(&mut runner, "httpStarted", metrics.http_started);
             insert_optional(&mut runner, "httpCompleted", metrics.http_completed);
+            insert_optional(&mut runner, "dispatchSubmitted", metrics.dispatch_submitted);
+            insert_optional(&mut runner, "httpSendReturned", metrics.http_send_returned);
+            insert_optional(
+                &mut runner,
+                "responseBodyCompleted",
+                metrics.response_body_completed,
+            );
+            insert_optional(
+                &mut runner,
+                "dependencyLimitedStarts",
+                metrics.dependency_limited_starts,
+            );
+            insert_optional(
+                &mut runner,
+                "runtimeLaggedStarts",
+                metrics.runtime_lagged_starts,
+            );
             insert_optional(&mut runner, "totalStarted", metrics.total_started);
             runner.insert("totalSent".to_owned(), json!(metrics.total_sent));
             runner.insert("rps".to_owned(), json!(metrics.rps));
@@ -361,6 +378,23 @@ fn build_rps_history_sample(
     sample.insert("totalSent".to_owned(), json!(metrics.total_sent));
     insert_optional(&mut sample, "httpStarted", metrics.http_started);
     insert_optional(&mut sample, "httpCompleted", metrics.http_completed);
+    insert_optional(&mut sample, "dispatchSubmitted", metrics.dispatch_submitted);
+    insert_optional(&mut sample, "httpSendReturned", metrics.http_send_returned);
+    insert_optional(
+        &mut sample,
+        "responseBodyCompleted",
+        metrics.response_body_completed,
+    );
+    insert_optional(
+        &mut sample,
+        "dependencyLimitedStarts",
+        metrics.dependency_limited_starts,
+    );
+    insert_optional(
+        &mut sample,
+        "runtimeLaggedStarts",
+        metrics.runtime_lagged_starts,
+    );
     insert_optional(&mut sample, "targetIntensity", metrics.target_intensity);
     insert_optional(&mut sample, "targetRpsLimit", metrics.target_rps_limit);
     insert_optional(&mut sample, "scheduledStarts", metrics.scheduled_starts);
@@ -453,6 +487,16 @@ pub fn consolidate_load_metrics(
     let mut http_started_nodes = 0usize;
     let mut http_completed = 0usize;
     let mut http_completed_nodes = 0usize;
+    let mut dispatch_submitted = 0usize;
+    let mut dispatch_submitted_nodes = 0usize;
+    let mut http_send_returned = 0usize;
+    let mut http_send_returned_nodes = 0usize;
+    let mut response_body_completed = 0usize;
+    let mut response_body_completed_nodes = 0usize;
+    let mut dependency_limited_starts = 0usize;
+    let mut dependency_limited_starts_nodes = 0usize;
+    let mut runtime_lagged_starts = 0usize;
+    let mut runtime_lagged_starts_nodes = 0usize;
     let mut rps = 0.0f64;
     let mut target_intensity = 0.0f64;
     let mut target_intensity_nodes = 0usize;
@@ -493,6 +537,26 @@ pub fn consolidate_load_metrics(
         if let Some(value) = metrics.http_completed {
             http_completed = http_completed.saturating_add(value);
             http_completed_nodes += 1;
+        }
+        if let Some(value) = metrics.dispatch_submitted {
+            dispatch_submitted = dispatch_submitted.saturating_add(value);
+            dispatch_submitted_nodes += 1;
+        }
+        if let Some(value) = metrics.http_send_returned {
+            http_send_returned = http_send_returned.saturating_add(value);
+            http_send_returned_nodes += 1;
+        }
+        if let Some(value) = metrics.response_body_completed {
+            response_body_completed = response_body_completed.saturating_add(value);
+            response_body_completed_nodes += 1;
+        }
+        if let Some(value) = metrics.dependency_limited_starts {
+            dependency_limited_starts = dependency_limited_starts.saturating_add(value);
+            dependency_limited_starts_nodes += 1;
+        }
+        if let Some(value) = metrics.runtime_lagged_starts {
+            runtime_lagged_starts = runtime_lagged_starts.saturating_add(value);
+            runtime_lagged_starts_nodes += 1;
         }
         rps += metrics.rps;
         if let Some(value) = metrics.target_intensity {
@@ -547,6 +611,13 @@ pub fn consolidate_load_metrics(
         total_error,
         http_started: (http_started_nodes > 0).then_some(http_started),
         http_completed: (http_completed_nodes > 0).then_some(http_completed),
+        dispatch_submitted: (dispatch_submitted_nodes > 0).then_some(dispatch_submitted),
+        http_send_returned: (http_send_returned_nodes > 0).then_some(http_send_returned),
+        response_body_completed: (response_body_completed_nodes > 0)
+            .then_some(response_body_completed),
+        dependency_limited_starts: (dependency_limited_starts_nodes > 0)
+            .then_some(dependency_limited_starts),
+        runtime_lagged_starts: (runtime_lagged_starts_nodes > 0).then_some(runtime_lagged_starts),
         rps,
         target_intensity: (target_intensity_nodes > 0)
             .then(|| target_intensity / target_intensity_nodes as f64),
@@ -878,6 +949,11 @@ mod tests {
                         "elapsedMs": 2_000,
                         "scheduledStarts": 100,
                         "missedStarts": 5,
+                        "dispatchSubmitted": 100,
+                        "httpSendReturned": 80,
+                        "responseBodyCompleted": 70,
+                        "dependencyLimitedStarts": 1,
+                        "runtimeLaggedStarts": 2,
                         "readyRequests": 20,
                         "activePipelines": 50,
                         "outstandingRequests": 30,
@@ -900,6 +976,11 @@ mod tests {
                         "elapsedMs": 2_100,
                         "scheduledStarts": 100,
                         "missedStarts": 15,
+                        "dispatchSubmitted": 100,
+                        "httpSendReturned": 90,
+                        "responseBodyCompleted": 85,
+                        "dependencyLimitedStarts": 3,
+                        "runtimeLaggedStarts": 4,
                         "readyRequests": 30,
                         "activePipelines": 60,
                         "outstandingRequests": 40,
@@ -914,6 +995,11 @@ mod tests {
 
         assert_eq!(consolidated.scheduled_starts, Some(200));
         assert_eq!(consolidated.missed_starts, Some(20));
+        assert_eq!(consolidated.dispatch_submitted, Some(200));
+        assert_eq!(consolidated.http_send_returned, Some(170));
+        assert_eq!(consolidated.response_body_completed, Some(155));
+        assert_eq!(consolidated.dependency_limited_starts, Some(4));
+        assert_eq!(consolidated.runtime_lagged_starts, Some(6));
         assert_eq!(consolidated.ready_requests, Some(50));
         assert_eq!(consolidated.active_pipelines, Some(110));
         assert_eq!(consolidated.outstanding_requests, Some(70));
@@ -929,6 +1015,11 @@ mod tests {
             total_error: 2,
             http_started: Some(60),
             http_completed: Some(58),
+            dispatch_submitted: None,
+            http_send_returned: None,
+            response_body_completed: None,
+            dependency_limited_starts: None,
+            runtime_lagged_starts: None,
             rps: 21.5,
             target_intensity: Some(75.0),
             target_rps_limit: Some(150.0),

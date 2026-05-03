@@ -24,6 +24,11 @@ pub struct MetricsAccumulator {
     total_error: usize,
     http_started: usize,
     http_completed: usize,
+    dispatch_submitted: usize,
+    http_send_returned: usize,
+    response_body_completed: usize,
+    dependency_limited_starts: usize,
+    runtime_lagged_starts: usize,
     start_time: u64,
     network_tx_bytes: u64,
     network_rx_bytes: u64,
@@ -38,6 +43,11 @@ impl MetricsAccumulator {
             total_error: 0,
             http_started: 0,
             http_completed: 0,
+            dispatch_submitted: 0,
+            http_send_returned: 0,
+            response_body_completed: 0,
+            dependency_limited_starts: 0,
+            runtime_lagged_starts: 0,
             start_time: now_ms(),
             network_tx_bytes: 0,
             network_rx_bytes: 0,
@@ -63,6 +73,26 @@ impl MetricsAccumulator {
 
     pub fn record_http_completed_count(&mut self, count: usize) {
         self.http_completed = self.http_completed.saturating_add(count);
+    }
+
+    pub fn record_dispatch_submitted_count(&mut self, count: usize) {
+        self.dispatch_submitted = self.dispatch_submitted.saturating_add(count);
+    }
+
+    pub fn record_http_send_returned(&mut self) {
+        self.http_send_returned = self.http_send_returned.saturating_add(1);
+    }
+
+    pub fn record_response_body_completed_count(&mut self, count: usize) {
+        self.response_body_completed = self.response_body_completed.saturating_add(count);
+    }
+
+    pub fn record_dependency_limited_starts_count(&mut self, count: usize) {
+        self.dependency_limited_starts = self.dependency_limited_starts.saturating_add(count);
+    }
+
+    pub fn record_runtime_lagged_start(&mut self) {
+        self.runtime_lagged_starts = self.runtime_lagged_starts.saturating_add(1);
     }
 
     pub fn add_network_bytes(&mut self, tx_bytes: u64, rx_bytes: u64) {
@@ -125,6 +155,14 @@ impl MetricsAccumulator {
             total_error: self.total_error,
             http_started: self.http_started,
             http_completed: self.http_completed,
+            dispatch_submitted: (self.dispatch_submitted > 0).then_some(self.dispatch_submitted),
+            http_send_returned: (self.http_send_returned > 0).then_some(self.http_send_returned),
+            response_body_completed: (self.response_body_completed > 0)
+                .then_some(self.response_body_completed),
+            dependency_limited_starts: (self.dependency_limited_starts > 0)
+                .then_some(self.dependency_limited_starts),
+            runtime_lagged_starts: (self.runtime_lagged_starts > 0)
+                .then_some(self.runtime_lagged_starts),
             rps,
             start_time: self.start_time,
             elapsed_ms,
@@ -259,6 +297,25 @@ mod tests {
 
         assert_eq!(snapshot.total_started, 2);
         assert_eq!(snapshot.total_sent, 0);
+    }
+
+    #[test]
+    fn snapshot_includes_http_lifecycle_counters() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_dispatch_submitted_count(3);
+        metrics.record_http_start();
+        metrics.record_http_send_returned();
+        metrics.record_http_completed_count(1);
+        metrics.record_response_body_completed_count(1);
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.dispatch_submitted, Some(3));
+        assert_eq!(snapshot.http_started, 1);
+        assert_eq!(snapshot.http_send_returned, Some(1));
+        assert_eq!(snapshot.http_completed, 1);
+        assert_eq!(snapshot.response_body_completed, Some(1));
     }
 
     #[test]

@@ -1,5 +1,7 @@
+#[cfg(test)]
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
+#[cfg(test)]
 use tokio::sync::Notify;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10,6 +12,7 @@ pub struct DispatchTick {
     pub scheduled_total: usize,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DispatchTickReport {
     pub scheduled_starts: usize,
@@ -53,6 +56,7 @@ impl DispatchClock {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 pub struct DispatchRuntimeState {
     generation: AtomicU64,
@@ -65,6 +69,7 @@ pub struct DispatchRuntimeState {
     notify: Notify,
 }
 
+#[cfg(test)]
 impl DispatchRuntimeState {
     pub fn new() -> Self {
         Self {
@@ -108,14 +113,6 @@ impl DispatchRuntimeState {
             actual_starts,
             missed_starts: scheduled_starts.saturating_sub(actual_starts),
         }
-    }
-
-    pub fn waiting_ready_requests(&self) -> usize {
-        self.waiters.load(Ordering::SeqCst)
-    }
-
-    pub fn scheduled_total(&self) -> usize {
-        self.scheduled_total.load(Ordering::SeqCst)
     }
 
     pub async fn acquire(&self, should_cancel: impl Fn() -> bool) -> bool {

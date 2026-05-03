@@ -197,6 +197,11 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
   const totalError = toNumber(value.totalError);
   const httpStarted = toNumber(value.httpStarted);
   const httpCompleted = toNumber(value.httpCompleted);
+  const dispatchSubmitted = toNumber(value.dispatchSubmitted);
+  const httpSendReturned = toNumber(value.httpSendReturned);
+  const responseBodyCompleted = toNumber(value.responseBodyCompleted);
+  const dependencyLimitedStarts = toNumber(value.dependencyLimitedStarts);
+  const runtimeLaggedStarts = toNumber(value.runtimeLaggedStarts);
   const rps = toNumber(value.rps);
 
   if (
@@ -215,6 +220,11 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     totalError: totalError ?? 0,
     httpStarted,
     httpCompleted,
+    dispatchSubmitted,
+    httpSendReturned,
+    responseBodyCompleted,
+    dependencyLimitedStarts,
+    runtimeLaggedStarts,
     rps: rps ?? 0,
     startTime: toNumber(value.startTime) ?? Date.now(),
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
@@ -338,6 +348,21 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
         httpCompleted: item.httpCompleted !== undefined
           ? (acc.httpCompleted ?? 0) + item.httpCompleted
           : acc.httpCompleted,
+        dispatchSubmitted: item.dispatchSubmitted !== undefined
+          ? (acc.dispatchSubmitted ?? 0) + item.dispatchSubmitted
+          : acc.dispatchSubmitted,
+        httpSendReturned: item.httpSendReturned !== undefined
+          ? (acc.httpSendReturned ?? 0) + item.httpSendReturned
+          : acc.httpSendReturned,
+        responseBodyCompleted: item.responseBodyCompleted !== undefined
+          ? (acc.responseBodyCompleted ?? 0) + item.responseBodyCompleted
+          : acc.responseBodyCompleted,
+        dependencyLimitedStarts: item.dependencyLimitedStarts !== undefined
+          ? (acc.dependencyLimitedStarts ?? 0) + item.dependencyLimitedStarts
+          : acc.dependencyLimitedStarts,
+        runtimeLaggedStarts: item.runtimeLaggedStarts !== undefined
+          ? (acc.runtimeLaggedStarts ?? 0) + item.runtimeLaggedStarts
+          : acc.runtimeLaggedStarts,
         rps: acc.rps + item.rps,
         startTime: Math.min(acc.startTime, item.startTime),
         elapsedMs: Math.max(acc.elapsedMs, item.elapsedMs),
@@ -407,6 +432,11 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const totalStarted = toNumber(consolidated?.totalStarted) ?? aggregated?.totalStarted;
   const httpStarted = toNumber(consolidated?.httpStarted) ?? aggregated?.httpStarted;
   const httpCompleted = toNumber(consolidated?.httpCompleted) ?? aggregated?.httpCompleted;
+  const dispatchSubmitted = toNumber(consolidated?.dispatchSubmitted) ?? aggregated?.dispatchSubmitted;
+  const httpSendReturned = toNumber(consolidated?.httpSendReturned) ?? aggregated?.httpSendReturned;
+  const responseBodyCompleted = toNumber(consolidated?.responseBodyCompleted) ?? aggregated?.responseBodyCompleted;
+  const dependencyLimitedStarts = toNumber(consolidated?.dependencyLimitedStarts) ?? aggregated?.dependencyLimitedStarts;
+  const runtimeLaggedStarts = toNumber(consolidated?.runtimeLaggedStarts) ?? aggregated?.runtimeLaggedStarts;
   const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
   const targetRpsLimit = toNumber(consolidated?.targetRpsLimit) ?? aggregated?.targetRpsLimit;
   const scheduledStarts = toNumber(consolidated?.scheduledStarts) ?? aggregated?.scheduledStarts;
@@ -435,6 +465,11 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
       totalSent,
       httpStarted,
       httpCompleted,
+      dispatchSubmitted,
+      httpSendReturned,
+      responseBodyCompleted,
+      dependencyLimitedStarts,
+      runtimeLaggedStarts,
       targetIntensity,
       targetRpsLimit,
       scheduledStarts,
@@ -456,6 +491,11 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     tickMs: toNumber(consolidated?.tickMs) ?? aggregated?.tickMs,
     scheduledStarts,
     missedStarts,
+    dispatchSubmitted,
+    httpSendReturned,
+    responseBodyCompleted,
+    dependencyLimitedStarts,
+    runtimeLaggedStarts,
     readyRequests,
     activePipelines,
     outstandingRequests,
@@ -787,6 +827,11 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
   let tickMs = 0;
   let scheduledStarts = 0, hasScheduledStarts = false;
   let missedStarts = 0, hasMissedStarts = false;
+  let dispatchSubmitted = 0, hasDispatchSubmitted = false;
+  let httpSendReturned = 0, hasHttpSendReturned = false;
+  let responseBodyCompleted = 0, hasResponseBodyCompleted = false;
+  let dependencyLimitedStarts = 0, hasDependencyLimitedStarts = false;
+  let runtimeLaggedStarts = 0, hasRuntimeLaggedStarts = false;
   let readyRequests = 0, hasReadyRequests = false;
   let activePipelines = 0, hasActivePipelines = false;
   let outstandingRequests = 0, hasOutstandingRequests = false;
@@ -829,6 +874,26 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
       missedStarts += p.missedStarts;
       hasMissedStarts = true;
     }
+    if (typeof p.dispatchSubmitted === "number") {
+      dispatchSubmitted += p.dispatchSubmitted;
+      hasDispatchSubmitted = true;
+    }
+    if (typeof p.httpSendReturned === "number") {
+      httpSendReturned += p.httpSendReturned;
+      hasHttpSendReturned = true;
+    }
+    if (typeof p.responseBodyCompleted === "number") {
+      responseBodyCompleted += p.responseBodyCompleted;
+      hasResponseBodyCompleted = true;
+    }
+    if (typeof p.dependencyLimitedStarts === "number") {
+      dependencyLimitedStarts += p.dependencyLimitedStarts;
+      hasDependencyLimitedStarts = true;
+    }
+    if (typeof p.runtimeLaggedStarts === "number") {
+      runtimeLaggedStarts += p.runtimeLaggedStarts;
+      hasRuntimeLaggedStarts = true;
+    }
     if (typeof p.readyRequests === "number") {
       readyRequests += p.readyRequests;
       hasReadyRequests = true;
@@ -862,6 +927,11 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
     tickMs: tickMs > 0 ? tickMs : undefined,
     scheduledStarts: hasScheduledStarts ? scheduledStarts : undefined,
     missedStarts: hasMissedStarts ? missedStarts : undefined,
+    dispatchSubmitted: hasDispatchSubmitted ? dispatchSubmitted : undefined,
+    httpSendReturned: hasHttpSendReturned ? httpSendReturned : undefined,
+    responseBodyCompleted: hasResponseBodyCompleted ? responseBodyCompleted : undefined,
+    dependencyLimitedStarts: hasDependencyLimitedStarts ? dependencyLimitedStarts : undefined,
+    runtimeLaggedStarts: hasRuntimeLaggedStarts ? runtimeLaggedStarts : undefined,
     readyRequests: hasReadyRequests ? readyRequests : undefined,
     activePipelines: hasActivePipelines ? activePipelines : undefined,
     outstandingRequests: hasOutstandingRequests ? outstandingRequests : undefined,
@@ -880,6 +950,11 @@ function buildRpsHistoryPoint(
       runnerId,
       httpStarted: metrics.httpStarted,
       httpCompleted: metrics.httpCompleted,
+      dispatchSubmitted: metrics.dispatchSubmitted,
+      httpSendReturned: metrics.httpSendReturned,
+      responseBodyCompleted: metrics.responseBodyCompleted,
+      dependencyLimitedStarts: metrics.dependencyLimitedStarts,
+      runtimeLaggedStarts: metrics.runtimeLaggedStarts,
       totalStarted: metrics.totalStarted,
       totalSent: metrics.totalSent,
       rps: metrics.rps,
@@ -899,6 +974,11 @@ function buildRpsHistoryPoint(
     totalSent: consolidated?.totalSent ?? event.totalSent,
     httpStarted: consolidated?.httpStarted ?? event.httpStarted,
     httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
+    dispatchSubmitted: consolidated?.dispatchSubmitted ?? event.dispatchSubmitted,
+    httpSendReturned: consolidated?.httpSendReturned ?? event.httpSendReturned,
+    responseBodyCompleted: consolidated?.responseBodyCompleted ?? event.responseBodyCompleted,
+    dependencyLimitedStarts: consolidated?.dependencyLimitedStarts ?? event.dependencyLimitedStarts,
+    runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
     targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
     targetRpsLimit: consolidated?.targetRpsLimit ?? event.targetRpsLimit,
     scheduledStarts: consolidated?.scheduledStarts ?? event.scheduledStarts,
@@ -944,6 +1024,11 @@ export function runRemoteLoadTest(
       totalStarted: consolidated?.totalStarted ?? event.totalStarted,
       httpStarted: consolidated?.httpStarted ?? event.httpStarted,
       httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
+      dispatchSubmitted: consolidated?.dispatchSubmitted ?? event.dispatchSubmitted,
+      httpSendReturned: consolidated?.httpSendReturned ?? event.httpSendReturned,
+      responseBodyCompleted: consolidated?.responseBodyCompleted ?? event.responseBodyCompleted,
+      dependencyLimitedStarts: consolidated?.dependencyLimitedStarts ?? event.dependencyLimitedStarts,
+      runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,
@@ -1308,6 +1393,11 @@ export function reconnectToLoadExecution(
       totalStarted: consolidated?.totalStarted ?? event.totalStarted,
       httpStarted: consolidated?.httpStarted ?? event.httpStarted,
       httpCompleted: consolidated?.httpCompleted ?? event.httpCompleted,
+      dispatchSubmitted: consolidated?.dispatchSubmitted ?? event.dispatchSubmitted,
+      httpSendReturned: consolidated?.httpSendReturned ?? event.httpSendReturned,
+      responseBodyCompleted: consolidated?.responseBodyCompleted ?? event.responseBodyCompleted,
+      dependencyLimitedStarts: consolidated?.dependencyLimitedStarts ?? event.dependencyLimitedStarts,
+      runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
       totalError: consolidated?.totalError ?? event.totalError,
       avgLatency: consolidated?.avgLatency ?? 0,

@@ -235,6 +235,11 @@
   "loadTestResults.missedStarts": "Starts perdidos",
   "loadTestResults.readyRequests": "Prontos",
   "loadTestResults.outstandingRequests": "Pendentes",
+  "loadTestResults.dispatchSubmitted": "Disparos planejados",
+  "loadTestResults.httpSendReturned": "Sends retornados",
+  "loadTestResults.responseBodyCompleted": "Bodies concluídos",
+  "loadTestResults.dependencyLimitedStarts": "Limitados por dependência",
+  "loadTestResults.runtimeLaggedStarts": "Atrasados pelo runtime",
   "loadTestResults.configuredWave": "Onda configurada",
 
   "pipeline.editPipeline": "Editar pipeline",

@@ -255,6 +255,52 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
           )}
         </div>
       )}
+      {(typeof metrics.dispatchSubmitted === "number" ||
+        typeof metrics.httpSendReturned === "number" ||
+        typeof metrics.responseBodyCompleted === "number" ||
+        typeof metrics.dependencyLimitedStarts === "number" ||
+        typeof metrics.runtimeLaggedStarts === "number") && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {typeof metrics.dispatchSubmitted === "number" && (
+            <MetricCard
+              icon={ListChecks}
+              label={t("loadTestResults.dispatchSubmitted")}
+              value={metrics.dispatchSubmitted}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.httpSendReturned === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.httpSendReturned")}
+              value={metrics.httpSendReturned}
+            />
+          )}
+          {typeof metrics.responseBodyCompleted === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.responseBodyCompleted")}
+              value={metrics.responseBodyCompleted}
+            />
+          )}
+          {typeof metrics.dependencyLimitedStarts === "number" && (
+            <MetricCard
+              icon={AlertTriangle}
+              label={t("loadTestResults.dependencyLimitedStarts")}
+              value={metrics.dependencyLimitedStarts}
+              color="text-warning"
+            />
+          )}
+          {typeof metrics.runtimeLaggedStarts === "number" && (
+            <MetricCard
+              icon={AlertTriangle}
+              label={t("loadTestResults.runtimeLaggedStarts")}
+              value={metrics.runtimeLaggedStarts}
+              color="text-warning"
+            />
+          )}
+        </div>
+      )}
 
       {waveConfig && waveChartData.length > 1 && (
         <div data-testid="configured-wave-chart" className="glass rounded-lg p-3 space-y-2">
