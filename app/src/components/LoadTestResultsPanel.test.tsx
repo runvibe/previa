@@ -320,6 +320,8 @@ describe("LoadTestResultsPanel", () => {
           curveAdherence: 95,
           missedStarts: 20,
           readyRequests: 50,
+          runtimeLaggedStarts: 7,
+          dependencyLimitedStarts: 3,
         }}
         state="running"
         totalRequests={0}
@@ -332,6 +334,10 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("20")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.readyRequests")).toBeInTheDocument();
     expect(screen.getByText("50")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.runtimeLaggedStarts")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.dependencyLimitedStarts")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 
   it("shows actual and target RPS legend when target data exists", () => {

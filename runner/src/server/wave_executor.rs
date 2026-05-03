@@ -6,25 +6,22 @@ use std::time::Instant;
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::mpsc;
-use tokio::task::JoinSet;
-use tracing::{debug, error};
+use tracing::error;
 
 use previa_runner::{
     Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult, prepare_http_step,
-    send_prepared_http_step_with_hooks,
 };
 
 use crate::server::load_dispatch::DispatchClock;
 use crate::server::load_wave::{
     calculate_dispatch_tick_ms, local_rps_limit, sample_intensity, timeline_end_ms,
 };
-use crate::server::metrics::{
-    MetricsAccumulator, WaveMetricsSnapshot, estimate_results_network_bytes,
-};
+use crate::server::metrics::{MetricsAccumulator, WaveMetricsSnapshot};
 use crate::server::models::LoadProfile;
 use crate::server::runtime::RuntimeSampler;
 use crate::server::sse::{SseMessage, send_sse_or_cancel};
 use crate::server::wave_emitter::{StartLagClass, classify_start_lag};
+use crate::server::wave_sender::{ReadyWaveRequest, WaveObserverEvent, WaveSender};
 
 #[derive(Debug)]
 struct PipelineCursor {
@@ -45,11 +42,7 @@ impl PipelineCursor {
     }
 }
 
-#[derive(Debug)]
-struct ObserverEvent {
-    cursor: PipelineCursor,
-    result: StepExecutionResult,
-}
+type ObserverEvent = WaveObserverEvent<PipelineCursor>;
 
 fn next_cursor_for_slot(
     ready: &mut VecDeque<PipelineCursor>,
@@ -77,16 +70,26 @@ pub async fn run_wave_load(
     let metrics = Arc::new(tokio::sync::Mutex::new(MetricsAccumulator::new()));
     let runtime_sampler = Arc::new(tokio::sync::Mutex::new(RuntimeSampler::new()));
     let response_in_flight = Arc::new(AtomicUsize::new(0));
+    let ready_to_send = Arc::new(AtomicUsize::new(0));
     let missed_starts = Arc::new(AtomicUsize::new(0));
     let http_client = Arc::new(Client::new());
     let mut dispatch_clock = DispatchClock::new(tick_ms);
-    let mut tasks = JoinSet::new();
     let mut ready = VecDeque::new();
+    let (request_tx, request_rx) = mpsc::unbounded_channel::<ReadyWaveRequest<PipelineCursor>>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ObserverEvent>();
+    let sender = WaveSender::new(
+        Arc::clone(&http_client),
+        Arc::clone(&metrics),
+        Arc::clone(&response_in_flight),
+        Arc::clone(&ready_to_send),
+        request_rx,
+        event_tx,
+        token.clone(),
+    );
+    let sender_task = tokio::spawn(sender.run());
     let mut scheduled_total = 0usize;
 
     loop {
-        log_drain_report(drain_finished_tasks(&mut tasks).await);
         drain_observer_events(&mut event_rx, &mut ready, &pipeline, &metrics).await;
 
         if token.is_cancelled() {
@@ -156,20 +159,23 @@ pub async fn run_wave_load(
                 lock.record_runtime_lagged_start();
             }
 
-            spawn_observed_step(ObservedStepArgs {
-                tasks: &mut tasks,
-                client: Arc::clone(&http_client),
-                metrics: Arc::clone(&metrics),
-                response_in_flight: Arc::clone(&response_in_flight),
-                event_tx: event_tx.clone(),
-                token: token.clone(),
-                step,
-                cursor,
-                prepared,
-                specs: Arc::clone(&specs),
-                env_groups: Arc::clone(&env_groups),
-                selected_env_group_slug: selected_env_group_slug.clone(),
-            });
+            ready_to_send.fetch_add(1, Ordering::SeqCst);
+            if request_tx
+                .send(ReadyWaveRequest {
+                    step,
+                    context: cursor.context.clone(),
+                    cursor,
+                    prepared,
+                    specs: Arc::clone(&specs),
+                    env_groups: Arc::clone(&env_groups),
+                    selected_env_group_slug: selected_env_group_slug.clone(),
+                })
+                .is_err()
+            {
+                ready_to_send.fetch_sub(1, Ordering::SeqCst);
+                error!("wave sender stopped before accepting prepared request");
+                break;
+            }
         }
 
         send_metrics_snapshot(SnapshotArgs {
@@ -179,7 +185,9 @@ pub async fn run_wave_load(
             tick_ms,
             scheduled_total,
             missed_total: missed_starts.load(Ordering::SeqCst),
-            ready_requests: ready.len(),
+            ready_requests: ready
+                .len()
+                .saturating_add(ready_to_send.load(Ordering::SeqCst)),
             response_in_flight: response_in_flight.load(Ordering::SeqCst),
             metrics: &metrics,
             runtime_sampler: &runtime_sampler,
@@ -195,8 +203,8 @@ pub async fn run_wave_load(
 
     let grace_deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(load.grace_period_ms);
-    while response_in_flight.load(Ordering::SeqCst) > 0 || !tasks.is_empty() {
-        log_drain_report(drain_finished_tasks(&mut tasks).await);
+    while response_in_flight.load(Ordering::SeqCst) > 0 || ready_to_send.load(Ordering::SeqCst) > 0
+    {
         drain_observer_events(&mut event_rx, &mut ready, &pipeline, &metrics).await;
         if token.is_cancelled() || tokio::time::Instant::now() >= grace_deadline {
             break;
@@ -209,7 +217,9 @@ pub async fn run_wave_load(
             tick_ms,
             scheduled_total,
             missed_total: missed_starts.load(Ordering::SeqCst),
-            ready_requests: ready.len(),
+            ready_requests: ready
+                .len()
+                .saturating_add(ready_to_send.load(Ordering::SeqCst)),
             response_in_flight: response_in_flight.load(Ordering::SeqCst),
             metrics: &metrics,
             runtime_sampler: &runtime_sampler,
@@ -223,10 +233,15 @@ pub async fn run_wave_load(
         tokio::time::sleep(tokio::time::Duration::from_millis(tick_ms.min(250))).await;
     }
 
-    if !tasks.is_empty() {
-        tasks.abort_all();
+    drop(request_tx);
+    if response_in_flight.load(Ordering::SeqCst) > 0 {
+        sender_task.abort();
     }
-    log_drain_report(drain_finished_tasks(&mut tasks).await);
+    if let Err(err) = sender_task.await {
+        if !err.is_cancelled() {
+            error!("wave sender task failed: {err}");
+        }
+    }
     drain_observer_events(&mut event_rx, &mut ready, &pipeline, &metrics).await;
 
     if send_metrics_snapshot(SnapshotArgs {
@@ -236,7 +251,9 @@ pub async fn run_wave_load(
         tick_ms,
         scheduled_total,
         missed_total: missed_starts.load(Ordering::SeqCst),
-        ready_requests: ready.len(),
+        ready_requests: ready
+            .len()
+            .saturating_add(ready_to_send.load(Ordering::SeqCst)),
         response_in_flight: response_in_flight.load(Ordering::SeqCst),
         metrics: &metrics,
         runtime_sampler: &runtime_sampler,
@@ -255,7 +272,9 @@ pub async fn run_wave_load(
             tick_ms,
             scheduled_total,
             missed_total: missed_starts.load(Ordering::SeqCst),
-            ready_requests: ready.len(),
+            ready_requests: ready
+                .len()
+                .saturating_add(ready_to_send.load(Ordering::SeqCst)),
             response_in_flight: response_in_flight.load(Ordering::SeqCst),
             metrics: &metrics,
             runtime_sampler: &runtime_sampler,
@@ -269,79 +288,6 @@ pub async fn run_wave_load(
             &token,
         );
     }
-}
-
-struct ObservedStepArgs<'a> {
-    tasks: &'a mut JoinSet<()>,
-    client: Arc<Client>,
-    metrics: Arc<tokio::sync::Mutex<MetricsAccumulator>>,
-    response_in_flight: Arc<AtomicUsize>,
-    event_tx: mpsc::UnboundedSender<ObserverEvent>,
-    token: tokio_util::sync::CancellationToken,
-    step: PipelineStep,
-    cursor: PipelineCursor,
-    prepared: previa_runner::PreparedHttpStep,
-    specs: Arc<Vec<RuntimeSpec>>,
-    env_groups: Arc<Vec<RuntimeEnvGroup>>,
-    selected_env_group_slug: Option<String>,
-}
-
-fn spawn_observed_step(args: ObservedStepArgs<'_>) {
-    args.response_in_flight.fetch_add(1, Ordering::SeqCst);
-    args.tasks.spawn(async move {
-        {
-            let mut lock = args.metrics.lock().await;
-            lock.record_http_start();
-        }
-
-        let metrics_for_send = Arc::clone(&args.metrics);
-        let metrics_for_body = Arc::clone(&args.metrics);
-        let result = send_prepared_http_step_with_hooks(
-            args.client.as_ref(),
-            args.prepared,
-            &args.step,
-            &args.cursor.context,
-            Some(args.specs.as_slice()),
-            Some(args.env_groups.as_slice()),
-            args.selected_env_group_slug.as_deref(),
-            || args.token.is_cancelled(),
-            move || {
-                let metrics = Arc::clone(&metrics_for_send);
-                async move {
-                    let mut lock = metrics.lock().await;
-                    lock.record_http_send_returned();
-                }
-            },
-            move || {
-                let metrics = Arc::clone(&metrics_for_body);
-                async move {
-                    let mut lock = metrics.lock().await;
-                    lock.record_response_body_completed_count(1);
-                }
-            },
-        )
-        .await;
-
-        args.response_in_flight.fetch_sub(1, Ordering::SeqCst);
-        let Some(result) = result else {
-            return;
-        };
-
-        let (network_tx_bytes, network_rx_bytes) =
-            estimate_results_network_bytes(std::slice::from_ref(&result));
-        {
-            let mut lock = args.metrics.lock().await;
-            if result.request.is_some() {
-                lock.record_http_completed_count(1);
-            }
-            lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
-        }
-
-        let _ = args.event_tx.send(ObserverEvent {
-            cursor: args.cursor,
-            result,
-        });
-    });
 }
 
 async fn drain_observer_events(
@@ -433,47 +379,6 @@ async fn record_terminal_pipeline(
             let error = result.error.as_deref().unwrap_or("pipeline failed");
             lock.record_error_sample(&result.step_id, http_status, error);
         }
-    }
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct DrainTaskReport {
-    completed: usize,
-    cancelled: usize,
-    failed: usize,
-}
-
-async fn drain_finished_tasks(tasks: &mut JoinSet<()>) -> DrainTaskReport {
-    let mut report = DrainTaskReport::default();
-
-    loop {
-        match tokio::time::timeout(tokio::time::Duration::from_millis(0), tasks.join_next()).await {
-            Ok(Some(Err(err))) if err.is_cancelled() => {
-                report.cancelled = report.cancelled.saturating_add(1);
-            }
-            Ok(Some(Err(_err))) => {
-                report.failed = report.failed.saturating_add(1);
-            }
-            Ok(Some(Ok(()))) => {
-                report.completed = report.completed.saturating_add(1);
-            }
-            Ok(None) => break,
-            Err(_) => break,
-        }
-    }
-
-    report
-}
-
-fn log_drain_report(report: DrainTaskReport) {
-    if report.failed > 0 {
-        error!("wave response observer task failures: {}", report.failed);
-    }
-    if report.cancelled > 0 {
-        debug!(
-            "wave response observer tasks cancelled: {}",
-            report.cancelled
-        );
     }
 }
 
@@ -623,22 +528,5 @@ mod tests {
 
         assert_eq!(cursor.step_index, 2);
         assert!(!started_new);
-    }
-
-    #[tokio::test]
-    async fn drain_finished_tasks_reports_cancelled_tasks_without_failure() {
-        let mut tasks = JoinSet::new();
-        tasks.spawn(async {
-            std::future::pending::<()>().await;
-        });
-
-        tasks.abort_all();
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-        let report = drain_finished_tasks(&mut tasks).await;
-
-        assert_eq!(report.cancelled, 1);
-        assert_eq!(report.failed, 0);
-        assert!(tasks.is_empty());
     }
 }
