@@ -1,4 +1,4 @@
-import type { LoadTestMetrics, WaveLoadConfig } from "@/types/load-test";
+import type { LoadTestMetrics, RpsPoint, RunnerRpsSample, WaveLoadConfig } from "@/types/load-test";
 
 export interface RpsRunnerSeries {
   key: string;
@@ -24,6 +24,28 @@ function roundOne(value: number) {
 
 function dispatchStarted(point: { dispatchStarted?: number; httpStarted?: number }) {
   return point.dispatchStarted ?? point.httpStarted;
+}
+
+function elapsedMsForPoint(point: RpsPoint, metrics: LoadTestMetrics) {
+  return typeof point.elapsedMs === "number"
+    ? point.elapsedMs
+    : point.timestamp - metrics.startTime;
+}
+
+function bucketSecondForPoint(point: RpsPoint, metrics: LoadTestMetrics) {
+  return Math.max(0, Math.floor(elapsedMsForPoint(point, metrics) / 1000));
+}
+
+function bucketSpan(previousBucket: number, currentBucket: number) {
+  return Math.max(1, currentBucket - previousBucket);
+}
+
+function firstBucketToUpdate(previousBucket: number, currentBucket: number) {
+  return currentBucket === previousBucket ? currentBucket : previousBucket + 1;
+}
+
+function runnerStarted(point: RunnerRpsSample | undefined) {
+  return point ? dispatchStarted(point) : undefined;
 }
 
 function sampleWaveIntensity(config: WaveLoadConfig, elapsedMs: number) {
@@ -82,74 +104,98 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
     ).sort()
     : [];
   const runnerSeries = runnerIds.map((label, index) => ({ key: `runner${index}`, label }));
+  const runnerKeyById = new Map(runnerSeries.map((runner) => [runner.label, runner.key]));
 
-  const legacyData = () => history.map((point, index) => {
-    const previous = history[index - 1];
-    const elapsedMs = point.timestamp - metrics.startTime;
-    const intervalSeconds = previous ? (point.timestamp - previous.timestamp) / 1000 : 0;
-    const hasStartedTotals = previous?.totalStarted !== undefined && point.totalStarted !== undefined;
-    const hasSentTotals = previous?.totalSent !== undefined && point.totalSent !== undefined;
-    const currentTotal = hasStartedTotals ? point.totalStarted : point.totalSent;
-    const previousTotal = hasStartedTotals ? previous?.totalStarted : previous?.totalSent;
-    const hasTotals = hasStartedTotals || hasSentTotals;
-    const intervalRps = hasTotals && intervalSeconds > 0 && currentTotal !== undefined && previousTotal !== undefined
-      ? Math.max(0, (currentTotal - previousTotal) / intervalSeconds)
-      : point.rps;
+  const ensureRow = (rows: Map<number, RpsChartRow>, bucket: number, point: RpsPoint) => {
+    const existing = rows.get(bucket);
+    if (existing) return existing;
 
-    return {
-      time: Math.round(elapsedMs / 1000),
-      rpsTotal: roundOne(intervalRps),
-      targetRpsLimit: estimateTargetRpsLimit(point, metrics, waveConfig, elapsedMs),
+    const row: RpsChartRow = {
+      time: bucket,
+      rpsTotal: 0,
+      targetRpsLimit: estimateTargetRpsLimit(point, metrics, waveConfig, bucket * 1000),
     };
-  });
+    for (const runner of runnerSeries) {
+      row[runner.key] = 0;
+    }
+    rows.set(bucket, row);
+    return row;
+  };
 
-  if (!usesHttpRps) {
-    return { data: legacyData(), runnerSeries, usesHttpRps };
+  if (history.length === 0) {
+    return { data: [], runnerSeries, usesHttpRps };
   }
 
-  const runnerKeyById = new Map(runnerSeries.map((runner) => [runner.label, runner.key]));
-  const data = history.map((point, index) => {
+  const rows = new Map<number, RpsChartRow>();
+  ensureRow(rows, bucketSecondForPoint(history[0], metrics), history[0]);
+
+  for (let index = 1; index < history.length; index += 1) {
+    const point = history[index];
     const previous = history[index - 1];
-    const elapsedMs = point.timestamp - metrics.startTime;
-    const intervalSeconds = previous ? (point.timestamp - previous.timestamp) / 1000 : 0;
-    const row: RpsChartRow = {
-      time: Math.round(elapsedMs / 1000),
-      rpsTotal: 0,
-      targetRpsLimit: estimateTargetRpsLimit(point, metrics, waveConfig, elapsedMs),
-    };
+    const previousBucket = bucketSecondForPoint(previous, metrics);
+    const currentBucket = bucketSecondForPoint(point, metrics);
+    const span = bucketSpan(previousBucket, currentBucket);
+    const startBucket = firstBucketToUpdate(previousBucket, currentBucket);
 
     if (point.runners && point.runners.length > 0) {
-      let total = 0;
       for (const runner of point.runners) {
         const key = runnerKeyById.get(runner.runnerId);
         if (!key) continue;
         const previousRunner = previous?.runners?.find((item) => item.runnerId === runner.runnerId);
         const currentStarted = dispatchStarted(runner);
-        const previousStarted = previousRunner ? dispatchStarted(previousRunner) : undefined;
-        const intervalRps = previousRunner
+        const previousStarted = runnerStarted(previousRunner);
+        const bucketRps = previousRunner
           && typeof previousStarted === "number"
           && typeof currentStarted === "number"
-          && intervalSeconds > 0
-          ? Math.max(0, (currentStarted - previousStarted) / intervalSeconds)
+          ? Math.max(0, currentStarted - previousStarted) / span
           : 0;
-        const rounded = roundOne(intervalRps);
-        row[key] = rounded;
-        total += rounded;
+        for (let bucket = startBucket; bucket <= currentBucket; bucket += 1) {
+          const row = ensureRow(rows, bucket, point);
+          row[key] = (row[key] ?? 0) + bucketRps;
+          row.rpsTotal += bucketRps;
+        }
       }
-      row.rpsTotal = roundOne(total);
-      return row;
+      continue;
     }
 
-    const previousHttpStarted = previous ? dispatchStarted(previous) : undefined;
-    const currentHttpStarted = dispatchStarted(point);
-    const total = typeof previousHttpStarted === "number"
-      && typeof currentHttpStarted === "number"
-      && intervalSeconds > 0
-      ? Math.max(0, (currentHttpStarted - previousHttpStarted) / intervalSeconds)
-      : 0;
-    row.rpsTotal = roundOne(total);
-    return row;
-  });
+    const previousStarted = dispatchStarted(previous);
+    const currentStarted = dispatchStarted(point);
+    const hasStartedTotals = typeof previousStarted === "number" && typeof currentStarted === "number";
+    const hasTotalStarted = previous.totalStarted !== undefined && point.totalStarted !== undefined;
+    const hasTotalSent = previous.totalSent !== undefined && point.totalSent !== undefined;
+    const currentTotal = hasStartedTotals
+      ? currentStarted
+      : hasTotalStarted
+        ? point.totalStarted
+        : point.totalSent;
+    const previousTotal = hasStartedTotals
+      ? previousStarted
+      : hasTotalStarted
+        ? previous.totalStarted
+        : previous.totalSent;
+    const bucketRps = (hasStartedTotals || hasTotalStarted || hasTotalSent)
+      && currentTotal !== undefined
+      && previousTotal !== undefined
+      ? Math.max(0, currentTotal - previousTotal) / span
+      : point.rps;
+
+    for (let bucket = startBucket; bucket <= currentBucket; bucket += 1) {
+      ensureRow(rows, bucket, point).rpsTotal += bucketRps;
+    }
+  }
+
+  const data = Array.from(rows.values())
+    .sort((a, b) => a.time - b.time)
+    .map((row) => {
+      const rounded: RpsChartRow = {
+        ...row,
+        rpsTotal: roundOne(row.rpsTotal),
+      };
+      for (const runner of runnerSeries) {
+        rounded[runner.key] = roundOne(row[runner.key] ?? 0);
+      }
+      return rounded;
+    });
 
   return { data, runnerSeries, usesHttpRps };
 }

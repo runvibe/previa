@@ -21,6 +21,8 @@ use crate::server::models::{
 use crate::server::state::TRANSACTION_ID_HEADER;
 use crate::server::utils::{now_ms, parse_runner_duration_ms, parse_runner_load_metrics};
 
+const RPS_HISTORY_BUCKET_MS: u64 = 1_000;
+
 pub async fn forward_runner_stream_load_chunked(
     client: &Client,
     node: String,
@@ -291,7 +293,7 @@ pub async fn flush_load_batches(
         };
         if let Some(metrics) = consolidated.as_ref() {
             let sample_at = rps_history_timestamp(metrics);
-            if sample_at.saturating_sub(last_rps_history_sample_at) >= 500 {
+            if sample_at > last_rps_history_sample_at {
                 rps_history.lock().await.push(build_rps_history_sample(
                     sample_at,
                     metrics,
@@ -437,7 +439,10 @@ fn build_rps_history_sample(
 
     let mut sample = Map::new();
     sample.insert("timestamp".to_owned(), json!(timestamp));
-    sample.insert("elapsedMs".to_owned(), json!(metrics.elapsed_ms));
+    sample.insert(
+        "elapsedMs".to_owned(),
+        json!(timestamp.saturating_sub(metrics.start_time)),
+    );
     sample.insert("rps".to_owned(), json!(metrics.rps));
     insert_optional(&mut sample, "totalStarted", metrics.total_started);
     sample.insert("totalSent".to_owned(), json!(metrics.total_sent));
@@ -489,7 +494,13 @@ fn build_rps_history_sample(
 }
 
 fn rps_history_timestamp(metrics: &ConsolidatedLoadMetrics) -> u64 {
-    metrics.start_time.saturating_add(metrics.elapsed_ms)
+    metrics
+        .start_time
+        .saturating_add(rps_history_elapsed_bucket_ms(metrics.elapsed_ms))
+}
+
+fn rps_history_elapsed_bucket_ms(elapsed_ms: u64) -> u64 {
+    (elapsed_ms / RPS_HISTORY_BUCKET_MS).saturating_mul(RPS_HISTORY_BUCKET_MS)
 }
 
 fn insert_optional<T: Serialize>(map: &mut Map<String, Value>, key: &str, value: Option<T>) {
@@ -910,8 +921,8 @@ mod tests {
 
     use crate::server::execution::load_batch::{
         add_load_context_fields, build_rps_history_sample, consolidate_load_metrics,
-        drain_load_chunk, merge_runner_error_samples_into, rps_history_timestamp,
-        summarize_load_latency,
+        drain_load_chunk, merge_runner_error_samples_into, rps_history_elapsed_bucket_ms,
+        rps_history_timestamp, summarize_load_latency,
     };
     use crate::server::models::{
         ConsolidatedLoadMetrics, LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary,
@@ -1305,7 +1316,7 @@ mod tests {
             p95: 20,
             p99: 30,
             start_time: 1_000,
-            elapsed_ms: 2_000,
+            elapsed_ms: 2_450,
             nodes_reporting: 2,
         };
         let latest = HashMap::from([(
@@ -1328,6 +1339,7 @@ mod tests {
             },
         )]);
 
+        assert_eq!(rps_history_elapsed_bucket_ms(2_450), 2_000);
         assert_eq!(rps_history_timestamp(&metrics), 3_000);
         assert_eq!(
             build_rps_history_sample(rps_history_timestamp(&metrics), &metrics, &latest),

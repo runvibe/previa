@@ -148,9 +148,8 @@ describe("LoadTestResultsPanel", () => {
 
     expect(buildRpsChartData(metrics, null)).toEqual({
       data: [
-        { time: 0, rpsTotal: 0, targetRpsLimit: undefined },
-        { time: 1, rpsTotal: 10, targetRpsLimit: 20 },
-        { time: 2, rpsTotal: 25, targetRpsLimit: 80 },
+        { time: 0, rpsTotal: 5, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 25, targetRpsLimit: 80 },
       ],
       runnerSeries: [],
       usesHttpRps: false,
@@ -198,8 +197,7 @@ describe("LoadTestResultsPanel", () => {
 
     expect(buildRpsChartData(metrics, config)).toEqual({
       data: [
-        { time: 0, rpsTotal: 0, targetRpsLimit: 20 },
-        { time: 1, rpsTotal: 4, targetRpsLimit: 60 },
+        { time: 0, rpsTotal: 4, targetRpsLimit: 20 },
         { time: 1, rpsTotal: 10, targetRpsLimit: 100 },
       ],
       runnerSeries: [],
@@ -237,6 +235,57 @@ describe("LoadTestResultsPanel", () => {
       data: [
         { time: 0, rpsTotal: 0, runner0: 0, runner1: 0, targetRpsLimit: undefined },
         { time: 1, rpsTotal: 30, runner0: 10, runner1: 20, targetRpsLimit: 40 },
+      ],
+      runnerSeries: [
+        { key: "runner0", label: "runner-a" },
+        { key: "runner1", label: "runner-b" },
+      ],
+      usesHttpRps: true,
+    });
+  });
+
+  it("groups irregular HTTP samples into one-second RPS buckets", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 1_000,
+          elapsedMs: 0,
+          rps: 0,
+          dispatchStarted: 0,
+          runners: [
+            { runnerId: "runner-a", dispatchStarted: 0 },
+            { runnerId: "runner-b", dispatchStarted: 0 },
+          ],
+        },
+        {
+          timestamp: 1_500,
+          elapsedMs: 500,
+          rps: 0,
+          dispatchStarted: 10,
+          runners: [
+            { runnerId: "runner-a", dispatchStarted: 4 },
+            { runnerId: "runner-b", dispatchStarted: 6 },
+          ],
+        },
+        {
+          timestamp: 2_500,
+          elapsedMs: 1_500,
+          rps: 0,
+          dispatchStarted: 35,
+          targetRpsLimit: 25,
+          runners: [
+            { runnerId: "runner-a", dispatchStarted: 14 },
+            { runnerId: "runner-b", dispatchStarted: 21 },
+          ],
+        },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 10, runner0: 4, runner1: 6, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 25, runner0: 10, runner1: 15, targetRpsLimit: 25 },
       ],
       runnerSeries: [
         { key: "runner0", label: "runner-a" },
@@ -325,7 +374,7 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, config).data[1].targetRpsLimit).toBe(2400);
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 3)?.targetRpsLimit).toBe(2400);
   });
 
   it("drops configured target RPS to zero after the wave duration", () => {
@@ -346,7 +395,7 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, config).data[2].targetRpsLimit).toBe(0);
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 4)?.targetRpsLimit).toBe(0);
   });
 
   it("shows wave dispatch adherence metrics when available", () => {
