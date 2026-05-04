@@ -418,6 +418,11 @@ fn build_rps_history_sample(
                 "schedulerLaggedStarts",
                 metrics.scheduler_lagged_starts,
             );
+            insert_optional(&mut runner, "slotEnqueued", metrics.slot_enqueued);
+            insert_optional(&mut runner, "requestPrepared", metrics.request_prepared);
+            insert_optional(&mut runner, "requestEnqueued", metrics.request_enqueued);
+            insert_optional(&mut runner, "sendTaskSpawned", metrics.send_task_spawned);
+            insert_optional(&mut runner, "sendStarted", metrics.send_started);
             insert_optional(&mut runner, "totalStarted", metrics.total_started);
             runner.insert("totalSent".to_owned(), json!(metrics.total_sent));
             runner.insert("rps".to_owned(), json!(metrics.rps));
@@ -485,6 +490,11 @@ fn build_rps_history_sample(
         "schedulerLaggedStarts",
         metrics.scheduler_lagged_starts,
     );
+    insert_optional(&mut sample, "slotEnqueued", metrics.slot_enqueued);
+    insert_optional(&mut sample, "requestPrepared", metrics.request_prepared);
+    insert_optional(&mut sample, "requestEnqueued", metrics.request_enqueued);
+    insert_optional(&mut sample, "sendTaskSpawned", metrics.send_task_spawned);
+    insert_optional(&mut sample, "sendStarted", metrics.send_started);
     if has_dispatch_bucket {
         sample.insert("dispatchBucket".to_owned(), json!(dispatch_bucket_total));
     }
@@ -663,6 +673,16 @@ pub fn consolidate_load_metrics(
     let mut scheduler_lag_ms_nodes = 0usize;
     let mut scheduler_lagged_starts = 0usize;
     let mut scheduler_lagged_starts_nodes = 0usize;
+    let mut slot_enqueued = 0usize;
+    let mut slot_enqueued_nodes = 0usize;
+    let mut request_prepared = 0usize;
+    let mut request_prepared_nodes = 0usize;
+    let mut request_enqueued = 0usize;
+    let mut request_enqueued_nodes = 0usize;
+    let mut send_task_spawned = 0usize;
+    let mut send_task_spawned_nodes = 0usize;
+    let mut send_started = 0usize;
+    let mut send_started_nodes = 0usize;
     let mut rps = 0.0f64;
     let mut target_intensity = 0.0f64;
     let mut target_intensity_nodes = 0usize;
@@ -740,6 +760,26 @@ pub fn consolidate_load_metrics(
             scheduler_lagged_starts = scheduler_lagged_starts.saturating_add(value);
             scheduler_lagged_starts_nodes += 1;
         }
+        if let Some(value) = metrics.slot_enqueued {
+            slot_enqueued = slot_enqueued.saturating_add(value);
+            slot_enqueued_nodes += 1;
+        }
+        if let Some(value) = metrics.request_prepared {
+            request_prepared = request_prepared.saturating_add(value);
+            request_prepared_nodes += 1;
+        }
+        if let Some(value) = metrics.request_enqueued {
+            request_enqueued = request_enqueued.saturating_add(value);
+            request_enqueued_nodes += 1;
+        }
+        if let Some(value) = metrics.send_task_spawned {
+            send_task_spawned = send_task_spawned.saturating_add(value);
+            send_task_spawned_nodes += 1;
+        }
+        if let Some(value) = metrics.send_started {
+            send_started = send_started.saturating_add(value);
+            send_started_nodes += 1;
+        }
         rps += metrics.rps;
         if let Some(value) = metrics.target_intensity {
             target_intensity += value;
@@ -806,6 +846,11 @@ pub fn consolidate_load_metrics(
         scheduler_lag_ms: (scheduler_lag_ms_nodes > 0).then_some(scheduler_lag_ms),
         scheduler_lagged_starts: (scheduler_lagged_starts_nodes > 0)
             .then_some(scheduler_lagged_starts),
+        slot_enqueued: (slot_enqueued_nodes > 0).then_some(slot_enqueued),
+        request_prepared: (request_prepared_nodes > 0).then_some(request_prepared),
+        request_enqueued: (request_enqueued_nodes > 0).then_some(request_enqueued),
+        send_task_spawned: (send_task_spawned_nodes > 0).then_some(send_task_spawned),
+        send_started: (send_started_nodes > 0).then_some(send_started),
         rps,
         target_intensity: (target_intensity_nodes > 0)
             .then(|| target_intensity / target_intensity_nodes as f64),
@@ -1243,6 +1288,11 @@ mod tests {
                         "runtimeLaggedStarts": 2,
                         "schedulerLagMs": 30,
                         "schedulerLaggedStarts": 4,
+                        "slotEnqueued": 100,
+                        "requestPrepared": 99,
+                        "requestEnqueued": 98,
+                        "sendTaskSpawned": 97,
+                        "sendStarted": 96,
                         "readyRequests": 20,
                         "activePipelines": 50,
                         "outstandingRequests": 30,
@@ -1274,6 +1324,11 @@ mod tests {
                         "runtimeLaggedStarts": 4,
                         "schedulerLagMs": 50,
                         "schedulerLaggedStarts": 6,
+                        "slotEnqueued": 100,
+                        "requestPrepared": 98,
+                        "requestEnqueued": 97,
+                        "sendTaskSpawned": 96,
+                        "sendStarted": 95,
                         "readyRequests": 30,
                         "activePipelines": 60,
                         "outstandingRequests": 40,
@@ -1297,6 +1352,11 @@ mod tests {
         assert_eq!(consolidated.runtime_lagged_starts, Some(6));
         assert_eq!(consolidated.scheduler_lag_ms, Some(80));
         assert_eq!(consolidated.scheduler_lagged_starts, Some(10));
+        assert_eq!(consolidated.slot_enqueued, Some(200));
+        assert_eq!(consolidated.request_prepared, Some(197));
+        assert_eq!(consolidated.request_enqueued, Some(195));
+        assert_eq!(consolidated.send_task_spawned, Some(193));
+        assert_eq!(consolidated.send_started, Some(191));
         assert_eq!(consolidated.ready_requests, Some(50));
         assert_eq!(consolidated.active_pipelines, Some(110));
         assert_eq!(consolidated.outstanding_requests, Some(70));
@@ -1366,6 +1426,11 @@ mod tests {
             runtime_lagged_starts: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
+            slot_enqueued: None,
+            request_prepared: None,
+            request_enqueued: None,
+            send_task_spawned: None,
+            send_started: None,
             rps: 21.5,
             target_intensity: Some(75.0),
             target_rps_limit: Some(150.0),
@@ -1455,6 +1520,11 @@ mod tests {
             runtime_lagged_starts: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
+            slot_enqueued: None,
+            request_prepared: None,
+            request_enqueued: None,
+            send_task_spawned: None,
+            send_started: None,
             rps: 21.5,
             target_intensity: Some(75.0),
             target_rps_limit: Some(150.0),
@@ -1541,6 +1611,11 @@ mod tests {
             runtime_lagged_starts: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
+            slot_enqueued: None,
+            request_prepared: None,
+            request_enqueued: None,
+            send_task_spawned: None,
+            send_started: None,
             rps: 21.5,
             target_intensity: Some(75.0),
             target_rps_limit: Some(150.0),

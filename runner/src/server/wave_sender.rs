@@ -92,7 +92,9 @@ where
         let observer_tx = self.observer_tx.clone();
         let token = self.token.clone();
 
+        let _ = metric_tx.send(WaveMetricEvent::SendTaskSpawned);
         tokio::spawn(async move {
+            let _ = metric_tx.send(WaveMetricEvent::SendStarted);
             let _ = metric_tx.send(WaveMetricEvent::DispatchStarted {
                 elapsed_ms: dispatch_elapsed_ms,
             });

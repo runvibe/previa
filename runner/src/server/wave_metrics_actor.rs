@@ -11,6 +11,11 @@ pub enum WaveMetricEvent {
     DispatchStarted {
         elapsed_ms: u64,
     },
+    SlotEnqueued(usize),
+    RequestPrepared,
+    RequestEnqueued,
+    SendTaskSpawned,
+    SendStarted,
     HttpStarted,
     HttpSendReturned,
     HttpCompleted(usize),
@@ -53,6 +58,7 @@ pub async fn run_wave_metrics_actor(
             WaveMetricEvent::Scheduler(WaveSchedulerMetric::DispatchScheduled { count }) => {
                 accumulator.record_dispatch_submitted_count(count);
             }
+            WaveMetricEvent::Scheduler(WaveSchedulerMetric::SlotEnqueued { .. }) => {}
             WaveMetricEvent::Scheduler(WaveSchedulerMetric::SchedulerLag {
                 lag_ms,
                 missed_starts,
@@ -69,6 +75,13 @@ pub async fn run_wave_metrics_actor(
             WaveMetricEvent::DispatchStarted { elapsed_ms } => {
                 accumulator.record_dispatch_started_at(elapsed_ms);
             }
+            WaveMetricEvent::SlotEnqueued(count) => {
+                accumulator.record_slot_enqueued_count(count);
+            }
+            WaveMetricEvent::RequestPrepared => accumulator.record_request_prepared(),
+            WaveMetricEvent::RequestEnqueued => accumulator.record_request_enqueued(),
+            WaveMetricEvent::SendTaskSpawned => accumulator.record_send_task_spawned(),
+            WaveMetricEvent::SendStarted => accumulator.record_send_started(),
             WaveMetricEvent::HttpStarted => accumulator.record_http_start(),
             WaveMetricEvent::HttpSendReturned => accumulator.record_http_send_returned(),
             WaveMetricEvent::HttpCompleted(count) => {
@@ -161,6 +174,12 @@ mod tests {
         event_tx
             .send(WaveMetricEvent::DispatchStarted { elapsed_ms: 42_000 })
             .unwrap();
+        event_tx.send(WaveMetricEvent::SlotEnqueued(3)).unwrap();
+        event_tx.send(WaveMetricEvent::RequestPrepared).unwrap();
+        event_tx.send(WaveMetricEvent::RequestPrepared).unwrap();
+        event_tx.send(WaveMetricEvent::RequestEnqueued).unwrap();
+        event_tx.send(WaveMetricEvent::SendTaskSpawned).unwrap();
+        event_tx.send(WaveMetricEvent::SendStarted).unwrap();
         event_tx
             .send(WaveMetricEvent::Scheduler(
                 WaveSchedulerMetric::SchedulerLag {
@@ -185,5 +204,10 @@ mod tests {
         assert_eq!(snapshot.scheduler_lag_ms, Some(25));
         assert_eq!(snapshot.scheduler_lagged_starts, Some(4));
         assert_eq!(snapshot.dispatcher_lagged_starts, Some(6));
+        assert_eq!(snapshot.slot_enqueued, Some(3));
+        assert_eq!(snapshot.request_prepared, Some(2));
+        assert_eq!(snapshot.request_enqueued, Some(1));
+        assert_eq!(snapshot.send_task_spawned, Some(1));
+        assert_eq!(snapshot.send_started, Some(1));
     }
 }

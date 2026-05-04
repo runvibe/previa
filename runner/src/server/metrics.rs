@@ -37,6 +37,11 @@ pub struct MetricsAccumulator {
     runtime_lagged_starts: usize,
     scheduler_lag_ms: u64,
     scheduler_lagged_starts: usize,
+    slot_enqueued: usize,
+    request_prepared: usize,
+    request_enqueued: usize,
+    send_task_spawned: usize,
+    send_started: usize,
     start_time: u64,
     network_tx_bytes: u64,
     network_rx_bytes: u64,
@@ -65,6 +70,11 @@ impl MetricsAccumulator {
             runtime_lagged_starts: 0,
             scheduler_lag_ms: 0,
             scheduler_lagged_starts: 0,
+            slot_enqueued: 0,
+            request_prepared: 0,
+            request_enqueued: 0,
+            send_task_spawned: 0,
+            send_started: 0,
             start_time: now_ms(),
             network_tx_bytes: 0,
             network_rx_bytes: 0,
@@ -145,6 +155,26 @@ impl MetricsAccumulator {
         self.scheduler_lagged_starts = self.scheduler_lagged_starts.saturating_add(count);
     }
 
+    pub fn record_slot_enqueued_count(&mut self, count: usize) {
+        self.slot_enqueued = self.slot_enqueued.saturating_add(count);
+    }
+
+    pub fn record_request_prepared(&mut self) {
+        self.request_prepared = self.request_prepared.saturating_add(1);
+    }
+
+    pub fn record_request_enqueued(&mut self) {
+        self.request_enqueued = self.request_enqueued.saturating_add(1);
+    }
+
+    pub fn record_send_task_spawned(&mut self) {
+        self.send_task_spawned = self.send_task_spawned.saturating_add(1);
+    }
+
+    pub fn record_send_started(&mut self) {
+        self.send_started = self.send_started.saturating_add(1);
+    }
+
     pub fn add_network_bytes(&mut self, tx_bytes: u64, rx_bytes: u64) {
         self.network_tx_bytes = self.network_tx_bytes.saturating_add(tx_bytes);
         self.network_rx_bytes = self.network_rx_bytes.saturating_add(rx_bytes);
@@ -206,13 +236,17 @@ impl MetricsAccumulator {
                 self.network_tx_bytes.saturating_add(self.network_rx_bytes);
             runtime
         });
+        let scheduled_starts = wave
+            .as_ref()
+            .map(|value| self.dispatch_submitted.max(value.scheduled_starts));
         let curve_adherence = wave.as_ref().map(|value| {
-            if value.scheduled_starts == 0 {
+            let scheduled_starts = self.dispatch_submitted.max(value.scheduled_starts);
+            if scheduled_starts == 0 {
                 100.0
             } else {
                 round2(
-                    ((value.scheduled_starts.saturating_sub(value.missed_starts)) as f64
-                        / value.scheduled_starts as f64)
+                    ((scheduled_starts.saturating_sub(value.missed_starts)) as f64
+                        / scheduled_starts as f64)
                         * 100.0,
                 )
             }
@@ -239,6 +273,11 @@ impl MetricsAccumulator {
             scheduler_lag_ms: (self.scheduler_lag_ms > 0).then_some(self.scheduler_lag_ms),
             scheduler_lagged_starts: (self.scheduler_lagged_starts > 0)
                 .then_some(self.scheduler_lagged_starts),
+            slot_enqueued: (self.slot_enqueued > 0).then_some(self.slot_enqueued),
+            request_prepared: (self.request_prepared > 0).then_some(self.request_prepared),
+            request_enqueued: (self.request_enqueued > 0).then_some(self.request_enqueued),
+            send_task_spawned: (self.send_task_spawned > 0).then_some(self.send_task_spawned),
+            send_started: (self.send_started > 0).then_some(self.send_started),
             rps,
             start_time: self.start_time,
             elapsed_ms,
@@ -247,7 +286,7 @@ impl MetricsAccumulator {
             in_flight: wave.as_ref().map(|value| value.in_flight),
             runner_max_rps: wave.as_ref().map(|value| round2(value.runner_max_rps)),
             tick_ms: wave.as_ref().map(|value| value.tick_ms),
-            scheduled_starts: wave.as_ref().map(|value| value.scheduled_starts),
+            scheduled_starts,
             missed_starts: wave.as_ref().map(|value| value.missed_starts),
             ready_requests: wave.as_ref().map(|value| value.ready_requests),
             active_pipelines: wave.as_ref().map(|value| value.active_pipelines),
@@ -453,6 +492,32 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_keeps_cumulative_scheduled_starts_after_wave_phase_ends() {
+        let mut metrics = MetricsAccumulator::new();
+        metrics.record_dispatch_submitted_count(1_000);
+
+        let snapshot = metrics.snapshot_with_wave(
+            None,
+            None,
+            Some(WaveMetricsSnapshot {
+                target_intensity: 0.0,
+                target_rps_limit: 0.0,
+                in_flight: 0,
+                runner_max_rps: 1000.0,
+                tick_ms: 100,
+                scheduled_starts: 0,
+                missed_starts: 0,
+                ready_requests: 0,
+                active_pipelines: 0,
+                outstanding_requests: 0,
+            }),
+        );
+
+        assert_eq!(snapshot.scheduled_starts, Some(1_000));
+        assert_eq!(snapshot.curve_adherence, Some(100.0));
+    }
+
+    #[test]
     fn snapshot_includes_scheduler_lag_metrics() {
         let mut metrics = MetricsAccumulator::new();
 
@@ -518,6 +583,26 @@ mod tests {
         assert_eq!(snapshot.http_send_returned, Some(1));
         assert_eq!(snapshot.http_completed, 1);
         assert_eq!(snapshot.response_body_completed, Some(1));
+    }
+
+    #[test]
+    fn snapshot_includes_wave_lifecycle_boundary_counters() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_slot_enqueued_count(3);
+        metrics.record_request_prepared();
+        metrics.record_request_prepared();
+        metrics.record_request_enqueued();
+        metrics.record_send_task_spawned();
+        metrics.record_send_started();
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.slot_enqueued, Some(3));
+        assert_eq!(snapshot.request_prepared, Some(2));
+        assert_eq!(snapshot.request_enqueued, Some(1));
+        assert_eq!(snapshot.send_task_spawned, Some(1));
+        assert_eq!(snapshot.send_started, Some(1));
     }
 
     #[test]

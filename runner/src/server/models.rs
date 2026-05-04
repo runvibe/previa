@@ -136,6 +136,16 @@ pub struct LoadTestMetrics {
     pub scheduler_lag_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler_lagged_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot_enqueued: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_prepared: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_enqueued: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_task_spawned: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_started: Option<usize>,
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,
@@ -195,6 +205,11 @@ impl Default for LoadTestMetrics {
             runtime_lagged_starts: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
+            slot_enqueued: None,
+            request_prepared: None,
+            request_enqueued: None,
+            send_task_spawned: None,
+            send_started: None,
             rps: 0.0,
             start_time: crate::server::utils::now_ms(),
             elapsed_ms: 0,

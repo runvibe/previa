@@ -195,6 +195,7 @@ pub async fn dispatch_slot_requests(args: DispatchSlotRequestArgs<'_>) {
                 continue;
             }
         };
+        let _ = args.metric_tx.send(WaveMetricEvent::RequestPrepared);
 
         let actual_elapsed_ms = args.started.elapsed().as_millis() as u64;
         if classify_start_lag(args.slot.elapsed_ms, actual_elapsed_ms, args.tick_ms)
@@ -222,6 +223,7 @@ pub async fn dispatch_slot_requests(args: DispatchSlotRequestArgs<'_>) {
             error!("wave sender stopped before accepting prepared request");
             break;
         }
+        let _ = args.metric_tx.send(WaveMetricEvent::RequestEnqueued);
     }
 }
 

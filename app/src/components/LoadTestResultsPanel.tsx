@@ -270,6 +270,11 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
         typeof metrics.runtimeLaggedStarts === "number" ||
         typeof metrics.schedulerLagMs === "number" ||
         typeof metrics.schedulerLaggedStarts === "number" ||
+        typeof metrics.slotEnqueued === "number" ||
+        typeof metrics.requestPrepared === "number" ||
+        typeof metrics.requestEnqueued === "number" ||
+        typeof metrics.sendTaskSpawned === "number" ||
+        typeof metrics.sendStarted === "number" ||
         typeof metrics.outstandingRequests === "number") && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-5">
           {typeof metrics.dispatchSubmitted === "number" && (
@@ -285,6 +290,46 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
               icon={Activity}
               label={t("loadTestResults.dispatchStarted")}
               value={metrics.dispatchStarted}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.slotEnqueued === "number" && (
+            <MetricCard
+              icon={ListChecks}
+              label={t("loadTestResults.slotEnqueued")}
+              value={metrics.slotEnqueued}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.requestPrepared === "number" && (
+            <MetricCard
+              icon={ListChecks}
+              label={t("loadTestResults.requestPrepared")}
+              value={metrics.requestPrepared}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.requestEnqueued === "number" && (
+            <MetricCard
+              icon={ListChecks}
+              label={t("loadTestResults.requestEnqueued")}
+              value={metrics.requestEnqueued}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.sendTaskSpawned === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.sendTaskSpawned")}
+              value={metrics.sendTaskSpawned}
+              color="text-primary"
+            />
+          )}
+          {typeof metrics.sendStarted === "number" && (
+            <MetricCard
+              icon={Activity}
+              label={t("loadTestResults.sendStarted")}
+              value={metrics.sendStarted}
               color="text-primary"
             />
           )}

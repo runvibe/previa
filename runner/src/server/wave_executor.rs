@@ -72,6 +72,10 @@ pub async fn run_wave_load(
                 WaveSchedulerMetric::DispatchScheduled { .. } => {
                     let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
                 }
+                WaveSchedulerMetric::SlotEnqueued { count } => {
+                    let _ = metric_bridge_tx.send(WaveMetricEvent::SlotEnqueued(count));
+                    let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
+                }
             }
         }
     });

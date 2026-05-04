@@ -695,6 +695,16 @@ pub struct ConsolidatedLoadMetrics {
     pub scheduler_lag_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler_lagged_starts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot_enqueued: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_prepared: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_enqueued: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_task_spawned: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_started: Option<usize>,
     pub rps: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_intensity: Option<f64>,
@@ -810,6 +820,11 @@ pub struct RunnerLoadMetricsPoint {
     pub runtime_lagged_starts: Option<usize>,
     pub scheduler_lag_ms: Option<u64>,
     pub scheduler_lagged_starts: Option<usize>,
+    pub slot_enqueued: Option<usize>,
+    pub request_prepared: Option<usize>,
+    pub request_enqueued: Option<usize>,
+    pub send_task_spawned: Option<usize>,
+    pub send_started: Option<usize>,
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,

@@ -182,6 +182,7 @@ describe("LoadTestResultsPanel", () => {
       points: [
         { atMs: 0, intensity: 10 },
         { atMs: 1_000, intensity: 50 },
+        { atMs: 2_000, intensity: 50 },
       ],
       interpolation: "linear",
     };
@@ -432,7 +433,7 @@ describe("LoadTestResultsPanel", () => {
     });
   });
 
-  it("uses the configured wave for target RPS instead of stale samples", () => {
+  it("uses the configured wave for target RPS instead of stale samples before the wave ends", () => {
     const config: WaveLoadConfig = {
       points: [
         { atMs: 0, intensity: 10 },
@@ -449,10 +450,10 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 3)?.targetRpsLimit).toBe(2400);
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 2)?.targetRpsLimit).toBe(1855.6);
   });
 
-  it("drops configured target RPS to zero after the wave duration", () => {
+  it("does not compare active target RPS at the exact wave end bucket", () => {
     const config: WaveLoadConfig = {
       points: [
         { atMs: 0, intensity: 10 },
@@ -470,7 +471,28 @@ describe("LoadTestResultsPanel", () => {
       ],
     };
 
-    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 4)?.targetRpsLimit).toBe(0);
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 3)?.targetRpsLimit).toBeUndefined();
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 4)?.targetRpsLimit).toBeUndefined();
+  });
+
+  it("scales configured target RPS for a partial final wave bucket", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 3_500, intensity: 80 },
+      ],
+      interpolation: "step",
+    };
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      runnerMaxRps: 3_000,
+      rpsHistory: [
+        { timestamp: 1_000, rps: 0, httpStarted: 0 },
+        { timestamp: 4_000, rps: 0, httpStarted: 300 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 3)?.targetRpsLimit).toBe(150);
   });
 
   it("shows wave dispatch adherence metrics when available", () => {
@@ -488,6 +510,11 @@ describe("LoadTestResultsPanel", () => {
           dispatcherLaggedStarts: 9,
           runtimeLaggedStarts: 7,
           dependencyLimitedStarts: 3,
+          slotEnqueued: 118,
+          requestPrepared: 117,
+          requestEnqueued: 116,
+          sendTaskSpawned: 115,
+          sendStarted: 114,
         }}
         state="running"
         totalRequests={0}
@@ -514,6 +541,16 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.dependencyLimitedStarts")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.slotEnqueued")).toBeInTheDocument();
+    expect(screen.getByText("118")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.requestPrepared")).toBeInTheDocument();
+    expect(screen.getByText("117")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.requestEnqueued")).toBeInTheDocument();
+    expect(screen.getByText("116")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.sendTaskSpawned")).toBeInTheDocument();
+    expect(screen.getByText("115")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.sendStarted")).toBeInTheDocument();
+    expect(screen.getByText("114")).toBeInTheDocument();
   });
 
   it("shows actual and target RPS legend when target data exists", () => {

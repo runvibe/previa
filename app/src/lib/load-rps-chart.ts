@@ -83,8 +83,16 @@ function estimateTargetRpsLimit(
   elapsedMs: number,
 ) {
   if (waveConfig && typeof metrics.runnerMaxRps === "number") {
+    const waveEndMs = [...waveConfig.points].sort((a, b) => a.atMs - b.atMs).at(-1)?.atMs;
+    if (typeof waveEndMs === "number") {
+      if (elapsedMs >= waveEndMs) return undefined;
+    }
     const intensity = sampleWaveIntensity(waveConfig, elapsedMs);
-    return typeof intensity === "number" ? roundOne((metrics.runnerMaxRps * intensity) / 100) : undefined;
+    if (typeof intensity !== "number") return undefined;
+    const bucketCoverage = typeof waveEndMs === "number" && elapsedMs + 1000 > waveEndMs
+      ? Math.max(0, waveEndMs - elapsedMs) / 1000
+      : 1;
+    return roundOne((metrics.runnerMaxRps * intensity * bucketCoverage) / 100);
   }
 
   if (typeof point.targetRpsLimit === "number") return roundOne(point.targetRpsLimit);

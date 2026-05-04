@@ -18,6 +18,7 @@ pub struct WaveDispatchSlot {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WaveSchedulerMetric {
     DispatchScheduled { count: usize },
+    SlotEnqueued { count: usize },
     SchedulerLag { lag_ms: u64, missed_starts: usize },
     SlotBackpressure { dropped_starts: usize },
 }
@@ -51,7 +52,12 @@ pub fn try_send_slot_or_metric(
     }
 
     match slot_tx.try_send(slot) {
-        Ok(()) => true,
+        Ok(()) => {
+            let _ = metric_tx.send(WaveSchedulerMetric::SlotEnqueued {
+                count: slot.planned_starts,
+            });
+            true
+        }
         Err(mpsc::error::TrySendError::Full(slot)) => {
             let _ = metric_tx.send(WaveSchedulerMetric::SlotBackpressure {
                 dropped_starts: slot.planned_starts,
