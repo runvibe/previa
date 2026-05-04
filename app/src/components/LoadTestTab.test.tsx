@@ -126,6 +126,7 @@ const pipeline: Pipeline = {
 describe("LoadTestTab", () => {
   beforeEach(() => {
     isMobile = false;
+    window.localStorage.clear();
   });
 
   it("keeps the load configuration panel scrollable when history is visible", () => {
@@ -179,11 +180,28 @@ describe("LoadTestTab", () => {
 
     const collapsedRegion = screen.getByTestId("mobile-load-test-history");
     expect(collapsedRegion).toHaveClass("max-h-10", "border-t");
+    expect(window.localStorage.getItem("api-pipeline-studio:test-history-collapsed:loadtest")).toBe("true");
     expect(screen.getByTitle("Show history").querySelector(".lucide-history")).toBeInTheDocument();
     expect(screen.queryByText("1 reqs")).not.toBeInTheDocument();
 
     fireEvent.click(collapsedRegion);
 
+    expect(window.localStorage.getItem("api-pipeline-studio:test-history-collapsed:loadtest")).toBe("false");
     expect(screen.getByText("1 reqs")).toBeInTheDocument();
+  });
+
+  it("restores the load test history collapse state from local storage", () => {
+    window.localStorage.setItem("api-pipeline-studio:test-history-collapsed:loadtest", "true");
+
+    render(
+      <LoadTestTab
+        pipeline={pipeline}
+        projectId="project-1"
+        pipelineIndex={0}
+      />,
+    );
+
+    expect(screen.getByTitle("Show history")).toBeInTheDocument();
+    expect(screen.queryByText("1 reqs")).not.toBeInTheDocument();
   });
 });

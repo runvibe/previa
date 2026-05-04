@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { AlertTriangle, History, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getTestHistoryCollapsed, setTestHistoryCollapsed } from "@/lib/ui-preferences";
 import type { Pipeline } from "@/types/pipeline";
 import { isWaveLoadConfig, type LoadRunConfig, type LoadTestState } from "@/types/load-test";
 import type { ProjectEnvGroup, ProjectSpec } from "@/types/project";
@@ -36,7 +37,12 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   const store = useLoadTestHistoryStore();
   const isMobile = useIsMobile();
   const pendingConfigRef = useRef<{ config: LoadRunConfig; selectedBaseUrlKey?: string } | null>(null);
-  const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [historyCollapsed, setHistoryCollapsedState] = useState(() => getTestHistoryCollapsed("loadtest"));
+
+  const setHistoryCollapsed = useCallback((collapsed: boolean) => {
+    setTestHistoryCollapsed("loadtest", collapsed);
+    setHistoryCollapsedState(collapsed);
+  }, []);
 
   const { state, metrics, config, nodesInfo, runs, activeRunId, viewingHistoricRun, liveState } = store;
 
