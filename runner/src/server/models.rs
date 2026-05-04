@@ -100,6 +100,38 @@ pub struct LoadDispatchBucket {
     pub count: usize,
 }
 
+#[derive(Debug, Serialize, Clone, Default, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadLifecycleBucket {
+    pub elapsed_ms: u64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub planned: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub slot_enqueued: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub request_prepared: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub request_enqueued: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub send_task_spawned: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub send_started: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub http_started: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub http_send_returned: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub response_body_completed: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub dispatcher_lagged: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub runtime_lagged: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
 #[derive(Debug, Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadErrorSample {
@@ -177,6 +209,8 @@ pub struct LoadTestMetrics {
     pub latency_buckets: Vec<LoadLatencyBucket>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dispatch_buckets: Vec<LoadDispatchBucket>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle_buckets: Vec<LoadLifecycleBucket>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_sample_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -227,6 +261,7 @@ impl Default for LoadTestMetrics {
             duration_ms: None,
             latency_buckets: Vec::new(),
             dispatch_buckets: Vec::new(),
+            lifecycle_buckets: Vec::new(),
             latency_sample_count: None,
             latency_total_duration_ms: None,
             error_samples: Vec::new(),

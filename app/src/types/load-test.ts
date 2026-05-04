@@ -34,6 +34,7 @@ export interface RpsPoint {
   elapsedMs?: number;
   rps: number;
   dispatchBucket?: number;
+  lifecycleBucket?: LoadLifecycleBucket;
   totalStarted?: number;
   totalSent?: number;
   httpStarted?: number;
@@ -66,6 +67,7 @@ export interface RpsPoint {
 export interface RunnerRpsSample {
   runnerId: string;
   dispatchBucket?: number;
+  lifecycleBucket?: LoadLifecycleBucket;
   httpStarted?: number;
   httpCompleted?: number;
   dispatchSubmitted?: number;
@@ -121,6 +123,21 @@ export interface DispatchBucket {
   count: number;
 }
 
+export interface LoadLifecycleBucket {
+  elapsedMs: number;
+  planned?: number;
+  slotEnqueued?: number;
+  requestPrepared?: number;
+  requestEnqueued?: number;
+  sendTaskSpawned?: number;
+  sendStarted?: number;
+  httpStarted?: number;
+  httpSendReturned?: number;
+  responseBodyCompleted?: number;
+  dispatcherLagged?: number;
+  runtimeLagged?: number;
+}
+
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */
 export interface RemoteMetricsEvent {
   totalStarted?: number;
@@ -147,6 +164,7 @@ export interface RemoteMetricsEvent {
   startTime: number;
   elapsedMs: number;
   dispatchBuckets?: DispatchBucket[];
+  lifecycleBuckets?: LoadLifecycleBucket[];
   targetIntensity?: number;
   targetRpsLimit?: number;
   inFlight?: number;
@@ -190,6 +208,7 @@ export interface LoadTestMetrics {
   latencyHistory: LatencyPoint[];
   rpsHistory: RpsPoint[];
   runnerResourceHistory: RunnerResourcePoint[];
+  lifecycleBuckets?: LoadLifecycleBucket[];
   errors?: string[];
   startTime: number;
   elapsedMs: number;
@@ -235,6 +254,7 @@ export interface ConsolidatedLoadMetrics {
   startTime: number;
   elapsedMs: number;
   nodesReporting: number;
+  lifecycleBuckets?: LoadLifecycleBucket[];
   targetIntensity?: number;
   targetRpsLimit?: number;
   inFlight?: number;

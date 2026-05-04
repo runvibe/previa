@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Mutex, mpsc, watch};
 use tracing::error;
 
 use previa_runner::{
@@ -35,6 +35,16 @@ impl PipelineCursor {
 }
 
 pub type ObserverEvent = WaveObserverEvent<PipelineCursor>;
+
+#[derive(Debug)]
+pub struct WavePrepareIntent {
+    pub cursor: PipelineCursor,
+}
+
+pub struct WavePrepareError {
+    pub result: StepExecutionResult,
+    pub cursor: PipelineCursor,
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WaveDispatcherSnapshot {
@@ -129,30 +139,29 @@ pub async fn drain_all_observer_events(
     {}
 }
 
-pub struct DispatchSlotRequestArgs<'a> {
+pub struct DispatchSlotPrepareArgs<'a> {
     pub slot: WaveDispatchSlot,
     pub ready: &'a mut VecDeque<PipelineCursor>,
     pub pipeline: &'a Pipeline,
-    pub specs: &'a Arc<Vec<RuntimeSpec>>,
-    pub env_groups: &'a Arc<Vec<RuntimeEnvGroup>>,
-    pub selected_env_group_slug: &'a Option<String>,
-    pub request_tx: &'a mpsc::UnboundedSender<ReadyWaveRequest<PipelineCursor>>,
+    pub prepare_tx: &'a mpsc::UnboundedSender<WavePrepareIntent>,
     pub metric_tx: &'a mpsc::UnboundedSender<WaveMetricEvent>,
-    pub ready_to_send: &'a Arc<AtomicUsize>,
     pub missed_starts: &'a Arc<AtomicUsize>,
     pub started: Instant,
     pub tick_ms: u64,
     pub token: &'a tokio_util::sync::CancellationToken,
 }
 
-pub async fn dispatch_slot_requests(args: DispatchSlotRequestArgs<'_>) {
+pub async fn dispatch_slot_prepare_intents(args: DispatchSlotPrepareArgs<'_>) {
     let actual_elapsed_ms = args.started.elapsed().as_millis() as u64;
     if slot_is_expired(&args.slot, actual_elapsed_ms) {
         args.missed_starts
             .fetch_add(args.slot.planned_starts, Ordering::SeqCst);
-        let _ = args.metric_tx.send(WaveMetricEvent::DispatcherLaggedStarts(
-            args.slot.planned_starts,
-        ));
+        let _ = args
+            .metric_tx
+            .send(WaveMetricEvent::DispatcherLaggedStarts {
+                elapsed_ms: args.slot.elapsed_ms,
+                count: args.slot.planned_starts,
+            });
         return;
     }
 
@@ -171,60 +180,122 @@ pub async fn dispatch_slot_requests(args: DispatchSlotRequestArgs<'_>) {
             record_terminal_pipeline(args.metric_tx, cursor, false, None).await;
             continue;
         };
-        let max_attempts = max_attempts_for_step(&step);
-        let prepared = match prepare_http_step(
-            &step,
-            &cursor.context,
-            Some(args.specs.as_slice()),
-            Some(args.env_groups.as_slice()),
-            args.selected_env_group_slug.as_deref(),
-            cursor.attempt,
-            max_attempts,
-        ) {
-            Ok(prepared) => prepared,
-            Err(result) => {
-                handle_prepare_error(
-                    result,
-                    cursor,
-                    args.ready,
-                    args.pipeline,
-                    args.metric_tx,
-                    args.missed_starts,
-                )
-                .await;
-                continue;
-            }
-        };
-        let _ = args.metric_tx.send(WaveMetricEvent::RequestPrepared);
+        drop(step);
 
         let actual_elapsed_ms = args.started.elapsed().as_millis() as u64;
         if classify_start_lag(args.slot.elapsed_ms, actual_elapsed_ms, args.tick_ms)
             == StartLagClass::RuntimeLagged
         {
             args.missed_starts.fetch_add(1, Ordering::SeqCst);
-            let _ = args.metric_tx.send(WaveMetricEvent::RuntimeLaggedStart);
+            let _ = args.metric_tx.send(WaveMetricEvent::RuntimeLaggedStart {
+                elapsed_ms: actual_elapsed_ms,
+            });
         }
 
-        args.ready_to_send.fetch_add(1, Ordering::SeqCst);
-        if args
-            .request_tx
-            .send(ReadyWaveRequest {
-                step,
-                context: cursor.context.clone(),
-                cursor,
-                prepared,
-                specs: Arc::clone(args.specs),
-                env_groups: Arc::clone(args.env_groups),
-                selected_env_group_slug: args.selected_env_group_slug.clone(),
-            })
-            .is_err()
-        {
-            args.ready_to_send.fetch_sub(1, Ordering::SeqCst);
-            error!("wave sender stopped before accepting prepared request");
+        if args.prepare_tx.send(WavePrepareIntent { cursor }).is_err() {
+            error!("wave prepare workers stopped before accepting cursor");
             break;
         }
-        let _ = args.metric_tx.send(WaveMetricEvent::RequestEnqueued);
     }
+}
+
+struct WavePrepareWorkerConfig {
+    pipeline: Arc<Pipeline>,
+    specs: Arc<Vec<RuntimeSpec>>,
+    env_groups: Arc<Vec<RuntimeEnvGroup>>,
+    selected_env_group_slug: Option<String>,
+    started: Instant,
+    request_tx: mpsc::UnboundedSender<ReadyWaveRequest<PipelineCursor>>,
+    prepare_error_tx: mpsc::UnboundedSender<WavePrepareError>,
+    prepare_progress_tx: mpsc::UnboundedSender<()>,
+    metric_tx: mpsc::UnboundedSender<WaveMetricEvent>,
+    ready_to_send: Arc<AtomicUsize>,
+    token: tokio_util::sync::CancellationToken,
+}
+
+async fn run_wave_prepare_worker(
+    config: WavePrepareWorkerConfig,
+    prepare_rx: Arc<Mutex<mpsc::UnboundedReceiver<WavePrepareIntent>>>,
+) {
+    loop {
+        let intent = {
+            let mut rx = prepare_rx.lock().await;
+            tokio::select! {
+                _ = config.token.cancelled() => return,
+                maybe_intent = rx.recv() => maybe_intent,
+            }
+        };
+        let Some(intent) = intent else {
+            return;
+        };
+        if config.token.is_cancelled() {
+            return;
+        }
+
+        prepare_and_enqueue_wave_request(&config, intent).await;
+    }
+}
+
+async fn prepare_and_enqueue_wave_request(
+    config: &WavePrepareWorkerConfig,
+    intent: WavePrepareIntent,
+) {
+    let Some(step) = config.pipeline.steps.get(intent.cursor.step_index).cloned() else {
+        let _ = config.metric_tx.send(WaveMetricEvent::PipelineFinished {
+            duration_ms: intent.cursor.pipeline_started_at.elapsed().as_millis() as f64,
+            success: false,
+        });
+        return;
+    };
+    let max_attempts = max_attempts_for_step(&step);
+    let prepared = match prepare_http_step(
+        &step,
+        &intent.cursor.context,
+        Some(config.specs.as_slice()),
+        Some(config.env_groups.as_slice()),
+        config.selected_env_group_slug.as_deref(),
+        intent.cursor.attempt,
+        max_attempts,
+    ) {
+        Ok(prepared) => prepared,
+        Err(result) => {
+            let _ = config.prepare_error_tx.send(WavePrepareError {
+                result,
+                cursor: intent.cursor,
+            });
+            return;
+        }
+    };
+
+    let prepared_elapsed_ms = config.started.elapsed().as_millis() as u64;
+    let _ = config.metric_tx.send(WaveMetricEvent::RequestPrepared {
+        elapsed_ms: prepared_elapsed_ms,
+    });
+
+    config.ready_to_send.fetch_add(1, Ordering::SeqCst);
+    if config
+        .request_tx
+        .send(ReadyWaveRequest {
+            step,
+            context: intent.cursor.context.clone(),
+            cursor: intent.cursor,
+            prepared,
+            specs: Arc::clone(&config.specs),
+            env_groups: Arc::clone(&config.env_groups),
+            selected_env_group_slug: config.selected_env_group_slug.clone(),
+        })
+        .is_err()
+    {
+        config.ready_to_send.fetch_sub(1, Ordering::SeqCst);
+        error!("wave sender stopped before accepting prepared request");
+        return;
+    }
+
+    let enqueue_elapsed_ms = config.started.elapsed().as_millis() as u64;
+    let _ = config.metric_tx.send(WaveMetricEvent::RequestEnqueued {
+        elapsed_ms: enqueue_elapsed_ms,
+    });
+    let _ = config.prepare_progress_tx.send(());
 }
 
 pub async fn run_wave_dispatcher_loop(
@@ -234,6 +305,31 @@ pub async fn run_wave_dispatcher_loop(
     token: tokio_util::sync::CancellationToken,
 ) {
     let mut ready = VecDeque::new();
+    let (prepare_tx, prepare_rx) = mpsc::unbounded_channel::<WavePrepareIntent>();
+    let prepare_rx = Arc::new(Mutex::new(prepare_rx));
+    let (prepare_error_tx, mut prepare_error_rx) = mpsc::unbounded_channel::<WavePrepareError>();
+    let (prepare_progress_tx, mut prepare_progress_rx) = mpsc::unbounded_channel::<()>();
+    let mut prepare_handles = Vec::new();
+    for _ in 0..prepare_worker_threads() {
+        prepare_handles.push(tokio::spawn(run_wave_prepare_worker(
+            WavePrepareWorkerConfig {
+                pipeline: Arc::clone(&config.pipeline),
+                specs: Arc::clone(&config.specs),
+                env_groups: Arc::clone(&config.env_groups),
+                selected_env_group_slug: config.selected_env_group_slug.clone(),
+                started: config.started,
+                request_tx: channels.request_tx.clone(),
+                prepare_error_tx: prepare_error_tx.clone(),
+                prepare_progress_tx: prepare_progress_tx.clone(),
+                metric_tx: channels.metric_tx.clone(),
+                ready_to_send: Arc::clone(&shared.ready_to_send),
+                token: token.clone(),
+            },
+            Arc::clone(&prepare_rx),
+        )));
+    }
+    drop(prepare_error_tx);
+    drop(prepare_progress_tx);
 
     while !token.is_cancelled() {
         tokio::select! {
@@ -241,16 +337,12 @@ pub async fn run_wave_dispatcher_loop(
 
             _ = token.cancelled() => break,
             Some(slot) = channels.slot_rx.recv() => {
-                dispatch_slot_requests(DispatchSlotRequestArgs {
+                dispatch_slot_prepare_intents(DispatchSlotPrepareArgs {
                     slot,
                     ready: &mut ready,
                     pipeline: &config.pipeline,
-                    specs: &config.specs,
-                    env_groups: &config.env_groups,
-                    selected_env_group_slug: &config.selected_env_group_slug,
-                    request_tx: &channels.request_tx,
+                    prepare_tx: &prepare_tx,
                     metric_tx: &channels.metric_tx,
-                    ready_to_send: &shared.ready_to_send,
                     missed_starts: &shared.missed_starts,
                     started: config.started,
                     tick_ms: config.tick_ms,
@@ -280,10 +372,26 @@ pub async fn run_wave_dispatcher_loop(
                 .await;
                 publish_dispatcher_snapshot(&channels.snapshot_tx, &ready, &shared.ready_to_send);
             }
+            Some(error) = prepare_error_rx.recv() => {
+                handle_prepare_error(
+                    error.result,
+                    error.cursor,
+                    &mut ready,
+                    &config.pipeline,
+                    &channels.metric_tx,
+                    &shared.missed_starts,
+                )
+                .await;
+                publish_dispatcher_snapshot(&channels.snapshot_tx, &ready, &shared.ready_to_send);
+            }
+            Some(()) = prepare_progress_rx.recv() => {
+                publish_dispatcher_snapshot(&channels.snapshot_tx, &ready, &shared.ready_to_send);
+            }
             else => break,
         }
     }
 
+    drop(prepare_tx);
     drain_all_observer_events(
         &mut channels.observer_rx,
         &mut ready,
@@ -292,6 +400,10 @@ pub async fn run_wave_dispatcher_loop(
     )
     .await;
     publish_dispatcher_snapshot(&channels.snapshot_tx, &ready, &shared.ready_to_send);
+    for handle in prepare_handles {
+        handle.abort();
+        let _ = handle.await;
+    }
 }
 
 pub fn spawn_wave_dispatcher_thread(
@@ -305,7 +417,9 @@ pub fn spawn_wave_dispatcher_thread(
     let join = std::thread::Builder::new()
         .name("previa-wave-dispatcher".to_owned())
         .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(prepare_worker_threads().saturating_add(1))
+                .thread_name("previa-wave-dispatcher")
                 .enable_all()
                 .build()
                 .expect("failed to build previa wave dispatcher runtime");
@@ -322,6 +436,19 @@ pub fn spawn_wave_dispatcher_thread(
         token: dispatcher_token,
         join,
     }
+}
+
+fn prepare_worker_threads() -> usize {
+    std::env::var("RUNNER_WAVE_PREPARE_THREADS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|value| value.get())
+                .unwrap_or(2)
+                .clamp(2, 8)
+        })
 }
 
 fn publish_dispatcher_snapshot(
@@ -522,17 +649,14 @@ mod tests {
             description: None,
             steps: Vec::new(),
         };
-        let specs = Arc::new(Vec::new());
-        let env_groups = Arc::new(Vec::new());
-        let (request_tx, mut request_rx) = mpsc::unbounded_channel();
+        let (prepare_tx, mut prepare_rx) = mpsc::unbounded_channel();
         let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
-        let ready_to_send = Arc::new(AtomicUsize::new(0));
         let missed_starts = Arc::new(AtomicUsize::new(0));
         let token = tokio_util::sync::CancellationToken::new();
         let mut ready = VecDeque::new();
         let started = Instant::now() - std::time::Duration::from_millis(1_000);
 
-        dispatch_slot_requests(DispatchSlotRequestArgs {
+        dispatch_slot_prepare_intents(DispatchSlotPrepareArgs {
             slot: WaveDispatchSlot {
                 elapsed_ms: 100,
                 expires_at_elapsed_ms: 200,
@@ -544,12 +668,8 @@ mod tests {
             },
             ready: &mut ready,
             pipeline: &pipeline,
-            specs: &specs,
-            env_groups: &env_groups,
-            selected_env_group_slug: &None,
-            request_tx: &request_tx,
+            prepare_tx: &prepare_tx,
             metric_tx: &metric_tx,
-            ready_to_send: &ready_to_send,
             missed_starts: &missed_starts,
             started,
             tick_ms: 100,
@@ -558,12 +678,67 @@ mod tests {
         .await;
 
         assert_eq!(missed_starts.load(Ordering::SeqCst), 7);
-        assert_eq!(ready_to_send.load(Ordering::SeqCst), 0);
-        assert!(request_rx.try_recv().is_err());
+        assert!(prepare_rx.try_recv().is_err());
         assert!(matches!(
             metric_rx.try_recv(),
-            Ok(WaveMetricEvent::DispatcherLaggedStarts(7))
+            Ok(WaveMetricEvent::DispatcherLaggedStarts { count: 7, .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn dispatch_slot_enqueues_prepare_intents_without_preparing_inline() {
+        let pipeline = Pipeline {
+            id: Some("p".to_owned()),
+            name: "pipeline".to_owned(),
+            description: None,
+            steps: vec![PipelineStep {
+                id: "s1".to_owned(),
+                name: "GET".to_owned(),
+                description: None,
+                method: "GET".to_owned(),
+                url: "http://example.test/users".to_owned(),
+                headers: HashMap::new(),
+                body: None,
+                operation_id: None,
+                delay: None,
+                retry: None,
+                asserts: Vec::new(),
+            }],
+        };
+        let (prepare_tx, mut prepare_rx) = mpsc::unbounded_channel();
+        let (metric_tx, _metric_rx) = mpsc::unbounded_channel();
+        let missed_starts = Arc::new(AtomicUsize::new(0));
+        let token = tokio_util::sync::CancellationToken::new();
+        let mut ready = VecDeque::new();
+
+        dispatch_slot_prepare_intents(DispatchSlotPrepareArgs {
+            slot: WaveDispatchSlot {
+                elapsed_ms: 0,
+                expires_at_elapsed_ms: 1_000,
+                planned_starts: 500,
+                target_rps_limit: 5_000.0,
+                scheduled_total: 500,
+                scheduler_lag_ms: 0,
+                missed_due_to_scheduler_lag: 0,
+            },
+            ready: &mut ready,
+            pipeline: &pipeline,
+            prepare_tx: &prepare_tx,
+            metric_tx: &metric_tx,
+            missed_starts: &missed_starts,
+            started: Instant::now(),
+            tick_ms: 100,
+            token: &token,
+        })
+        .await;
+
+        let mut count = 0usize;
+        while prepare_rx.try_recv().is_ok() {
+            count += 1;
+        }
+
+        assert_eq!(count, 500);
+        assert_eq!(missed_starts.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -643,8 +818,16 @@ mod tests {
         assert_eq!(request.step.id, "s1");
         assert_eq!(ready_to_send.load(Ordering::SeqCst), 1);
 
-        snapshot_rx.changed().await.unwrap();
-        assert_eq!(snapshot_rx.borrow().ready_requests(), 1);
+        tokio::time::timeout(std::time::Duration::from_millis(300), async {
+            loop {
+                if snapshot_rx.borrow().ready_requests() == 1 {
+                    break;
+                }
+                snapshot_rx.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("snapshot should include prepared request");
 
         handle.stop();
     }

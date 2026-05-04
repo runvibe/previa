@@ -61,7 +61,7 @@ pub async fn run_wave_load(
     let metric_bridge = tokio::spawn(async move {
         while let Some(event) = scheduler_metric_rx.recv().await {
             match event {
-                WaveSchedulerMetric::SlotBackpressure { dropped_starts } => {
+                WaveSchedulerMetric::SlotBackpressure { dropped_starts, .. } => {
                     missed_bridge.fetch_add(dropped_starts, Ordering::SeqCst);
                     let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
                 }
@@ -72,8 +72,9 @@ pub async fn run_wave_load(
                 WaveSchedulerMetric::DispatchScheduled { .. } => {
                     let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
                 }
-                WaveSchedulerMetric::SlotEnqueued { count } => {
-                    let _ = metric_bridge_tx.send(WaveMetricEvent::SlotEnqueued(count));
+                WaveSchedulerMetric::SlotEnqueued { elapsed_ms, count } => {
+                    let _ =
+                        metric_bridge_tx.send(WaveMetricEvent::SlotEnqueued { elapsed_ms, count });
                     let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
                 }
             }

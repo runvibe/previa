@@ -133,6 +133,14 @@ describe("api-client load history mapping", () => {
         p99: 13,
         startTime: 1_000,
         elapsedMs: 1_000,
+        lifecycleBuckets: [
+          {
+            elapsedMs: 1_000,
+            planned: 30,
+            sendStarted: 29,
+            httpStarted: 28,
+          },
+        ],
       },
       finalLines: [
         {
@@ -177,6 +185,14 @@ describe("api-client load history mapping", () => {
         networkRxBytes: 4_096,
         networkTotalBytes: 6_144,
         networkTotalKb: 6,
+      },
+    ]);
+    expect(run.metrics.lifecycleBuckets).toEqual([
+      {
+        elapsedMs: 1_000,
+        planned: 30,
+        sendStarted: 29,
+        httpStarted: 28,
       },
     ]);
   });

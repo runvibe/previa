@@ -11,15 +11,33 @@ pub enum WaveMetricEvent {
     DispatchStarted {
         elapsed_ms: u64,
     },
-    SlotEnqueued(usize),
-    RequestPrepared,
-    RequestEnqueued,
-    SendTaskSpawned,
-    SendStarted,
-    HttpStarted,
-    HttpSendReturned,
+    SlotEnqueued {
+        elapsed_ms: u64,
+        count: usize,
+    },
+    RequestPrepared {
+        elapsed_ms: u64,
+    },
+    RequestEnqueued {
+        elapsed_ms: u64,
+    },
+    SendTaskSpawned {
+        elapsed_ms: u64,
+    },
+    SendStarted {
+        elapsed_ms: u64,
+    },
+    HttpStarted {
+        elapsed_ms: u64,
+    },
+    HttpSendReturned {
+        elapsed_ms: u64,
+    },
     HttpCompleted(usize),
-    ResponseBodyCompleted(usize),
+    ResponseBodyCompleted {
+        elapsed_ms: u64,
+        count: usize,
+    },
     PipelineFinished {
         duration_ms: f64,
         success: bool,
@@ -33,8 +51,13 @@ pub enum WaveMetricEvent {
         tx: u64,
         rx: u64,
     },
-    DispatcherLaggedStarts(usize),
-    RuntimeLaggedStart,
+    DispatcherLaggedStarts {
+        elapsed_ms: u64,
+        count: usize,
+    },
+    RuntimeLaggedStart {
+        elapsed_ms: u64,
+    },
     DependencyLimitedStarts(usize),
     Snapshot {
         wave: WaveMetricsSnapshot,
@@ -55,19 +78,25 @@ pub async fn run_wave_metrics_actor(
     while let Some(event) = event_rx.recv().await {
         let mut should_publish = false;
         match event {
-            WaveMetricEvent::Scheduler(WaveSchedulerMetric::DispatchScheduled { count }) => {
+            WaveMetricEvent::Scheduler(WaveSchedulerMetric::DispatchScheduled {
+                elapsed_ms,
+                count,
+            }) => {
                 accumulator.record_dispatch_submitted_count(count);
+                accumulator.record_planned_at(elapsed_ms, count);
             }
             WaveMetricEvent::Scheduler(WaveSchedulerMetric::SlotEnqueued { .. }) => {}
             WaveMetricEvent::Scheduler(WaveSchedulerMetric::SchedulerLag {
                 lag_ms,
                 missed_starts,
+                ..
             }) => {
                 accumulator.record_scheduler_lag_ms(lag_ms);
                 accumulator.record_scheduler_lagged_starts_count(missed_starts);
             }
             WaveMetricEvent::Scheduler(WaveSchedulerMetric::SlotBackpressure {
                 dropped_starts,
+                ..
             }) => {
                 accumulator.record_scheduler_lagged_starts_count(dropped_starts);
             }
@@ -75,20 +104,32 @@ pub async fn run_wave_metrics_actor(
             WaveMetricEvent::DispatchStarted { elapsed_ms } => {
                 accumulator.record_dispatch_started_at(elapsed_ms);
             }
-            WaveMetricEvent::SlotEnqueued(count) => {
-                accumulator.record_slot_enqueued_count(count);
+            WaveMetricEvent::SlotEnqueued { elapsed_ms, count } => {
+                accumulator.record_slot_enqueued_at(elapsed_ms, count);
             }
-            WaveMetricEvent::RequestPrepared => accumulator.record_request_prepared(),
-            WaveMetricEvent::RequestEnqueued => accumulator.record_request_enqueued(),
-            WaveMetricEvent::SendTaskSpawned => accumulator.record_send_task_spawned(),
-            WaveMetricEvent::SendStarted => accumulator.record_send_started(),
-            WaveMetricEvent::HttpStarted => accumulator.record_http_start(),
-            WaveMetricEvent::HttpSendReturned => accumulator.record_http_send_returned(),
+            WaveMetricEvent::RequestPrepared { elapsed_ms } => {
+                accumulator.record_request_prepared_at(elapsed_ms)
+            }
+            WaveMetricEvent::RequestEnqueued { elapsed_ms } => {
+                accumulator.record_request_enqueued_at(elapsed_ms)
+            }
+            WaveMetricEvent::SendTaskSpawned { elapsed_ms } => {
+                accumulator.record_send_task_spawned_at(elapsed_ms)
+            }
+            WaveMetricEvent::SendStarted { elapsed_ms } => {
+                accumulator.record_send_started_at(elapsed_ms)
+            }
+            WaveMetricEvent::HttpStarted { elapsed_ms } => {
+                accumulator.record_http_start_at(elapsed_ms)
+            }
+            WaveMetricEvent::HttpSendReturned { elapsed_ms } => {
+                accumulator.record_http_send_returned_at(elapsed_ms)
+            }
             WaveMetricEvent::HttpCompleted(count) => {
                 accumulator.record_http_completed_count(count);
             }
-            WaveMetricEvent::ResponseBodyCompleted(count) => {
-                accumulator.record_response_body_completed_count(count);
+            WaveMetricEvent::ResponseBodyCompleted { elapsed_ms, count } => {
+                accumulator.record_response_body_completed_at(elapsed_ms, count);
             }
             WaveMetricEvent::PipelineFinished {
                 duration_ms,
@@ -102,10 +143,12 @@ pub async fn run_wave_metrics_actor(
                 error,
             } => accumulator.record_error_sample(&step_id, http_status, &error),
             WaveMetricEvent::NetworkBytes { tx, rx } => accumulator.add_network_bytes(tx, rx),
-            WaveMetricEvent::DispatcherLaggedStarts(count) => {
-                accumulator.record_dispatcher_lagged_starts_count(count);
+            WaveMetricEvent::DispatcherLaggedStarts { elapsed_ms, count } => {
+                accumulator.record_dispatcher_lagged_starts_at(elapsed_ms, count);
             }
-            WaveMetricEvent::RuntimeLaggedStart => accumulator.record_runtime_lagged_start(),
+            WaveMetricEvent::RuntimeLaggedStart { elapsed_ms } => {
+                accumulator.record_runtime_lagged_start_at(elapsed_ms);
+            }
             WaveMetricEvent::DependencyLimitedStarts(count) => {
                 accumulator.record_dependency_limited_starts_count(count);
             }
@@ -165,7 +208,10 @@ mod tests {
 
         event_tx
             .send(WaveMetricEvent::Scheduler(
-                WaveSchedulerMetric::DispatchScheduled { count: 3 },
+                WaveSchedulerMetric::DispatchScheduled {
+                    elapsed_ms: 1_000,
+                    count: 3,
+                },
             ))
             .unwrap();
         event_tx
@@ -174,24 +220,47 @@ mod tests {
         event_tx
             .send(WaveMetricEvent::DispatchStarted { elapsed_ms: 42_000 })
             .unwrap();
-        event_tx.send(WaveMetricEvent::SlotEnqueued(3)).unwrap();
-        event_tx.send(WaveMetricEvent::RequestPrepared).unwrap();
-        event_tx.send(WaveMetricEvent::RequestPrepared).unwrap();
-        event_tx.send(WaveMetricEvent::RequestEnqueued).unwrap();
-        event_tx.send(WaveMetricEvent::SendTaskSpawned).unwrap();
-        event_tx.send(WaveMetricEvent::SendStarted).unwrap();
-        event_tx.send(WaveMetricEvent::HttpStarted).unwrap();
-        event_tx.send(WaveMetricEvent::HttpSendReturned).unwrap();
+        event_tx
+            .send(WaveMetricEvent::SlotEnqueued {
+                elapsed_ms: 1_000,
+                count: 3,
+            })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::RequestPrepared { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::RequestPrepared { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::RequestEnqueued { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::SendTaskSpawned { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::SendStarted { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::HttpStarted { elapsed_ms: 1_000 })
+            .unwrap();
+        event_tx
+            .send(WaveMetricEvent::HttpSendReturned { elapsed_ms: 1_000 })
+            .unwrap();
         event_tx
             .send(WaveMetricEvent::Scheduler(
                 WaveSchedulerMetric::SchedulerLag {
+                    elapsed_ms: 1_000,
                     lag_ms: 25,
                     missed_starts: 4,
                 },
             ))
             .unwrap();
         event_tx
-            .send(WaveMetricEvent::DispatcherLaggedStarts(6))
+            .send(WaveMetricEvent::DispatcherLaggedStarts {
+                elapsed_ms: 1_000,
+                count: 6,
+            })
             .unwrap();
         drop(event_tx);
 
@@ -213,5 +282,8 @@ mod tests {
         assert_eq!(snapshot.send_started, Some(1));
         assert_eq!(snapshot.http_started, 1);
         assert_eq!(snapshot.http_send_returned, Some(1));
+        assert_eq!(snapshot.lifecycle_buckets.len(), 1);
+        assert_eq!(snapshot.lifecycle_buckets[0].planned, 3);
+        assert_eq!(snapshot.lifecycle_buckets[0].http_send_returned, 1);
     }
 }

@@ -114,14 +114,21 @@ where
         let observer_tx = self.observer_tx.clone();
         let token = self.token.clone();
 
-        let _ = metric_tx.send(WaveMetricEvent::SendTaskSpawned);
+        let spawned_elapsed_ms = self.started.elapsed().as_millis() as u64;
+        let _ = metric_tx.send(WaveMetricEvent::SendTaskSpawned {
+            elapsed_ms: spawned_elapsed_ms,
+        });
         tokio::spawn(async move {
             let dispatch_elapsed_ms = started.elapsed().as_millis() as u64;
-            let _ = metric_tx.send(WaveMetricEvent::SendStarted);
+            let _ = metric_tx.send(WaveMetricEvent::SendStarted {
+                elapsed_ms: dispatch_elapsed_ms,
+            });
             let _ = metric_tx.send(WaveMetricEvent::DispatchStarted {
                 elapsed_ms: dispatch_elapsed_ms,
             });
-            let _ = metric_tx.send(WaveMetricEvent::HttpStarted);
+            let _ = metric_tx.send(WaveMetricEvent::HttpStarted {
+                elapsed_ms: dispatch_elapsed_ms,
+            });
 
             let result = send_prepared_http_step_with_hooks(
                 client.as_ref(),
@@ -135,13 +142,18 @@ where
                 move || {
                     let metric_tx = metrics_for_send.clone();
                     async move {
-                        let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned);
+                        let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned {
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                        });
                     }
                 },
                 move || {
                     let metric_tx = metrics_for_body.clone();
                     async move {
-                        let _ = metric_tx.send(WaveMetricEvent::ResponseBodyCompleted(1));
+                        let _ = metric_tx.send(WaveMetricEvent::ResponseBodyCompleted {
+                            elapsed_ms: started.elapsed().as_millis() as u64,
+                            count: 1,
+                        });
                     }
                 },
             )

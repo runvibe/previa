@@ -5,6 +5,7 @@ import type {
   LoadTestState,
   RemoteMetricsEvent,
   ConsolidatedLoadMetrics,
+  LoadLifecycleBucket,
   RpsPoint,
   RunnerResourcePoint,
   RunnerRuntimeInfo,
@@ -237,6 +238,7 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     startTime: toNumber(value.startTime) ?? Date.now(),
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
     dispatchBuckets: extractDispatchBuckets(value.dispatchBuckets),
+    lifecycleBuckets: extractLifecycleBuckets(value.lifecycleBuckets),
     targetIntensity: toNumber(value.targetIntensity),
     targetRpsLimit: toNumber(value.targetRpsLimit),
     inFlight: toNumber(value.inFlight),
@@ -262,6 +264,33 @@ function extractDispatchBuckets(value: unknown) {
       return elapsedMs !== undefined && count !== undefined ? { elapsedMs, count } : null;
     })
     .filter((item): item is { elapsedMs: number; count: number } => item !== null);
+
+  return buckets.length > 0 ? buckets : undefined;
+}
+
+function extractLifecycleBuckets(value: unknown): LoadLifecycleBucket[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const buckets = value
+    .map((item) => {
+      if (!isSseObject(item)) return null;
+      const elapsedMs = toNumber(item.elapsedMs);
+      if (elapsedMs === undefined) return null;
+      return {
+        elapsedMs,
+        planned: toNumber(item.planned),
+        slotEnqueued: toNumber(item.slotEnqueued),
+        requestPrepared: toNumber(item.requestPrepared),
+        requestEnqueued: toNumber(item.requestEnqueued),
+        sendTaskSpawned: toNumber(item.sendTaskSpawned),
+        sendStarted: toNumber(item.sendStarted),
+        httpStarted: toNumber(item.httpStarted),
+        httpSendReturned: toNumber(item.httpSendReturned),
+        responseBodyCompleted: toNumber(item.responseBodyCompleted),
+        dispatcherLagged: toNumber(item.dispatcherLagged),
+        runtimeLagged: toNumber(item.runtimeLagged),
+      };
+    })
+    .filter((item): item is LoadLifecycleBucket => item !== null);
 
   return buckets.length > 0 ? buckets : undefined;
 }
@@ -1040,9 +1069,13 @@ function buildRpsHistoryPoint(
       const dispatchBucket = dispatchElapsedMs !== undefined
         ? dispatchBucketFor(metrics, dispatchElapsedMs)
         : undefined;
+      const lifecycleBucket = metrics.lifecycleBuckets?.find(
+        (bucket) => bucket.elapsedMs === sampleElapsedMs,
+      );
       return {
         runnerId,
         dispatchBucket,
+        lifecycleBucket,
         httpStarted: metrics.httpStarted,
         httpCompleted: metrics.httpCompleted,
         dispatchSubmitted: metrics.dispatchSubmitted,
@@ -1072,6 +1105,9 @@ function buildRpsHistoryPoint(
   const dispatchBucket = dispatchBuckets && dispatchBuckets.length > 0
     ? dispatchBuckets.reduce((sum, value) => sum + value, 0)
     : undefined;
+  const lifecycleBucket = consolidated?.lifecycleBuckets?.find(
+    (bucket) => bucket.elapsedMs === sampleElapsedMs,
+  ) ?? event.lifecycleBuckets?.find((bucket) => bucket.elapsedMs === sampleElapsedMs);
 
   return {
     timestamp: Number.isFinite(startTime) && Number.isFinite(sampleElapsedMs)
@@ -1080,6 +1116,7 @@ function buildRpsHistoryPoint(
     elapsedMs: sampleElapsedMs,
     rps: consolidated?.rps ?? event.rps,
     dispatchBucket: dispatchBucket !== undefined ? dispatchBucket : undefined,
+    lifecycleBucket,
     totalStarted: consolidated?.totalStarted ?? event.totalStarted,
     totalSent: consolidated?.totalSent ?? event.totalSent,
     httpStarted: consolidated?.httpStarted ?? event.httpStarted,
@@ -1156,6 +1193,7 @@ export function runRemoteLoadTest(
       latencyHistory: [],
       rpsHistory: [...rpsHistory],
       runnerResourceHistory: [...runnerResourceHistory],
+      lifecycleBuckets: consolidated?.lifecycleBuckets ?? event.lifecycleBuckets ?? [],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
       targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
@@ -1529,6 +1567,7 @@ export function reconnectToLoadExecution(
       latencyHistory: [],
       rpsHistory: [...rpsHistory],
       runnerResourceHistory: [...runnerResourceHistory],
+      lifecycleBuckets: consolidated?.lifecycleBuckets ?? event.lifecycleBuckets ?? [],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
       targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,

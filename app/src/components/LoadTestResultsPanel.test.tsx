@@ -157,6 +157,38 @@ describe("LoadTestResultsPanel", () => {
     });
   });
 
+  it("builds lifecycle chart from direct lifecycle buckets", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 2_000,
+          elapsedMs: 1_000,
+          rps: 0,
+          lifecycleBucket: {
+            elapsedMs: 1_000,
+            planned: 30,
+            sendStarted: 29,
+            httpStarted: 28,
+            httpSendReturned: 20,
+            responseBodyCompleted: 10,
+          },
+        },
+      ],
+    };
+
+    expect(buildLifecycleChartData(metrics).data).toEqual([
+      {
+        time: 1,
+        planned: 30,
+        sendStarted: 29,
+        httpStarted: 28,
+        httpSendReturned: 20,
+        responseBodyCompleted: 10,
+      },
+    ]);
+  });
+
   it("uses direct dispatch buckets for the HTTP started lifecycle line when available", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,

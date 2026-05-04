@@ -82,6 +82,17 @@ export function buildLifecycleChartData(metrics: LoadTestMetrics): LifecycleChar
     const previous = history[index - 1];
     const time = bucketSecond(point, metrics);
     const row = ensureRow(rows, time);
+    const directBucket = point.lifecycleBucket
+      ?? metrics.lifecycleBuckets?.find((bucket) => bucket.elapsedMs === time * 1000);
+
+    if (directBucket) {
+      row.planned += directBucket.planned ?? 0;
+      row.sendStarted += directBucket.sendStarted ?? 0;
+      row.httpStarted += directBucket.httpStarted ?? 0;
+      row.httpSendReturned += directBucket.httpSendReturned ?? 0;
+      row.responseBodyCompleted += directBucket.responseBodyCompleted ?? 0;
+      continue;
+    }
 
     row.planned += cumulativeDelta(point.scheduledStarts, previous?.scheduledStarts);
     row.sendStarted += cumulativeDelta(point.sendStarted, previous?.sendStarted);

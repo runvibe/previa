@@ -17,10 +17,23 @@ pub struct WaveDispatchSlot {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WaveSchedulerMetric {
-    DispatchScheduled { count: usize },
-    SlotEnqueued { count: usize },
-    SchedulerLag { lag_ms: u64, missed_starts: usize },
-    SlotBackpressure { dropped_starts: usize },
+    DispatchScheduled {
+        elapsed_ms: u64,
+        count: usize,
+    },
+    SlotEnqueued {
+        elapsed_ms: u64,
+        count: usize,
+    },
+    SchedulerLag {
+        elapsed_ms: u64,
+        lag_ms: u64,
+        missed_starts: usize,
+    },
+    SlotBackpressure {
+        elapsed_ms: u64,
+        dropped_starts: usize,
+    },
 }
 
 pub fn build_dispatch_slot(
@@ -54,12 +67,14 @@ pub fn try_send_slot_or_metric(
     match slot_tx.try_send(slot) {
         Ok(()) => {
             let _ = metric_tx.send(WaveSchedulerMetric::SlotEnqueued {
+                elapsed_ms: slot.elapsed_ms,
                 count: slot.planned_starts,
             });
             true
         }
         Err(mpsc::error::TrySendError::Full(slot)) => {
             let _ = metric_tx.send(WaveSchedulerMetric::SlotBackpressure {
+                elapsed_ms: slot.elapsed_ms,
                 dropped_starts: slot.planned_starts,
             });
             false
@@ -106,10 +121,12 @@ pub fn run_wave_scheduler_loop(
         let target_rps_limit = crate::server::load_wave::local_rps_limit(&load, elapsed_ms);
         let tick = clock.plan_tick(elapsed_ms, target_rps_limit);
         let _ = metric_tx.send(WaveSchedulerMetric::DispatchScheduled {
+            elapsed_ms: tick.elapsed_ms,
             count: tick.scheduled_starts,
         });
         if tick.scheduler_lag_ms > 0 || tick.missed_due_to_scheduler_lag > 0 {
             let _ = metric_tx.send(WaveSchedulerMetric::SchedulerLag {
+                elapsed_ms: tick.elapsed_ms,
                 lag_ms: tick.scheduler_lag_ms,
                 missed_starts: tick.missed_due_to_scheduler_lag,
             });
@@ -223,7 +240,7 @@ mod tests {
 
         assert!(matches!(
             metric,
-            WaveSchedulerMetric::DispatchScheduled { count } if count > 0
+            WaveSchedulerMetric::DispatchScheduled { count, .. } if count > 0
         ));
         assert!(slot_rx.recv().await.is_some());
 
@@ -265,7 +282,10 @@ mod tests {
         assert!(!sent);
         assert!(matches!(
             metric_rx.recv().await,
-            Some(WaveSchedulerMetric::SlotBackpressure { dropped_starts: 7 })
+            Some(WaveSchedulerMetric::SlotBackpressure {
+                elapsed_ms: 100,
+                dropped_starts: 7,
+            })
         ));
 
         assert!(slot_rx.recv().await.is_some());

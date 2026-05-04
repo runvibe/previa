@@ -15,8 +15,8 @@ use crate::server::execution::runner_auth::apply_runner_auth;
 use crate::server::execution::scheduler::SharedValue;
 use crate::server::execution::snapshot::build_live_load_snapshot_payload;
 use crate::server::models::{
-    ConsolidatedLoadMetrics, LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary,
-    RunnerLoadLine,
+    ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, LoadEventContext,
+    LoadLatencyAccumulator, LoadLatencySummary, RunnerLoadLine,
 };
 use crate::server::state::TRANSACTION_ID_HEADER;
 use crate::server::utils::{now_ms, parse_runner_duration_ms, parse_runner_load_metrics};
@@ -385,6 +385,10 @@ fn build_rps_history_sample(
                 .iter()
                 .find(|bucket| bucket.elapsed_ms == sample_bucket_ms)
                 .map(|bucket| bucket.count);
+            let lifecycle_bucket = metrics
+                .lifecycle_buckets
+                .iter()
+                .find(|bucket| bucket.elapsed_ms == sample_bucket_ms);
             let mut runner = Map::new();
             runner.insert("runnerId".to_owned(), Value::String(line.node.clone()));
             insert_optional(&mut runner, "httpStarted", metrics.http_started);
@@ -440,6 +444,25 @@ fn build_rps_history_sample(
                 dispatch_bucket_total = dispatch_bucket_total.saturating_add(count);
                 has_dispatch_bucket = true;
                 runner.insert("dispatchBucket".to_owned(), json!(count));
+            }
+            if let Some(bucket) = lifecycle_bucket {
+                runner.insert(
+                    "lifecycleBucket".to_owned(),
+                    json!({
+                        "elapsedMs": bucket.elapsed_ms,
+                        "planned": bucket.planned,
+                        "slotEnqueued": bucket.slot_enqueued,
+                        "requestPrepared": bucket.request_prepared,
+                        "requestEnqueued": bucket.request_enqueued,
+                        "sendTaskSpawned": bucket.send_task_spawned,
+                        "sendStarted": bucket.send_started,
+                        "httpStarted": bucket.http_started,
+                        "httpSendReturned": bucket.http_send_returned,
+                        "responseBodyCompleted": bucket.response_body_completed,
+                        "dispatcherLagged": bucket.dispatcher_lagged,
+                        "runtimeLagged": bucket.runtime_lagged,
+                    }),
+                );
             }
             Some(Value::Object(runner))
         })
@@ -497,6 +520,13 @@ fn build_rps_history_sample(
     insert_optional(&mut sample, "sendStarted", metrics.send_started);
     if has_dispatch_bucket {
         sample.insert("dispatchBucket".to_owned(), json!(dispatch_bucket_total));
+    }
+    if let Some(bucket) = metrics
+        .lifecycle_buckets
+        .iter()
+        .find(|bucket| bucket.elapsed_ms == sample_bucket_ms)
+    {
+        sample.insert("lifecycleBucket".to_owned(), json!(bucket));
     }
     insert_optional(&mut sample, "targetIntensity", metrics.target_intensity);
     insert_optional(&mut sample, "targetRpsLimit", metrics.target_rps_limit);
@@ -703,11 +733,54 @@ pub fn consolidate_load_metrics(
     let mut start_time = u64::MAX;
     let mut elapsed_ms = 0u64;
     let mut nodes_reporting = 0usize;
+    let mut lifecycle_by_elapsed = BTreeMap::<u64, ConsolidatedLoadLifecycleBucket>::new();
 
     for line in latest_by_node.values() {
         let Some(metrics) = parse_runner_load_metrics(&line.payload) else {
             continue;
         };
+
+        for bucket in &metrics.lifecycle_buckets {
+            let entry = lifecycle_by_elapsed
+                .entry(bucket.elapsed_ms)
+                .or_insert_with(|| ConsolidatedLoadLifecycleBucket {
+                    elapsed_ms: bucket.elapsed_ms,
+                    planned: 0,
+                    slot_enqueued: 0,
+                    request_prepared: 0,
+                    request_enqueued: 0,
+                    send_task_spawned: 0,
+                    send_started: 0,
+                    http_started: 0,
+                    http_send_returned: 0,
+                    response_body_completed: 0,
+                    dispatcher_lagged: 0,
+                    runtime_lagged: 0,
+                });
+            entry.planned = entry.planned.saturating_add(bucket.planned);
+            entry.slot_enqueued = entry.slot_enqueued.saturating_add(bucket.slot_enqueued);
+            entry.request_prepared = entry
+                .request_prepared
+                .saturating_add(bucket.request_prepared);
+            entry.request_enqueued = entry
+                .request_enqueued
+                .saturating_add(bucket.request_enqueued);
+            entry.send_task_spawned = entry
+                .send_task_spawned
+                .saturating_add(bucket.send_task_spawned);
+            entry.send_started = entry.send_started.saturating_add(bucket.send_started);
+            entry.http_started = entry.http_started.saturating_add(bucket.http_started);
+            entry.http_send_returned = entry
+                .http_send_returned
+                .saturating_add(bucket.http_send_returned);
+            entry.response_body_completed = entry
+                .response_body_completed
+                .saturating_add(bucket.response_body_completed);
+            entry.dispatcher_lagged = entry
+                .dispatcher_lagged
+                .saturating_add(bucket.dispatcher_lagged);
+            entry.runtime_lagged = entry.runtime_lagged.saturating_add(bucket.runtime_lagged);
+        }
 
         if let Some(value) = metrics.total_started {
             total_started = total_started.saturating_add(value);
@@ -879,6 +952,7 @@ pub fn consolidate_load_metrics(
         start_time,
         elapsed_ms,
         nodes_reporting,
+        lifecycle_buckets: lifecycle_by_elapsed.into_values().collect(),
     })
 }
 
@@ -1409,6 +1483,57 @@ mod tests {
     }
 
     #[test]
+    fn consolidated_metrics_sum_lifecycle_buckets_by_elapsed_ms() {
+        let mut latest = HashMap::new();
+        latest.insert(
+            "runner-a".to_owned(),
+            RunnerLoadLine {
+                node: "runner-a".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 0,
+                    "totalSuccess": 0,
+                    "totalError": 0,
+                    "rps": 0.0,
+                    "startTime": 10_000,
+                    "elapsedMs": 2_000,
+                    "lifecycleBuckets": [
+                        {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 8}
+                    ]
+                }),
+            },
+        );
+        latest.insert(
+            "runner-b".to_owned(),
+            RunnerLoadLine {
+                node: "runner-b".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 0,
+                    "totalSuccess": 0,
+                    "totalError": 0,
+                    "rps": 0.0,
+                    "startTime": 10_000,
+                    "elapsedMs": 2_000,
+                    "lifecycleBuckets": [
+                        {"elapsedMs": 1_000, "planned": 7, "sendStarted": 6, "httpStarted": 5}
+                    ]
+                }),
+            },
+        );
+
+        let metrics = consolidate_load_metrics(&latest, LoadLatencySummary::default()).unwrap();
+
+        assert_eq!(metrics.lifecycle_buckets.len(), 1);
+        assert_eq!(metrics.lifecycle_buckets[0].elapsed_ms, 1_000);
+        assert_eq!(metrics.lifecycle_buckets[0].planned, 17);
+        assert_eq!(metrics.lifecycle_buckets[0].send_started, 15);
+        assert_eq!(metrics.lifecycle_buckets[0].http_started, 13);
+    }
+
+    #[test]
     fn builds_rps_history_sample_with_wave_targets() {
         let metrics = ConsolidatedLoadMetrics {
             total_started: Some(45),
@@ -1449,6 +1574,7 @@ mod tests {
             start_time: 1_000,
             elapsed_ms: 2_450,
             nodes_reporting: 2,
+            lifecycle_buckets: Vec::new(),
         };
         let latest = HashMap::from([(
             "http://runner-a:3000".to_owned(),
@@ -1543,6 +1669,7 @@ mod tests {
             start_time: 1_000,
             elapsed_ms: 4_250,
             nodes_reporting: 2,
+            lifecycle_buckets: Vec::new(),
         };
         let mut history = BTreeMap::new();
         let partial = HashMap::from([(
@@ -1634,6 +1761,7 @@ mod tests {
             start_time: 1_000,
             elapsed_ms: 4_250,
             nodes_reporting: 2,
+            lifecycle_buckets: Vec::new(),
         };
         let latest = HashMap::from([
             (

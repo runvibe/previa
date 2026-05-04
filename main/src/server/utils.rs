@@ -3,7 +3,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::server::models::{
-    RunnerLoadDispatchBucket, RunnerLoadLatencyBucket, RunnerLoadMetricsPoint,
+    RunnerLoadDispatchBucket, RunnerLoadLatencyBucket, RunnerLoadLifecycleBucket,
+    RunnerLoadMetricsPoint,
 };
 
 pub fn now_ms() -> u64 {
@@ -70,6 +71,7 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         latency_total_duration_ms: get_u64_field(payload, "latencyTotalDurationMs"),
         latency_buckets: parse_latency_buckets(payload),
         dispatch_buckets: parse_dispatch_buckets(payload),
+        lifecycle_buckets: parse_lifecycle_buckets(payload),
     })
 }
 
@@ -120,6 +122,35 @@ fn parse_dispatch_buckets(payload: &Value) -> Vec<RunnerLoadDispatchBucket> {
                     let elapsed_ms = get_u64_field(item, "elapsedMs")?;
                     let count = get_usize_field(item, "count")?;
                     Some(RunnerLoadDispatchBucket { elapsed_ms, count })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_lifecycle_buckets(payload: &Value) -> Vec<RunnerLoadLifecycleBucket> {
+    payload
+        .get("lifecycleBuckets")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    Some(RunnerLoadLifecycleBucket {
+                        elapsed_ms: get_u64_field(item, "elapsedMs")?,
+                        planned: get_usize_field(item, "planned").unwrap_or(0),
+                        slot_enqueued: get_usize_field(item, "slotEnqueued").unwrap_or(0),
+                        request_prepared: get_usize_field(item, "requestPrepared").unwrap_or(0),
+                        request_enqueued: get_usize_field(item, "requestEnqueued").unwrap_or(0),
+                        send_task_spawned: get_usize_field(item, "sendTaskSpawned").unwrap_or(0),
+                        send_started: get_usize_field(item, "sendStarted").unwrap_or(0),
+                        http_started: get_usize_field(item, "httpStarted").unwrap_or(0),
+                        http_send_returned: get_usize_field(item, "httpSendReturned").unwrap_or(0),
+                        response_body_completed: get_usize_field(item, "responseBodyCompleted")
+                            .unwrap_or(0),
+                        dispatcher_lagged: get_usize_field(item, "dispatcherLagged").unwrap_or(0),
+                        runtime_lagged: get_usize_field(item, "runtimeLagged").unwrap_or(0),
+                    })
                 })
                 .collect()
         })

@@ -811,6 +811,9 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     latencyHistory: consolidated?.latencyHistory ?? [],
     rpsHistory: consolidated?.rpsHistory ?? [],
     runnerResourceHistory: consolidated?.runnerResourceHistory ?? buildRunnerResourceHistoryFromLines(r.finalLines),
+    lifecycleBuckets: Array.isArray(consolidated?.lifecycleBuckets)
+      ? consolidated.lifecycleBuckets
+      : [],
     errors: Array.isArray(r.errors)
       ? r.errors.filter((item): item is string => typeof item === "string")
       : [],

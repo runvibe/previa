@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::server::models::{
-    LoadDispatchBucket, LoadErrorSample, LoadLatencyBucket, LoadTestMetrics, RunnerInfoResponse,
+    LoadDispatchBucket, LoadErrorSample, LoadLatencyBucket, LoadLifecycleBucket, LoadTestMetrics,
+    RunnerInfoResponse,
 };
 use crate::server::utils::{now_ms, round2};
 use previa_runner::{StepExecutionResult, StepRequest, StepResponse};
@@ -49,6 +50,7 @@ pub struct MetricsAccumulator {
     latency_total_duration_ms: u64,
     latency_histogram: BTreeMap<u64, usize>,
     dispatch_buckets: BTreeMap<u64, usize>,
+    lifecycle_buckets: BTreeMap<u64, LoadLifecycleBucket>,
     error_samples: Vec<LoadErrorSample>,
 }
 
@@ -82,6 +84,7 @@ impl MetricsAccumulator {
             latency_total_duration_ms: 0,
             latency_histogram: BTreeMap::new(),
             dispatch_buckets: BTreeMap::new(),
+            lifecycle_buckets: BTreeMap::new(),
             error_samples: Vec::new(),
         }
     }
@@ -125,6 +128,71 @@ impl MetricsAccumulator {
         self.dispatch_started = self.dispatch_started.saturating_add(1);
         let bucket_ms = (elapsed_ms / 1000).saturating_mul(1000);
         *self.dispatch_buckets.entry(bucket_ms).or_insert(0) += 1;
+    }
+
+    pub fn record_planned_at(&mut self, elapsed_ms: u64, count: usize) {
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.planned = bucket.planned.saturating_add(count);
+    }
+
+    pub fn record_slot_enqueued_at(&mut self, elapsed_ms: u64, count: usize) {
+        self.record_slot_enqueued_count(count);
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.slot_enqueued = bucket.slot_enqueued.saturating_add(count);
+    }
+
+    pub fn record_request_prepared_at(&mut self, elapsed_ms: u64) {
+        self.record_request_prepared();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.request_prepared = bucket.request_prepared.saturating_add(1);
+    }
+
+    pub fn record_request_enqueued_at(&mut self, elapsed_ms: u64) {
+        self.record_request_enqueued();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.request_enqueued = bucket.request_enqueued.saturating_add(1);
+    }
+
+    pub fn record_send_task_spawned_at(&mut self, elapsed_ms: u64) {
+        self.record_send_task_spawned();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.send_task_spawned = bucket.send_task_spawned.saturating_add(1);
+    }
+
+    pub fn record_send_started_at(&mut self, elapsed_ms: u64) {
+        self.record_send_started();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.send_started = bucket.send_started.saturating_add(1);
+    }
+
+    pub fn record_http_start_at(&mut self, elapsed_ms: u64) {
+        self.record_http_start();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.http_started = bucket.http_started.saturating_add(1);
+    }
+
+    pub fn record_http_send_returned_at(&mut self, elapsed_ms: u64) {
+        self.record_http_send_returned();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.http_send_returned = bucket.http_send_returned.saturating_add(1);
+    }
+
+    pub fn record_response_body_completed_at(&mut self, elapsed_ms: u64, count: usize) {
+        self.record_response_body_completed_count(count);
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.response_body_completed = bucket.response_body_completed.saturating_add(count);
+    }
+
+    pub fn record_dispatcher_lagged_starts_at(&mut self, elapsed_ms: u64, count: usize) {
+        self.record_dispatcher_lagged_starts_count(count);
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.dispatcher_lagged = bucket.dispatcher_lagged.saturating_add(count);
+    }
+
+    pub fn record_runtime_lagged_start_at(&mut self, elapsed_ms: u64) {
+        self.record_runtime_lagged_start();
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.runtime_lagged = bucket.runtime_lagged.saturating_add(1);
     }
 
     pub fn record_http_send_returned(&mut self) {
@@ -309,6 +377,7 @@ impl MetricsAccumulator {
                     count: *count,
                 })
                 .collect(),
+            lifecycle_buckets: self.lifecycle_buckets.values().cloned().collect(),
             latency_sample_count: (self.latency_sample_count > 0)
                 .then_some(self.latency_sample_count),
             latency_total_duration_ms: (self.latency_sample_count > 0)
@@ -317,6 +386,20 @@ impl MetricsAccumulator {
             runtime,
         }
     }
+
+    fn lifecycle_bucket_mut(&mut self, elapsed_ms: u64) -> &mut LoadLifecycleBucket {
+        let bucket_ms = lifecycle_bucket_ms(elapsed_ms);
+        self.lifecycle_buckets
+            .entry(bucket_ms)
+            .or_insert_with(|| LoadLifecycleBucket {
+                elapsed_ms: bucket_ms,
+                ..LoadLifecycleBucket::default()
+            })
+    }
+}
+
+fn lifecycle_bucket_ms(elapsed_ms: u64) -> u64 {
+    (elapsed_ms / 1000).saturating_mul(1000)
 }
 
 pub fn estimate_results_network_bytes(results: &[StepExecutionResult]) -> (u64, u64) {
@@ -452,6 +535,40 @@ mod tests {
         assert_eq!(snapshot.dispatch_buckets[0].count, 1);
         assert_eq!(snapshot.dispatch_buckets[1].elapsed_ms, 75_000);
         assert_eq!(snapshot.dispatch_buckets[1].count, 2);
+    }
+
+    #[test]
+    fn snapshot_includes_lifecycle_buckets() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_planned_at(1_050, 10);
+        metrics.record_slot_enqueued_at(1_050, 10);
+        metrics.record_request_prepared_at(1_110);
+        metrics.record_request_enqueued_at(1_120);
+        metrics.record_send_task_spawned_at(1_130);
+        metrics.record_send_started_at(1_140);
+        metrics.record_http_start_at(1_150);
+        metrics.record_http_send_returned_at(1_160);
+        metrics.record_response_body_completed_at(1_170, 1);
+        metrics.record_dispatcher_lagged_starts_at(1_180, 2);
+        metrics.record_runtime_lagged_start_at(1_190);
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.lifecycle_buckets.len(), 1);
+        let bucket = &snapshot.lifecycle_buckets[0];
+        assert_eq!(bucket.elapsed_ms, 1_000);
+        assert_eq!(bucket.planned, 10);
+        assert_eq!(bucket.slot_enqueued, 10);
+        assert_eq!(bucket.request_prepared, 1);
+        assert_eq!(bucket.request_enqueued, 1);
+        assert_eq!(bucket.send_task_spawned, 1);
+        assert_eq!(bucket.send_started, 1);
+        assert_eq!(bucket.http_started, 1);
+        assert_eq!(bucket.http_send_returned, 1);
+        assert_eq!(bucket.response_body_completed, 1);
+        assert_eq!(bucket.dispatcher_lagged, 2);
+        assert_eq!(bucket.runtime_lagged, 1);
     }
 
     #[test]
