@@ -22,6 +22,7 @@ use crate::server::state::TRANSACTION_ID_HEADER;
 use crate::server::utils::{now_ms, parse_runner_duration_ms, parse_runner_load_metrics};
 
 const RPS_HISTORY_BUCKET_MS: u64 = 1_000;
+const RPS_HISTORY_CORRECTION_WINDOW_MS: u64 = 10_000;
 
 pub async fn forward_runner_stream_load_chunked(
     client: &Client,
@@ -261,13 +262,11 @@ pub async fn flush_load_batches(
     load_errors: Arc<Mutex<Vec<String>>>,
     load_context: Arc<LoadEventContext>,
     snapshot_payload: SharedValue<Value>,
-    rps_history: Arc<Mutex<Vec<Value>>>,
+    rps_history: Arc<Mutex<BTreeMap<u64, Value>>>,
 ) {
     let mut interval =
         tokio::time::interval(Duration::from_millis(load_context.batch_window_ms.max(1)));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut last_rps_history_sample_at = 0u64;
-
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
@@ -292,15 +291,9 @@ pub async fn flush_load_batches(
             consolidate_load_metrics(&latest_snapshot, latency_summary)
         };
         if let Some(metrics) = consolidated.as_ref() {
-            if let Some(sample_at) = rps_history_timestamp(metrics) {
-                if sample_at > last_rps_history_sample_at {
-                    rps_history.lock().await.push(build_rps_history_sample(
-                        sample_at,
-                        metrics,
-                        &latest_snapshot,
-                    ));
-                    last_rps_history_sample_at = sample_at;
-                }
+            if rps_history_timestamp(metrics).is_some() {
+                let mut history = rps_history.lock().await;
+                upsert_rps_history_samples(&mut history, metrics, &latest_snapshot);
             }
         }
         let errors = load_errors.lock().await.clone();
@@ -509,6 +502,54 @@ fn build_rps_history_sample(
     insert_optional(&mut sample, "curveAdherence", metrics.curve_adherence);
     sample.insert("runners".to_owned(), Value::Array(runners));
     Value::Object(sample)
+}
+
+pub fn upsert_rps_history_samples(
+    history: &mut BTreeMap<u64, Value>,
+    metrics: &ConsolidatedLoadMetrics,
+    latest_by_node: &HashMap<String, RunnerLoadLine>,
+) {
+    let Some(current_sample_at) = rps_history_timestamp(metrics) else {
+        return;
+    };
+    let first_sample_at = current_sample_at.saturating_sub(RPS_HISTORY_CORRECTION_WINDOW_MS);
+    let mut sample_at = first_sample_at;
+    while sample_at <= current_sample_at {
+        history.insert(
+            sample_at,
+            build_rps_history_sample(sample_at, metrics, latest_by_node),
+        );
+        sample_at = sample_at.saturating_add(RPS_HISTORY_BUCKET_MS);
+        if sample_at == 0 {
+            break;
+        }
+    }
+}
+
+pub fn rebuild_final_rps_history(
+    metrics: &ConsolidatedLoadMetrics,
+    latest_by_node: &HashMap<String, RunnerLoadLine>,
+) -> Vec<Value> {
+    let mut bucket_ms = BTreeMap::<u64, ()>::new();
+    for line in latest_by_node.values() {
+        let Some(metrics) = parse_runner_load_metrics(&line.payload) else {
+            continue;
+        };
+        for bucket in metrics.dispatch_buckets {
+            bucket_ms.insert(bucket.elapsed_ms, ());
+        }
+    }
+
+    bucket_ms
+        .keys()
+        .map(|elapsed_ms| {
+            build_rps_history_sample(
+                metrics.start_time.saturating_add(*elapsed_ms),
+                metrics,
+                latest_by_node,
+            )
+        })
+        .collect()
 }
 
 fn rps_history_timestamp(metrics: &ConsolidatedLoadMetrics) -> Option<u64> {
@@ -937,16 +978,17 @@ pub fn add_load_context_fields(data: Value, context: &LoadEventContext) -> Value
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
-    use serde_json::json;
+    use serde_json::{Value, json};
     use tokio::sync::Mutex;
 
     use crate::server::execution::load_batch::{
         add_load_context_fields, build_rps_history_sample, consolidate_load_metrics,
-        drain_load_chunk, merge_runner_error_samples_into, rps_history_elapsed_bucket_ms,
-        rps_history_timestamp, summarize_load_latency,
+        drain_load_chunk, merge_runner_error_samples_into, rebuild_final_rps_history,
+        rps_history_elapsed_bucket_ms, rps_history_timestamp, summarize_load_latency,
+        upsert_rps_history_samples,
     };
     use crate::server::models::{
         ConsolidatedLoadMetrics, LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary,
@@ -1392,6 +1434,185 @@ mod tests {
                     "rps": 21.5
                 }]
             })
+        );
+    }
+
+    #[test]
+    fn upserts_recent_rps_history_buckets_when_runner_snapshots_become_complete() {
+        let metrics = ConsolidatedLoadMetrics {
+            total_started: Some(45),
+            total_sent: 42,
+            total_success: 40,
+            total_error: 2,
+            http_started: Some(60),
+            http_completed: Some(58),
+            dispatch_submitted: None,
+            dispatch_started: None,
+            http_send_returned: None,
+            response_body_completed: None,
+            dependency_limited_starts: None,
+            dispatcher_lagged_starts: None,
+            runtime_lagged_starts: None,
+            scheduler_lag_ms: None,
+            scheduler_lagged_starts: None,
+            rps: 21.5,
+            target_intensity: Some(75.0),
+            target_rps_limit: Some(150.0),
+            in_flight: Some(3),
+            runner_max_rps: Some(200.0),
+            tick_ms: Some(500),
+            scheduled_starts: None,
+            missed_starts: None,
+            ready_requests: None,
+            active_pipelines: None,
+            outstanding_requests: None,
+            curve_adherence: None,
+            avg_latency: 10,
+            p95: 20,
+            p99: 30,
+            start_time: 1_000,
+            elapsed_ms: 4_250,
+            nodes_reporting: 2,
+        };
+        let mut history = BTreeMap::new();
+        let partial = HashMap::from([(
+            "http://runner-a:3000".to_owned(),
+            RunnerLoadLine {
+                node: "http://runner-a:3000".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 42,
+                    "totalSuccess": 40,
+                    "totalError": 2,
+                    "rps": 21.5,
+                    "startTime": 1_000,
+                    "elapsedMs": 4_250,
+                    "dispatchBuckets": [{ "elapsedMs": 2_000, "count": 10 }]
+                }),
+            },
+        )]);
+        let complete = HashMap::from([(
+            "http://runner-a:3000".to_owned(),
+            RunnerLoadLine {
+                node: "http://runner-a:3000".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 2,
+                payload: json!({
+                    "totalSent": 42,
+                    "totalSuccess": 40,
+                    "totalError": 2,
+                    "rps": 21.5,
+                    "startTime": 1_000,
+                    "elapsedMs": 4_250,
+                    "dispatchBuckets": [{ "elapsedMs": 2_000, "count": 25 }]
+                }),
+            },
+        )]);
+
+        upsert_rps_history_samples(&mut history, &metrics, &partial);
+        upsert_rps_history_samples(&mut history, &metrics, &complete);
+
+        let sample = history
+            .get(&3_000)
+            .and_then(Value::as_object)
+            .expect("bucket should exist");
+        assert_eq!(
+            sample.get("dispatchBucket").and_then(Value::as_u64),
+            Some(25)
+        );
+    }
+
+    #[test]
+    fn rebuilds_final_rps_history_from_runner_dispatch_buckets() {
+        let metrics = ConsolidatedLoadMetrics {
+            total_started: Some(45),
+            total_sent: 42,
+            total_success: 40,
+            total_error: 2,
+            http_started: Some(60),
+            http_completed: Some(58),
+            dispatch_submitted: None,
+            dispatch_started: Some(35),
+            http_send_returned: None,
+            response_body_completed: None,
+            dependency_limited_starts: None,
+            dispatcher_lagged_starts: None,
+            runtime_lagged_starts: None,
+            scheduler_lag_ms: None,
+            scheduler_lagged_starts: None,
+            rps: 21.5,
+            target_intensity: Some(75.0),
+            target_rps_limit: Some(150.0),
+            in_flight: Some(3),
+            runner_max_rps: Some(200.0),
+            tick_ms: Some(500),
+            scheduled_starts: None,
+            missed_starts: None,
+            ready_requests: None,
+            active_pipelines: None,
+            outstanding_requests: None,
+            curve_adherence: None,
+            avg_latency: 10,
+            p95: 20,
+            p99: 30,
+            start_time: 1_000,
+            elapsed_ms: 4_250,
+            nodes_reporting: 2,
+        };
+        let latest = HashMap::from([
+            (
+                "http://runner-a:3000".to_owned(),
+                RunnerLoadLine {
+                    node: "http://runner-a:3000".to_owned(),
+                    runner_event: "metrics".to_owned(),
+                    received_at: 1,
+                    payload: json!({
+                        "totalSent": 42,
+                        "totalSuccess": 40,
+                        "totalError": 2,
+                        "rps": 21.5,
+                        "startTime": 1_000,
+                        "elapsedMs": 4_250,
+                        "dispatchBuckets": [
+                            { "elapsedMs": 0, "count": 10 },
+                            { "elapsedMs": 1_000, "count": 20 }
+                        ]
+                    }),
+                },
+            ),
+            (
+                "http://runner-b:3000".to_owned(),
+                RunnerLoadLine {
+                    node: "http://runner-b:3000".to_owned(),
+                    runner_event: "metrics".to_owned(),
+                    received_at: 1,
+                    payload: json!({
+                        "totalSent": 42,
+                        "totalSuccess": 40,
+                        "totalError": 2,
+                        "rps": 21.5,
+                        "startTime": 1_000,
+                        "elapsedMs": 4_250,
+                        "dispatchBuckets": [
+                            { "elapsedMs": 0, "count": 5 },
+                            { "elapsedMs": 1_000, "count": 15 }
+                        ]
+                    }),
+                },
+            ),
+        ]);
+
+        let history = rebuild_final_rps_history(&metrics, &latest);
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            history[0].get("dispatchBucket").and_then(Value::as_u64),
+            Some(15)
+        );
+        assert_eq!(
+            history[1].get("dispatchBucket").and_then(Value::as_u64),
+            Some(35)
         );
     }
 

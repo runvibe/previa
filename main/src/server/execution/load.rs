@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use serde_json::{Value, json};
@@ -11,9 +11,9 @@ use crate::server::execution::{
     AcquireOutcome, ScheduledExecutionKind, add_load_context_fields,
     build_live_load_snapshot_payload, build_load_snapshot_payload, calculate_node_plan,
     determine_load_history_status, extract_load_context_value, flush_load_batches,
-    forward_runner_stream_load_chunked, resolve_runtime_env_groups_for_execution,
-    resolve_runtime_specs_for_execution, send_sse_best_effort, snapshot_consolidated_metrics,
-    snapshot_latest_lines, split_even,
+    forward_runner_stream_load_chunked, rebuild_final_rps_history,
+    resolve_runtime_env_groups_for_execution, resolve_runtime_specs_for_execution,
+    send_sse_best_effort, snapshot_consolidated_metrics, snapshot_latest_lines, split_even,
 };
 use crate::server::models::{
     HistoryMetadata, LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadProfile,
@@ -511,7 +511,8 @@ pub async fn start_load_execution(
         let load_latency: Arc<Mutex<LoadLatencyAccumulator>> =
             Arc::new(Mutex::new(LoadLatencyAccumulator::default()));
         let load_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let load_rps_history: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let load_rps_history: Arc<Mutex<BTreeMap<u64, Value>>> =
+            Arc::new(Mutex::new(BTreeMap::new()));
 
         let flush_stop = CancellationToken::new();
         let flush_handle = tokio::spawn(flush_load_batches(
@@ -624,7 +625,15 @@ pub async fn start_load_execution(
         let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
         let final_lines = snapshot_latest_lines(&load_latest).await;
         let final_consolidated = snapshot_consolidated_metrics(&load_latest, &load_latency).await;
-        let rps_history = load_rps_history.lock().await.clone();
+        let latest_snapshot = {
+            let lock = load_latest.lock().await;
+            lock.clone()
+        };
+        let rps_history = if let Some(value) = final_consolidated.as_ref() {
+            rebuild_final_rps_history(value, &latest_snapshot)
+        } else {
+            load_rps_history.lock().await.values().cloned().collect()
+        };
         let final_consolidated_value = final_consolidated.as_ref().and_then(|value| {
             let mut json_value = serde_json::to_value(value).ok()?;
             if let Some(obj) = json_value.as_object_mut() {
