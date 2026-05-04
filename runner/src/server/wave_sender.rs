@@ -14,7 +14,8 @@ use previa_runner::{
     send_prepared_http_step_with_hooks,
 };
 
-use crate::server::metrics::{MetricsAccumulator, estimate_results_network_bytes};
+use crate::server::metrics::estimate_results_network_bytes;
+use crate::server::wave_metrics_actor::WaveMetricEvent;
 
 pub struct ReadyWaveRequest<C> {
     pub step: PipelineStep,
@@ -33,7 +34,7 @@ pub struct WaveObserverEvent<C> {
 
 pub struct WaveSender<C> {
     client: Arc<Client>,
-    metrics: Arc<tokio::sync::Mutex<MetricsAccumulator>>,
+    metric_tx: mpsc::UnboundedSender<WaveMetricEvent>,
     response_in_flight: Arc<AtomicUsize>,
     ready_to_send: Arc<AtomicUsize>,
     request_rx: mpsc::UnboundedReceiver<ReadyWaveRequest<C>>,
@@ -47,7 +48,7 @@ where
 {
     pub fn new(
         client: Arc<Client>,
-        metrics: Arc<tokio::sync::Mutex<MetricsAccumulator>>,
+        metric_tx: mpsc::UnboundedSender<WaveMetricEvent>,
         response_in_flight: Arc<AtomicUsize>,
         ready_to_send: Arc<AtomicUsize>,
         request_rx: mpsc::UnboundedReceiver<ReadyWaveRequest<C>>,
@@ -56,7 +57,7 @@ where
     ) -> Self {
         Self {
             client,
-            metrics,
+            metric_tx,
             response_in_flight,
             ready_to_send,
             request_rx,
@@ -79,19 +80,16 @@ where
         self.response_in_flight.fetch_add(1, Ordering::SeqCst);
 
         let client = Arc::clone(&self.client);
-        let metrics = Arc::clone(&self.metrics);
-        let metrics_for_send = Arc::clone(&self.metrics);
-        let metrics_for_body = Arc::clone(&self.metrics);
+        let metric_tx = self.metric_tx.clone();
+        let metrics_for_send = self.metric_tx.clone();
+        let metrics_for_body = self.metric_tx.clone();
         let response_in_flight = Arc::clone(&self.response_in_flight);
         let observer_tx = self.observer_tx.clone();
         let token = self.token.clone();
 
         tokio::spawn(async move {
-            {
-                let mut lock = metrics.lock().await;
-                lock.record_dispatch_started();
-                lock.record_http_start();
-            }
+            let _ = metric_tx.send(WaveMetricEvent::DispatchStarted);
+            let _ = metric_tx.send(WaveMetricEvent::HttpStarted);
 
             let result = send_prepared_http_step_with_hooks(
                 client.as_ref(),
@@ -103,17 +101,15 @@ where
                 request.selected_env_group_slug.as_deref(),
                 || token.is_cancelled(),
                 move || {
-                    let metrics = Arc::clone(&metrics_for_send);
+                    let metric_tx = metrics_for_send.clone();
                     async move {
-                        let mut lock = metrics.lock().await;
-                        lock.record_http_send_returned();
+                        let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned);
                     }
                 },
                 move || {
-                    let metrics = Arc::clone(&metrics_for_body);
+                    let metric_tx = metrics_for_body.clone();
                     async move {
-                        let mut lock = metrics.lock().await;
-                        lock.record_response_body_completed_count(1);
+                        let _ = metric_tx.send(WaveMetricEvent::ResponseBodyCompleted(1));
                     }
                 },
             )
@@ -126,13 +122,13 @@ where
 
             let (network_tx_bytes, network_rx_bytes) =
                 estimate_results_network_bytes(std::slice::from_ref(&result));
-            {
-                let mut lock = metrics.lock().await;
-                if result.request.is_some() {
-                    lock.record_http_completed_count(1);
-                }
-                lock.add_network_bytes(network_tx_bytes, network_rx_bytes);
+            if result.request.is_some() {
+                let _ = metric_tx.send(WaveMetricEvent::HttpCompleted(1));
             }
+            let _ = metric_tx.send(WaveMetricEvent::NetworkBytes {
+                tx: network_tx_bytes,
+                rx: network_rx_bytes,
+            });
 
             let _ = observer_tx.send(WaveObserverEvent {
                 cursor: request.cursor,
@@ -164,6 +160,26 @@ pub async fn run_test_sender<T, F, Fut>(
         tasks.spawn(send(request.payload));
     }
     tasks.abort_all();
+    while tasks.join_next().await.is_some() {}
+}
+
+#[cfg(test)]
+pub async fn run_test_sender_with_metric_events<T, F, Fut>(
+    mut rx: mpsc::UnboundedReceiver<TestReadyWaveRequest<T>>,
+    metric_tx: mpsc::UnboundedSender<WaveMetricEvent>,
+    started: Arc<AtomicUsize>,
+    mut send: F,
+) where
+    T: Send + 'static,
+    F: FnMut(T) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let mut tasks = JoinSet::new();
+    while let Some(request) = rx.recv().await {
+        started.fetch_add(1, Ordering::SeqCst);
+        let _ = metric_tx.send(WaveMetricEvent::DispatchStarted);
+        tasks.spawn(send(request.payload));
+    }
     while tasks.join_next().await.is_some() {}
 }
 
@@ -247,5 +263,39 @@ mod tests {
 
         drop(tx);
         sender.abort();
+    }
+
+    #[tokio::test]
+    async fn sender_emits_dispatch_events_for_accepted_requests() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
+        let started = Arc::new(AtomicUsize::new(0));
+
+        let sender_started = Arc::clone(&started);
+        let sender = tokio::spawn(run_test_sender_with_metric_events(
+            rx,
+            metric_tx,
+            sender_started,
+            |_payload: usize| async move {},
+        ));
+
+        tx.send(TestReadyWaveRequest { payload: 1 }).unwrap();
+        tx.send(TestReadyWaveRequest { payload: 2 }).unwrap();
+        drop(tx);
+
+        sender.await.unwrap();
+
+        let mut dispatch_started = 0;
+        while let Ok(event) = metric_rx.try_recv() {
+            if matches!(
+                event,
+                crate::server::wave_metrics_actor::WaveMetricEvent::DispatchStarted
+            ) {
+                dispatch_started += 1;
+            }
+        }
+
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+        assert_eq!(dispatch_started, 2);
     }
 }

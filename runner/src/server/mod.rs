@@ -26,6 +26,8 @@ pub mod state;
 pub mod utils;
 pub mod wave_emitter;
 pub mod wave_executor;
+pub mod wave_metrics_actor;
+pub mod wave_scheduler;
 pub mod wave_sender;
 
 pub fn build_app(state: AppState) -> Router {

@@ -166,6 +166,47 @@ pub struct LoadTestMetrics {
     pub runtime: Option<RunnerInfoResponse>,
 }
 
+impl Default for LoadTestMetrics {
+    fn default() -> Self {
+        Self {
+            total_started: 0,
+            total_sent: 0,
+            total_success: 0,
+            total_error: 0,
+            http_started: 0,
+            http_completed: 0,
+            dispatch_submitted: None,
+            dispatch_started: None,
+            http_send_returned: None,
+            response_body_completed: None,
+            dependency_limited_starts: None,
+            runtime_lagged_starts: None,
+            scheduler_lag_ms: None,
+            scheduler_lagged_starts: None,
+            rps: 0.0,
+            start_time: crate::server::utils::now_ms(),
+            elapsed_ms: 0,
+            target_intensity: None,
+            target_rps_limit: None,
+            in_flight: None,
+            runner_max_rps: None,
+            tick_ms: None,
+            scheduled_starts: None,
+            missed_starts: None,
+            ready_requests: None,
+            active_pipelines: None,
+            outstanding_requests: None,
+            curve_adherence: None,
+            duration_ms: None,
+            latency_buckets: Vec::new(),
+            latency_sample_count: None,
+            latency_total_duration_ms: None,
+            error_samples: Vec::new(),
+            runtime: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorResponse {
     pub error: String,
