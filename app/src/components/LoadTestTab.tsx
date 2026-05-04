@@ -91,6 +91,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       onCollapse={() => setHistoryCollapsed(true)}
       collapsed={false}
       collapseDirection={isMobile ? "bottom" : "side"}
+      collapseOnHeaderClick={isMobile}
     >
       {runs.map((run) => (
         <LoadTestRunHistoryItem
@@ -139,8 +140,17 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
       data-testid="mobile-load-test-history"
       className={cn(
         "shrink-0 border-t border-border/50 transition-[max-height] duration-300 ease-in-out overflow-hidden",
-        historyCollapsed ? "max-h-10" : "max-h-[200px]",
+        historyCollapsed ? "max-h-10 cursor-pointer" : "max-h-[200px]",
       )}
+      onClick={historyCollapsed ? () => setHistoryCollapsed(false) : undefined}
+      role={historyCollapsed ? "button" : undefined}
+      tabIndex={historyCollapsed ? 0 : undefined}
+      onKeyDown={historyCollapsed ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setHistoryCollapsed(false);
+        }
+      } : undefined}
     >
       {historyCollapsed ? (
         <div className="flex h-10 items-center justify-center">

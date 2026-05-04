@@ -175,11 +175,15 @@ describe("LoadTestTab", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTitle("Collapse history"));
+    fireEvent.click(screen.getByText("History"));
 
     const collapsedRegion = screen.getByTestId("mobile-load-test-history");
     expect(collapsedRegion).toHaveClass("max-h-10", "border-t");
     expect(screen.getByTitle("Show history").querySelector(".lucide-history")).toBeInTheDocument();
     expect(screen.queryByText("1 reqs")).not.toBeInTheDocument();
+
+    fireEvent.click(collapsedRegion);
+
+    expect(screen.getByText("1 reqs")).toBeInTheDocument();
   });
 });

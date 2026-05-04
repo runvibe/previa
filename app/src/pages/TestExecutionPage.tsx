@@ -1193,8 +1193,17 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                               data-testid="mobile-integration-history"
                               className={cn(
                                 "mt-6 border-t border-border/50 transition-[max-height] duration-300 ease-in-out overflow-hidden",
-                                historyCollapsed ? "max-h-10" : "max-h-[250px]"
+                                historyCollapsed ? "max-h-10 cursor-pointer" : "max-h-[250px]"
                               )}
+                              onClick={historyCollapsed ? () => setHistoryCollapsed(false) : undefined}
+                              role={historyCollapsed ? "button" : undefined}
+                              tabIndex={historyCollapsed ? 0 : undefined}
+                              onKeyDown={historyCollapsed ? (event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setHistoryCollapsed(false);
+                                }
+                              } : undefined}
                             >
                               {historyCollapsed ? (
                                 <div className="flex h-10 items-center justify-center">
@@ -1216,6 +1225,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                                     onCollapse={() => setHistoryCollapsed(true)}
                                     collapsed={false}
                                     collapseDirection="bottom"
+                                    collapseOnHeaderClick
                                   >
                                     {runHistory.map((run) => (
                                       <RunHistoryItem key={run.id} run={run} isActive={activeRunId === run.id} onClick={() => handleSelectRun(run)} />
