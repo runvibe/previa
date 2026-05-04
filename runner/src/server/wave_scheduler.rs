@@ -99,6 +99,15 @@ pub fn run_wave_scheduler_loop(
 
         let target_rps_limit = crate::server::load_wave::local_rps_limit(&load, elapsed_ms);
         let tick = clock.plan_tick(elapsed_ms, target_rps_limit);
+        let _ = metric_tx.send(WaveSchedulerMetric::DispatchScheduled {
+            count: tick.scheduled_starts,
+        });
+        if tick.scheduler_lag_ms > 0 || tick.missed_due_to_scheduler_lag > 0 {
+            let _ = metric_tx.send(WaveSchedulerMetric::SchedulerLag {
+                lag_ms: tick.scheduler_lag_ms,
+                missed_starts: tick.missed_due_to_scheduler_lag,
+            });
+        }
         let _ = try_send_slot_or_metric(&slot_tx, &metric_tx, build_dispatch_slot(tick, tick_ms));
 
         next_wake += std::time::Duration::from_millis(tick_ms);
@@ -189,6 +198,28 @@ mod tests {
 
         assert!(first.planned_starts > 0);
         assert_eq!(first.expires_at_elapsed_ms, first.elapsed_ms + 100);
+
+        handle.join().expect("scheduler thread should exit cleanly");
+    }
+
+    #[tokio::test]
+    async fn scheduler_thread_emits_dispatch_scheduled_metric() {
+        let (slot_tx, mut slot_rx) = mpsc::channel(8);
+        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
+        let token = CancellationToken::new();
+
+        let handle = spawn_wave_scheduler_thread(short_flat_load(), 100, slot_tx, metric_tx, token);
+
+        let metric = tokio::time::timeout(std::time::Duration::from_millis(300), metric_rx.recv())
+            .await
+            .expect("scheduler should emit a metric")
+            .expect("metric channel should stay open");
+
+        assert!(matches!(
+            metric,
+            WaveSchedulerMetric::DispatchScheduled { count } if count > 0
+        ));
+        assert!(slot_rx.recv().await.is_some());
 
         handle.join().expect("scheduler thread should exit cleanly");
     }

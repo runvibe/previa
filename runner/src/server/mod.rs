@@ -24,6 +24,7 @@ pub mod runtime;
 pub mod sse;
 pub mod state;
 pub mod utils;
+pub mod wave_dispatcher;
 pub mod wave_emitter;
 pub mod wave_executor;
 pub mod wave_metrics_actor;

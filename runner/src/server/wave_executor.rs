@@ -1,4 +1,3 @@
-use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -8,9 +7,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, watch};
 use tracing::error;
 
-use previa_runner::{
-    Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult, prepare_http_step,
-};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
 
 use crate::server::load_wave::{
     calculate_dispatch_tick_ms, local_rps_limit, sample_intensity, timeline_end_ms,
@@ -19,137 +16,13 @@ use crate::server::metrics::WaveMetricsSnapshot;
 use crate::server::models::{LoadProfile, LoadTestMetrics};
 use crate::server::runtime::RuntimeSampler;
 use crate::server::sse::{SseMessage, send_sse_or_cancel};
-use crate::server::wave_emitter::{StartLagClass, classify_start_lag};
-use crate::server::wave_metrics_actor::{WaveMetricEvent, run_wave_metrics_actor};
-use crate::server::wave_scheduler::{
-    WaveDispatchSlot, WaveSchedulerMetric, slot_is_expired, spawn_wave_scheduler_thread,
+use crate::server::wave_dispatcher::{
+    PipelineCursor, WaveDispatcherChannels, WaveDispatcherConfig, WaveDispatcherShared,
+    WaveDispatcherSnapshot, spawn_wave_dispatcher_thread,
 };
-use crate::server::wave_sender::{ReadyWaveRequest, WaveObserverEvent, WaveSender};
-
-#[derive(Debug)]
-struct PipelineCursor {
-    step_index: usize,
-    attempt: usize,
-    context: HashMap<String, StepExecutionResult>,
-    pipeline_started_at: Instant,
-}
-
-impl PipelineCursor {
-    fn new(started_at: Instant) -> Self {
-        Self {
-            step_index: 0,
-            attempt: 1,
-            context: HashMap::new(),
-            pipeline_started_at: started_at,
-        }
-    }
-}
-
-type ObserverEvent = WaveObserverEvent<PipelineCursor>;
-const OBSERVER_EVENTS_PER_TICK_BUDGET: usize = 1024;
-
-fn next_cursor_for_slot(
-    ready: &mut VecDeque<PipelineCursor>,
-    create: impl FnOnce() -> PipelineCursor,
-) -> PipelineCursor {
-    ready.pop_front().unwrap_or_else(create)
-}
-
-struct DispatchSlotRequestArgs<'a> {
-    slot: WaveDispatchSlot,
-    ready: &'a mut VecDeque<PipelineCursor>,
-    pipeline: &'a Pipeline,
-    specs: &'a Arc<Vec<RuntimeSpec>>,
-    env_groups: &'a Arc<Vec<RuntimeEnvGroup>>,
-    selected_env_group_slug: &'a Option<String>,
-    request_tx: &'a mpsc::UnboundedSender<ReadyWaveRequest<PipelineCursor>>,
-    metric_tx: &'a mpsc::UnboundedSender<WaveMetricEvent>,
-    ready_to_send: &'a Arc<AtomicUsize>,
-    missed_starts: &'a Arc<AtomicUsize>,
-    started: Instant,
-    tick_ms: u64,
-    token: &'a tokio_util::sync::CancellationToken,
-}
-
-async fn dispatch_slot_requests(args: DispatchSlotRequestArgs<'_>) {
-    let actual_elapsed_ms = args.started.elapsed().as_millis() as u64;
-    if slot_is_expired(&args.slot, actual_elapsed_ms) {
-        args.missed_starts
-            .fetch_add(args.slot.planned_starts, Ordering::SeqCst);
-        let _ = args.metric_tx.send(WaveMetricEvent::DispatcherLaggedStarts(
-            args.slot.planned_starts,
-        ));
-        return;
-    }
-
-    for _ in 0..args.slot.planned_starts {
-        if args.token.is_cancelled() {
-            break;
-        }
-
-        let was_ready_empty = args.ready.is_empty();
-        let cursor = next_cursor_for_slot(args.ready, || PipelineCursor::new(Instant::now()));
-        if was_ready_empty && cursor.step_index == 0 && cursor.context.is_empty() {
-            let _ = args.metric_tx.send(WaveMetricEvent::PipelineStarted);
-        }
-
-        let Some(step) = args.pipeline.steps.get(cursor.step_index).cloned() else {
-            record_terminal_pipeline(args.metric_tx, cursor, false, None).await;
-            continue;
-        };
-        let max_attempts = max_attempts_for_step(&step);
-        let prepared = match prepare_http_step(
-            &step,
-            &cursor.context,
-            Some(args.specs.as_slice()),
-            Some(args.env_groups.as_slice()),
-            args.selected_env_group_slug.as_deref(),
-            cursor.attempt,
-            max_attempts,
-        ) {
-            Ok(prepared) => prepared,
-            Err(result) => {
-                handle_prepare_error(
-                    result,
-                    cursor,
-                    args.ready,
-                    args.pipeline,
-                    args.metric_tx,
-                    args.missed_starts,
-                )
-                .await;
-                continue;
-            }
-        };
-
-        let actual_elapsed_ms = args.started.elapsed().as_millis() as u64;
-        if classify_start_lag(args.slot.elapsed_ms, actual_elapsed_ms, args.tick_ms)
-            == StartLagClass::RuntimeLagged
-        {
-            args.missed_starts.fetch_add(1, Ordering::SeqCst);
-            let _ = args.metric_tx.send(WaveMetricEvent::RuntimeLaggedStart);
-        }
-
-        args.ready_to_send.fetch_add(1, Ordering::SeqCst);
-        if args
-            .request_tx
-            .send(ReadyWaveRequest {
-                step,
-                context: cursor.context.clone(),
-                cursor,
-                prepared,
-                specs: Arc::clone(args.specs),
-                env_groups: Arc::clone(args.env_groups),
-                selected_env_group_slug: args.selected_env_group_slug.clone(),
-            })
-            .is_err()
-        {
-            args.ready_to_send.fetch_sub(1, Ordering::SeqCst);
-            error!("wave sender stopped before accepting prepared request");
-            break;
-        }
-    }
-}
+use crate::server::wave_metrics_actor::{WaveMetricEvent, run_wave_metrics_actor};
+use crate::server::wave_scheduler::{WaveSchedulerMetric, spawn_wave_scheduler_thread};
+use crate::server::wave_sender::{ReadyWaveRequest, WaveSender};
 
 pub async fn run_wave_load(
     load: LoadProfile,
@@ -173,14 +46,15 @@ pub async fn run_wave_load(
     let missed_starts = Arc::new(AtomicUsize::new(0));
     let observer_token = token.child_token();
     let http_client = Arc::new(Client::new());
-    let mut ready = VecDeque::new();
-    let (slot_tx, mut slot_rx) = mpsc::channel::<WaveDispatchSlot>(1024);
+    let (slot_tx, slot_rx) = mpsc::channel(1024);
     let (scheduler_metric_tx, mut scheduler_metric_rx) =
         mpsc::unbounded_channel::<WaveSchedulerMetric>();
     let (metric_tx, metric_rx) = mpsc::unbounded_channel::<WaveMetricEvent>();
     let (snapshot_tx, mut snapshot_rx) = watch::channel(LoadTestMetrics::default());
+    let (dispatcher_snapshot_tx, dispatcher_snapshot_rx) =
+        watch::channel(WaveDispatcherSnapshot::default());
     let (request_tx, request_rx) = mpsc::unbounded_channel::<ReadyWaveRequest<PipelineCursor>>();
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<ObserverEvent>();
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
     let metrics_task = tokio::spawn(run_wave_metrics_actor(metric_rx, snapshot_tx));
     let missed_bridge = Arc::clone(&missed_starts);
     let metric_bridge_tx = metric_tx.clone();
@@ -191,8 +65,13 @@ pub async fn run_wave_load(
                     missed_bridge.fetch_add(dropped_starts, Ordering::SeqCst);
                     let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
                 }
-                WaveSchedulerMetric::DispatchScheduled { .. }
-                | WaveSchedulerMetric::SchedulerLag { .. } => {}
+                WaveSchedulerMetric::SchedulerLag { missed_starts, .. } => {
+                    missed_bridge.fetch_add(missed_starts, Ordering::SeqCst);
+                    let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
+                }
+                WaveSchedulerMetric::DispatchScheduled { .. } => {
+                    let _ = metric_bridge_tx.send(WaveMetricEvent::Scheduler(event));
+                }
             }
         }
     });
@@ -203,6 +82,29 @@ pub async fn run_wave_load(
         slot_tx,
         scheduler_metric_tx,
         scheduler_token.clone(),
+    );
+    let dispatcher_token = token.child_token();
+    let dispatcher_handle = spawn_wave_dispatcher_thread(
+        WaveDispatcherConfig {
+            pipeline: Arc::clone(&pipeline),
+            specs: Arc::clone(&specs),
+            env_groups: Arc::clone(&env_groups),
+            selected_env_group_slug: selected_env_group_slug.clone(),
+            started,
+            tick_ms,
+        },
+        WaveDispatcherChannels {
+            slot_rx,
+            request_tx: request_tx.clone(),
+            observer_rx: event_rx,
+            metric_tx: metric_tx.clone(),
+            snapshot_tx: dispatcher_snapshot_tx,
+        },
+        WaveDispatcherShared {
+            ready_to_send: Arc::clone(&ready_to_send),
+            missed_starts: Arc::clone(&missed_starts),
+        },
+        dispatcher_token.clone(),
     );
     let sender = WaveSender::new(
         Arc::clone(&http_client),
@@ -215,62 +117,17 @@ pub async fn run_wave_load(
     );
     let sender_task = tokio::spawn(sender.run());
 
-    while let Some(slot) = slot_rx.recv().await {
-        if token.is_cancelled() {
-            break;
-        }
-
-        let _ = metric_tx.send(WaveMetricEvent::Scheduler(
-            WaveSchedulerMetric::DispatchScheduled {
-                count: slot.planned_starts,
-            },
-        ));
-        if slot.scheduler_lag_ms > 0 || slot.missed_due_to_scheduler_lag > 0 {
-            missed_starts.fetch_add(slot.missed_due_to_scheduler_lag, Ordering::SeqCst);
-            let _ = metric_tx.send(WaveMetricEvent::Scheduler(
-                WaveSchedulerMetric::SchedulerLag {
-                    lag_ms: slot.scheduler_lag_ms,
-                    missed_starts: slot.missed_due_to_scheduler_lag,
-                },
-            ));
-        }
-
-        dispatch_slot_requests(DispatchSlotRequestArgs {
-            slot,
-            ready: &mut ready,
-            pipeline: &pipeline,
-            specs: &specs,
-            env_groups: &env_groups,
-            selected_env_group_slug: &selected_env_group_slug,
-            request_tx: &request_tx,
-            metric_tx: &metric_tx,
-            ready_to_send: &ready_to_send,
-            missed_starts: &missed_starts,
-            started,
-            tick_ms,
-            token: &token,
-        })
-        .await;
-
-        drain_observer_events_budgeted(
-            &mut event_rx,
-            &mut ready,
-            &pipeline,
-            &metric_tx,
-            OBSERVER_EVENTS_PER_TICK_BUDGET,
-        )
-        .await;
-
+    while !token.is_cancelled() && started.elapsed().as_millis() as u64 <= end_ms {
+        let dispatcher_snapshot = *dispatcher_snapshot_rx.borrow();
+        let scheduled_total = snapshot_rx.borrow().scheduled_starts.unwrap_or_default();
         send_metrics_snapshot(SnapshotArgs {
             load: &load,
             started,
             end_ms,
             tick_ms,
-            scheduled_total: slot.scheduled_total,
+            scheduled_total,
             missed_total: missed_starts.load(Ordering::SeqCst),
-            ready_requests: ready
-                .len()
-                .saturating_add(ready_to_send.load(Ordering::SeqCst)),
+            ready_requests: dispatcher_snapshot.ready_requests(),
             response_in_flight: response_in_flight.load(Ordering::SeqCst),
             metric_tx: &metric_tx,
             snapshot_rx: &mut snapshot_rx,
@@ -281,18 +138,20 @@ pub async fn run_wave_load(
             duration_ms: None,
         })
         .await;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(tick_ms.min(250))).await;
     }
 
     let grace_deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(load.grace_period_ms);
     while response_in_flight.load(Ordering::SeqCst) > 0 || ready_to_send.load(Ordering::SeqCst) > 0
     {
-        drain_all_observer_events(&mut event_rx, &mut ready, &pipeline, &metric_tx).await;
         if token.is_cancelled() || tokio::time::Instant::now() >= grace_deadline {
             break;
         }
 
         let scheduled_total = snapshot_rx.borrow().scheduled_starts.unwrap_or_default();
+        let ready_requests = dispatcher_snapshot_rx.borrow().ready_requests();
         send_metrics_snapshot(SnapshotArgs {
             load: &load,
             started,
@@ -300,9 +159,7 @@ pub async fn run_wave_load(
             tick_ms,
             scheduled_total,
             missed_total: missed_starts.load(Ordering::SeqCst),
-            ready_requests: ready
-                .len()
-                .saturating_add(ready_to_send.load(Ordering::SeqCst)),
+            ready_requests,
             response_in_flight: response_in_flight.load(Ordering::SeqCst),
             metric_tx: &metric_tx,
             snapshot_rx: &mut snapshot_rx,
@@ -321,6 +178,7 @@ pub async fn run_wave_load(
     if let Err(err) = scheduler_thread.join() {
         error!("wave scheduler thread panicked: {:?}", err);
     }
+    dispatcher_handle.stop();
     drop(request_tx);
     if response_in_flight.load(Ordering::SeqCst) > 0 {
         observer_token.cancel();
@@ -337,9 +195,9 @@ pub async fn run_wave_load(
             error!("wave sender task failed: {err}");
         }
     }
-    drain_all_observer_events(&mut event_rx, &mut ready, &pipeline, &metric_tx).await;
 
     let scheduled_total = snapshot_rx.borrow().scheduled_starts.unwrap_or_default();
+    let ready_requests = dispatcher_snapshot_rx.borrow().ready_requests();
     if send_metrics_snapshot(SnapshotArgs {
         load: &load,
         started,
@@ -347,9 +205,7 @@ pub async fn run_wave_load(
         tick_ms,
         scheduled_total,
         missed_total: missed_starts.load(Ordering::SeqCst),
-        ready_requests: ready
-            .len()
-            .saturating_add(ready_to_send.load(Ordering::SeqCst)),
+        ready_requests,
         response_in_flight: response_in_flight.load(Ordering::SeqCst),
         metric_tx: &metric_tx,
         snapshot_rx: &mut snapshot_rx,
@@ -373,132 +229,6 @@ pub async fn run_wave_load(
     drop(metric_tx);
     let _ = metric_bridge.await;
     let _ = metrics_task.await;
-}
-
-async fn drain_observer_events_budgeted(
-    event_rx: &mut mpsc::UnboundedReceiver<ObserverEvent>,
-    ready: &mut VecDeque<PipelineCursor>,
-    pipeline: &Pipeline,
-    metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
-    budget: usize,
-) -> usize {
-    let mut drained = 0usize;
-    while drained < budget {
-        let Ok(event) = event_rx.try_recv() else {
-            break;
-        };
-        handle_step_result(event.result, event.cursor, ready, pipeline, metric_tx).await;
-        drained += 1;
-    }
-    drained
-}
-
-async fn drain_all_observer_events(
-    event_rx: &mut mpsc::UnboundedReceiver<ObserverEvent>,
-    ready: &mut VecDeque<PipelineCursor>,
-    pipeline: &Pipeline,
-    metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
-) {
-    while drain_observer_events_budgeted(
-        event_rx,
-        ready,
-        pipeline,
-        metric_tx,
-        OBSERVER_EVENTS_PER_TICK_BUDGET,
-    )
-    .await
-        > 0
-    {}
-}
-
-async fn handle_step_result(
-    result: StepExecutionResult,
-    mut cursor: PipelineCursor,
-    ready: &mut VecDeque<PipelineCursor>,
-    pipeline: &Pipeline,
-    metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
-) {
-    let Some(step) = pipeline.steps.get(cursor.step_index) else {
-        record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
-        return;
-    };
-    let max_attempts = max_attempts_for_step(step);
-
-    if result.status == "error" && cursor.attempt < max_attempts {
-        cursor.attempt += 1;
-        ready.push_back(cursor);
-        return;
-    }
-
-    if result.status == "error" {
-        record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
-        return;
-    }
-
-    cursor.context.insert(result.step_id.clone(), result);
-    cursor.step_index += 1;
-    cursor.attempt = 1;
-
-    if cursor.step_index >= pipeline.steps.len() {
-        record_terminal_pipeline(metric_tx, cursor, true, None).await;
-    } else {
-        ready.push_back(cursor);
-    }
-}
-
-async fn handle_prepare_error(
-    result: StepExecutionResult,
-    mut cursor: PipelineCursor,
-    ready: &mut VecDeque<PipelineCursor>,
-    pipeline: &Pipeline,
-    metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
-    missed_starts: &Arc<AtomicUsize>,
-) {
-    let max_attempts = pipeline
-        .steps
-        .get(cursor.step_index)
-        .map(max_attempts_for_step)
-        .unwrap_or(1);
-
-    if cursor.attempt < max_attempts {
-        cursor.attempt += 1;
-        ready.push_back(cursor);
-        return;
-    }
-
-    if cursor.step_index > 0 {
-        missed_starts.fetch_add(1, Ordering::SeqCst);
-        let _ = metric_tx.send(WaveMetricEvent::DependencyLimitedStarts(1));
-    }
-    record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
-}
-
-async fn record_terminal_pipeline(
-    metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
-    cursor: PipelineCursor,
-    success: bool,
-    result: Option<&StepExecutionResult>,
-) {
-    let duration_ms = cursor.pipeline_started_at.elapsed().as_millis() as f64;
-    let _ = metric_tx.send(WaveMetricEvent::PipelineFinished {
-        duration_ms,
-        success,
-    });
-    if !success {
-        if let Some(result) = result {
-            let http_status = result.response.as_ref().map(|response| response.status);
-            let error = result.error.as_deref().unwrap_or("pipeline failed");
-            let _ = metric_tx.send(WaveMetricEvent::ErrorSample {
-                step_id: result.step_id.clone(),
-                http_status,
-                error: error.to_owned(),
-            });
-        }
-    }
-}
-
-fn max_attempts_for_step(step: &PipelineStep) -> usize {
-    step.retry.unwrap_or(0).saturating_add(1)
 }
 
 struct SnapshotArgs<'a> {
@@ -587,144 +317,5 @@ fn wave_snapshot(
         ready_requests,
         active_pipelines: response_in_flight.saturating_add(ready_requests),
         outstanding_requests: response_in_flight,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::{HashMap, VecDeque};
-    use std::time::Instant;
-
-    #[test]
-    fn next_cursor_prefers_ready_continuations_before_starting_new_pipeline() {
-        let mut ready = VecDeque::new();
-        ready.push_back(PipelineCursor {
-            step_index: 2,
-            attempt: 1,
-            context: HashMap::new(),
-            pipeline_started_at: Instant::now(),
-        });
-        let mut started_new = false;
-
-        let cursor = next_cursor_for_slot(&mut ready, || {
-            started_new = true;
-            PipelineCursor {
-                step_index: 0,
-                attempt: 1,
-                context: HashMap::new(),
-                pipeline_started_at: Instant::now(),
-            }
-        });
-
-        assert_eq!(cursor.step_index, 2);
-        assert!(!started_new);
-    }
-
-    #[test]
-    fn next_cursor_starts_new_pipeline_when_no_continuation_is_ready() {
-        let mut ready = VecDeque::new();
-        let cursor = next_cursor_for_slot(&mut ready, || PipelineCursor::new(Instant::now()));
-
-        assert_eq!(cursor.step_index, 0);
-        assert_eq!(cursor.attempt, 1);
-        assert!(cursor.context.is_empty());
-    }
-
-    #[tokio::test]
-    async fn observer_drain_respects_per_tick_budget() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ObserverEvent>();
-        let mut ready = VecDeque::new();
-        let pipeline = Pipeline {
-            id: Some("p".to_owned()),
-            name: "pipeline".to_owned(),
-            description: None,
-            steps: Vec::new(),
-        };
-        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel::<WaveMetricEvent>();
-
-        for _ in 0..3 {
-            tx.send(WaveObserverEvent {
-                cursor: PipelineCursor::new(Instant::now()),
-                result: StepExecutionResult {
-                    step_id: "missing".to_owned(),
-                    status: "error".to_owned(),
-                    request: None,
-                    response: None,
-                    error: Some("synthetic".to_owned()),
-                    duration: Some(0),
-                    attempts: None,
-                    attempt: Some(1),
-                    max_attempts: Some(1),
-                    assert_results: None,
-                },
-            })
-            .unwrap();
-        }
-
-        let drained =
-            drain_observer_events_budgeted(&mut rx, &mut ready, &pipeline, &metric_tx, 2).await;
-
-        assert_eq!(drained, 2);
-        assert!(matches!(
-            metric_rx.try_recv(),
-            Ok(WaveMetricEvent::PipelineFinished { success: false, .. })
-        ));
-        assert!(
-            rx.try_recv().is_ok(),
-            "one event should remain for a later tick"
-        );
-    }
-
-    #[tokio::test]
-    async fn expired_dispatch_slot_records_lag_without_enqueuing_requests() {
-        let pipeline = Pipeline {
-            id: Some("p".to_owned()),
-            name: "pipeline".to_owned(),
-            description: None,
-            steps: Vec::new(),
-        };
-        let specs = Arc::new(Vec::new());
-        let env_groups = Arc::new(Vec::new());
-        let (request_tx, mut request_rx) = mpsc::unbounded_channel();
-        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
-        let ready_to_send = Arc::new(AtomicUsize::new(0));
-        let missed_starts = Arc::new(AtomicUsize::new(0));
-        let token = tokio_util::sync::CancellationToken::new();
-        let mut ready = VecDeque::new();
-        let started = Instant::now() - std::time::Duration::from_millis(1_000);
-
-        dispatch_slot_requests(DispatchSlotRequestArgs {
-            slot: WaveDispatchSlot {
-                elapsed_ms: 100,
-                expires_at_elapsed_ms: 200,
-                planned_starts: 7,
-                target_rps_limit: 70.0,
-                scheduled_total: 7,
-                scheduler_lag_ms: 0,
-                missed_due_to_scheduler_lag: 0,
-            },
-            ready: &mut ready,
-            pipeline: &pipeline,
-            specs: &specs,
-            env_groups: &env_groups,
-            selected_env_group_slug: &None,
-            request_tx: &request_tx,
-            metric_tx: &metric_tx,
-            ready_to_send: &ready_to_send,
-            missed_starts: &missed_starts,
-            started,
-            tick_ms: 100,
-            token: &token,
-        })
-        .await;
-
-        assert_eq!(missed_starts.load(Ordering::SeqCst), 7);
-        assert_eq!(ready_to_send.load(Ordering::SeqCst), 0);
-        assert!(request_rx.try_recv().is_err());
-        assert!(matches!(
-            metric_rx.try_recv(),
-            Ok(WaveMetricEvent::DispatcherLaggedStarts(7))
-        ));
     }
 }
