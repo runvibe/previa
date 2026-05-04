@@ -292,14 +292,15 @@ pub async fn flush_load_batches(
             consolidate_load_metrics(&latest_snapshot, latency_summary)
         };
         if let Some(metrics) = consolidated.as_ref() {
-            let sample_at = rps_history_timestamp(metrics);
-            if sample_at > last_rps_history_sample_at {
-                rps_history.lock().await.push(build_rps_history_sample(
-                    sample_at,
-                    metrics,
-                    &latest_snapshot,
-                ));
-                last_rps_history_sample_at = sample_at;
+            if let Some(sample_at) = rps_history_timestamp(metrics) {
+                if sample_at > last_rps_history_sample_at {
+                    rps_history.lock().await.push(build_rps_history_sample(
+                        sample_at,
+                        metrics,
+                        &latest_snapshot,
+                    ));
+                    last_rps_history_sample_at = sample_at;
+                }
             }
         }
         let errors = load_errors.lock().await.clone();
@@ -379,7 +380,7 @@ fn build_rps_history_sample(
     latest_by_node: &HashMap<String, RunnerLoadLine>,
 ) -> Value {
     let sample_elapsed_ms = timestamp.saturating_sub(metrics.start_time);
-    let sample_bucket_ms = rps_history_elapsed_bucket_ms(sample_elapsed_ms);
+    let sample_bucket_ms = sample_elapsed_ms;
     let mut dispatch_bucket_total = 0usize;
     let mut has_dispatch_bucket = false;
     let mut runners = latest_by_node
@@ -510,14 +511,20 @@ fn build_rps_history_sample(
     Value::Object(sample)
 }
 
-fn rps_history_timestamp(metrics: &ConsolidatedLoadMetrics) -> u64 {
-    metrics
-        .start_time
-        .saturating_add(rps_history_elapsed_bucket_ms(metrics.elapsed_ms))
+fn rps_history_timestamp(metrics: &ConsolidatedLoadMetrics) -> Option<u64> {
+    (metrics.elapsed_ms >= RPS_HISTORY_BUCKET_MS).then(|| {
+        metrics
+            .start_time
+            .saturating_add(rps_history_elapsed_bucket_ms(metrics.elapsed_ms))
+    })
 }
 
 fn rps_history_elapsed_bucket_ms(elapsed_ms: u64) -> u64 {
-    (elapsed_ms / RPS_HISTORY_BUCKET_MS).saturating_mul(RPS_HISTORY_BUCKET_MS)
+    elapsed_ms
+        .saturating_sub(RPS_HISTORY_BUCKET_MS)
+        .checked_div(RPS_HISTORY_BUCKET_MS)
+        .unwrap_or(0)
+        .saturating_mul(RPS_HISTORY_BUCKET_MS)
 }
 
 fn insert_optional<T: Serialize>(map: &mut Map<String, Value>, key: &str, value: Option<T>) {
@@ -1360,19 +1367,19 @@ mod tests {
             },
         )]);
 
-        assert_eq!(rps_history_elapsed_bucket_ms(2_450), 2_000);
-        assert_eq!(rps_history_timestamp(&metrics), 3_000);
+        assert_eq!(rps_history_elapsed_bucket_ms(2_450), 1_000);
+        assert_eq!(rps_history_timestamp(&metrics), Some(2_000));
         assert_eq!(
-            build_rps_history_sample(rps_history_timestamp(&metrics), &metrics, &latest),
+            build_rps_history_sample(rps_history_timestamp(&metrics).unwrap(), &metrics, &latest),
             json!({
-                "timestamp": 3_000,
-                "elapsedMs": 2_000,
+                "timestamp": 2_000,
+                "elapsedMs": 1_000,
                 "rps": 21.5,
                 "totalStarted": 45,
                 "totalSent": 42,
                 "httpStarted": 60,
                 "httpCompleted": 58,
-                "dispatchBucket": 40,
+                "dispatchBucket": 20,
                 "targetIntensity": 75.0,
                 "targetRpsLimit": 150.0,
                 "runners": [{
@@ -1381,7 +1388,7 @@ mod tests {
                     "httpCompleted": 58,
                     "totalStarted": 45,
                     "totalSent": 42,
-                    "dispatchBucket": 40,
+                    "dispatchBucket": 20,
                     "rps": 21.5
                 }]
             })

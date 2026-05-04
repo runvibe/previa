@@ -338,6 +338,38 @@ describe("LoadTestResultsPanel", () => {
     });
   });
 
+  it("does not double count repeated direct dispatch bucket snapshots", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 1_000,
+          elapsedMs: 0,
+          rps: 0,
+          dispatchBucket: 12,
+          runners: [
+            { runnerId: "runner-a", dispatchBucket: 5 },
+            { runnerId: "runner-b", dispatchBucket: 7 },
+          ],
+        },
+        {
+          timestamp: 1_500,
+          elapsedMs: 0,
+          rps: 0,
+          dispatchBucket: 12,
+          runners: [
+            { runnerId: "runner-a", dispatchBucket: 5 },
+            { runnerId: "runner-b", dispatchBucket: 7 },
+          ],
+        },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null).data).toEqual([
+      { time: 0, rpsTotal: 12, runner0: 5, runner1: 7, targetRpsLimit: undefined },
+    ]);
+  });
+
   it("prefers dispatch started counters over HTTP started counters", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,

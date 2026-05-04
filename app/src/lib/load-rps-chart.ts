@@ -135,19 +135,25 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
   }
 
   const rows = new Map<number, RpsChartRow>();
+  const applyDirectDispatchBucket = (row: RpsChartRow, point: RpsPoint) => {
+    if (point.runners && point.runners.length > 0) {
+      for (const runner of point.runners) {
+        const key = runnerKeyById.get(runner.runnerId);
+        if (!key || typeof runner.dispatchBucket !== "number") continue;
+        row[key] = Math.max(row[key] ?? 0, runner.dispatchBucket);
+      }
+      row.rpsTotal = runnerSeries.reduce((sum, runner) => sum + (row[runner.key] ?? 0), 0);
+      return;
+    }
+
+    if (typeof point.dispatchBucket === "number") {
+      row.rpsTotal = Math.max(row.rpsTotal, point.dispatchBucket);
+    }
+  };
   const firstPoint = history[0];
   const firstRow = ensureRow(rows, bucketSecondForPoint(firstPoint, metrics), firstPoint);
   if (hasDirectDispatchBucket(firstPoint)) {
-    if (firstPoint.runners && firstPoint.runners.length > 0) {
-      for (const runner of firstPoint.runners) {
-        const key = runnerKeyById.get(runner.runnerId);
-        if (!key || typeof runner.dispatchBucket !== "number") continue;
-        firstRow[key] = (firstRow[key] ?? 0) + runner.dispatchBucket;
-        firstRow.rpsTotal += runner.dispatchBucket;
-      }
-    } else if (typeof firstPoint.dispatchBucket === "number") {
-      firstRow.rpsTotal += firstPoint.dispatchBucket;
-    }
+    applyDirectDispatchBucket(firstRow, firstPoint);
   }
 
   for (let index = 1; index < history.length; index += 1) {
@@ -160,21 +166,12 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
     const startBucket = firstBucketToUpdate(previousBucket, currentBucket);
 
     if (directBucket && point.runners && point.runners.length > 0) {
-      const row = ensureRow(rows, currentBucket, point);
-      for (const runner of point.runners) {
-        const key = runnerKeyById.get(runner.runnerId);
-        if (!key || typeof runner.dispatchBucket !== "number") continue;
-        row[key] = (row[key] ?? 0) + runner.dispatchBucket;
-        row.rpsTotal += runner.dispatchBucket;
-      }
-      if (typeof point.dispatchBucket === "number" && row.rpsTotal === 0) {
-        row.rpsTotal += point.dispatchBucket;
-      }
+      applyDirectDispatchBucket(ensureRow(rows, currentBucket, point), point);
       continue;
     }
 
     if (directBucket && typeof point.dispatchBucket === "number") {
-      ensureRow(rows, currentBucket, point).rpsTotal += point.dispatchBucket;
+      applyDirectDispatchBucket(ensureRow(rows, currentBucket, point), point);
       continue;
     }
 

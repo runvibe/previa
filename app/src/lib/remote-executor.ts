@@ -337,6 +337,10 @@ function dispatchBucketFor(metrics: RemoteMetricsEvent, elapsedMs: number) {
   return metrics.dispatchBuckets?.find((bucket) => bucket.elapsedMs === bucketMs)?.count;
 }
 
+function closedDispatchBucketElapsedMs(elapsedMs: number) {
+  return elapsedMs >= 1000 ? Math.floor((elapsedMs - 1000) / 1000) * 1000 : undefined;
+}
+
 function appendRunnerResourceHistory(history: RunnerResourcePoint[], lines: unknown[] | undefined) {
   if (!lines) return;
   const points = extractRunnerResourcePoints(lines);
@@ -1029,9 +1033,13 @@ function buildRpsHistoryPoint(
 ): RpsPoint {
   const startTime = consolidated?.startTime ?? event.startTime;
   const elapsedMs = consolidated?.elapsedMs ?? event.elapsedMs;
+  const dispatchElapsedMs = closedDispatchBucketElapsedMs(elapsedMs);
+  const sampleElapsedMs = dispatchElapsedMs ?? elapsedMs;
   const runners = nodes
     ? Array.from(nodes.entries()).map(([runnerId, metrics]) => {
-      const dispatchBucket = dispatchBucketFor(metrics, elapsedMs);
+      const dispatchBucket = dispatchElapsedMs !== undefined
+        ? dispatchBucketFor(metrics, dispatchElapsedMs)
+        : undefined;
       return {
         runnerId,
         dispatchBucket,
@@ -1066,10 +1074,10 @@ function buildRpsHistoryPoint(
     : undefined;
 
   return {
-    timestamp: Number.isFinite(startTime) && Number.isFinite(elapsedMs)
-      ? startTime + elapsedMs
+    timestamp: Number.isFinite(startTime) && Number.isFinite(sampleElapsedMs)
+      ? startTime + sampleElapsedMs
       : fallbackTimestamp,
-    elapsedMs,
+    elapsedMs: sampleElapsedMs,
     rps: consolidated?.rps ?? event.rps,
     dispatchBucket: dispatchBucket !== undefined ? dispatchBucket : undefined,
     totalStarted: consolidated?.totalStarted ?? event.totalStarted,
