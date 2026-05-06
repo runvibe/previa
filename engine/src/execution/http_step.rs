@@ -134,11 +134,20 @@ where
         should_cancel,
         || async {},
         || async {},
+        || async {},
     )
     .await
 }
 
-pub async fn send_prepared_http_step_with_hooks<FCancel, FSend, FSendFuture, FBody, FBodyFuture>(
+pub async fn send_prepared_http_step_with_hooks<
+    FCancel,
+    FStart,
+    FStartFuture,
+    FSend,
+    FSendFuture,
+    FBody,
+    FBodyFuture,
+>(
     client: &Client,
     prepared: PreparedHttpStep,
     step: &PipelineStep,
@@ -147,11 +156,14 @@ pub async fn send_prepared_http_step_with_hooks<FCancel, FSend, FSendFuture, FBo
     env_groups: Option<&[RuntimeEnvGroup]>,
     selected_env_group_slug: Option<&str>,
     mut should_cancel: FCancel,
+    mut on_send_started: FStart,
     mut on_send_returned: FSend,
     mut on_body_completed: FBody,
 ) -> Option<StepExecutionResult>
 where
     FCancel: FnMut() -> bool,
+    FStart: FnMut() -> FStartFuture,
+    FStartFuture: Future<Output = ()>,
     FSend: FnMut() -> FSendFuture,
     FSendFuture: Future<Output = ()>,
     FBody: FnMut() -> FBodyFuture,
@@ -172,6 +184,10 @@ where
     }
 
     let request = prepared.request.clone();
+    if should_cancel() {
+        return None;
+    }
+    on_send_started().await;
     let Some(send_result) = await_with_cancel(request_builder.send(), &mut should_cancel).await
     else {
         return None;
@@ -404,5 +420,71 @@ mod tests {
         assert_eq!(result.step_id, "get-users");
         assert_eq!(result.status, "success");
         assert_eq!(result.response.as_ref().map(|r| r.status), Some(200));
+    }
+
+    #[tokio::test]
+    async fn hooks_report_send_started_before_send_returned() {
+        let server = httpmock::MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/users");
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json!({"ok": true}));
+            })
+            .await;
+
+        let client = reqwest::Client::new();
+        let step = PipelineStep {
+            id: "get-users".to_owned(),
+            name: "GET users".to_owned(),
+            description: None,
+            method: "GET".to_owned(),
+            url: format!("{}/users", server.base_url()),
+            headers: HashMap::new(),
+            body: None,
+            operation_id: None,
+            delay: None,
+            retry: None,
+            asserts: vec![],
+        };
+        let context = HashMap::new();
+        let prepared = prepare_http_step(&step, &context, None, None, None, 1, 1)
+            .expect("step should prepare");
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+
+        let started_events = std::sync::Arc::clone(&events);
+        let returned_events = std::sync::Arc::clone(&events);
+        let result = send_prepared_http_step_with_hooks(
+            &client,
+            prepared,
+            &step,
+            &context,
+            None,
+            None,
+            None,
+            || false,
+            move || {
+                let events = std::sync::Arc::clone(&started_events);
+                async move {
+                    events.lock().expect("events lock").push("started");
+                }
+            },
+            move || {
+                let events = std::sync::Arc::clone(&returned_events);
+                async move {
+                    events.lock().expect("events lock").push("returned");
+                }
+            },
+            || async {},
+        )
+        .await
+        .expect("send should not be cancelled");
+
+        assert_eq!(result.status, "success");
+        assert_eq!(
+            events.lock().expect("events lock").as_slice(),
+            ["started", "returned"]
+        );
     }
 }

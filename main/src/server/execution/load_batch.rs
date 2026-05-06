@@ -1094,7 +1094,7 @@ fn lifecycle_curve_adherence(
 
     let absolute_error: usize = lifecycle_by_elapsed
         .values()
-        .map(|bucket| bucket.planned.abs_diff(bucket.http_started))
+        .map(|bucket| bucket.planned.abs_diff(bucket.send_started))
         .sum();
     let raw = (1.0 - (absolute_error as f64 / planned_total as f64)).max(0.0) * 100.0;
     Some((raw * 100.0).round() / 100.0)
@@ -1250,13 +1250,13 @@ mod tests {
     use crate::server::execution::load_batch::{
         LoadTelemetryState, add_load_context_fields, apply_runner_telemetry_line,
         build_rps_history_sample, consolidate_load_metrics, drain_load_chunk,
-        merge_runner_error_samples_into, rebuild_final_rps_history, rps_history_elapsed_bucket_ms,
-        rps_history_timestamp, snapshot_telemetry_map, summarize_load_latency,
-        upsert_rps_history_samples,
+        lifecycle_curve_adherence, merge_runner_error_samples_into, rebuild_final_rps_history,
+        rps_history_elapsed_bucket_ms, rps_history_timestamp, snapshot_telemetry_map,
+        summarize_load_latency, upsert_rps_history_samples,
     };
     use crate::server::models::{
-        ConsolidatedLoadMetrics, LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary,
-        NodePlan, RunnerLoadLine,
+        ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, LoadEventContext,
+        LoadLatencyAccumulator, LoadLatencySummary, NodePlan, RunnerLoadLine,
     };
 
     #[test]
@@ -1519,7 +1519,7 @@ mod tests {
                         "outstandingRequests": 30,
                         "curveAdherence": 95.0,
                         "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 10, "httpStarted": 7, "senderLagged": 2}
+                            {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 7, "senderLagged": 2}
                         ]
                     }),
                 },
@@ -1560,7 +1560,7 @@ mod tests {
                         "outstandingRequests": 40,
                         "curveAdherence": 85.0,
                         "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 20, "httpStarted": 14, "senderLagged": 5}
+                            {"elapsedMs": 1_000, "planned": 20, "sendStarted": 20, "httpStarted": 14, "senderLagged": 5}
                         ]
                     }),
                 },
@@ -1592,7 +1592,31 @@ mod tests {
         assert_eq!(consolidated.active_pipelines, Some(110));
         assert_eq!(consolidated.outstanding_requests, Some(70));
         assert_eq!(consolidated.lifecycle_buckets[0].sender_lagged, 7);
-        assert_eq!(consolidated.curve_adherence, Some(70.0));
+        assert_eq!(consolidated.curve_adherence, Some(96.67));
+    }
+
+    #[test]
+    fn curve_adherence_uses_send_started_not_http_started() {
+        let lifecycle = BTreeMap::from([(
+            1_000,
+            ConsolidatedLoadLifecycleBucket {
+                elapsed_ms: 1_000,
+                planned: 100,
+                slot_enqueued: 0,
+                request_prepared: 0,
+                request_enqueued: 0,
+                send_task_spawned: 0,
+                send_started: 100,
+                http_started: 60,
+                http_send_returned: 0,
+                response_body_completed: 0,
+                dispatcher_lagged: 0,
+                runtime_lagged: 0,
+                sender_lagged: 0,
+            },
+        )]);
+
+        assert_eq!(lifecycle_curve_adherence(&lifecycle), Some(100.0));
     }
 
     #[test]
@@ -2063,7 +2087,7 @@ mod tests {
                         "rps": 10.0,
                         "startTime": 1_000,
                         "elapsedMs": 1_100,
-                        "lifecycleBuckets": [{ "elapsedMs": 0, "planned": 10, "httpStarted": 9 }]
+                        "lifecycleBuckets": [{ "elapsedMs": 0, "planned": 10, "sendStarted": 10, "httpStarted": 9 }]
                     }),
                 },
             );
@@ -2081,7 +2105,7 @@ mod tests {
                         "rps": 20.0,
                         "startTime": 1_000,
                         "elapsedMs": 2_100,
-                        "lifecycleBuckets": [{ "elapsedMs": 1_000, "planned": 20, "httpStarted": 18 }]
+                        "lifecycleBuckets": [{ "elapsedMs": 1_000, "planned": 20, "sendStarted": 19, "httpStarted": 18 }]
                     }),
                 },
             );
@@ -2094,6 +2118,6 @@ mod tests {
         assert_eq!(consolidated.lifecycle_buckets.len(), 2);
         assert_eq!(consolidated.lifecycle_buckets[0].http_started, 9);
         assert_eq!(consolidated.lifecycle_buckets[1].http_started, 18);
-        assert_eq!(consolidated.curve_adherence, Some(90.0));
+        assert_eq!(consolidated.curve_adherence, Some(96.67));
     }
 }

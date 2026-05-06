@@ -239,7 +239,7 @@
   "loadTestResults.dependencyLimitedStarts": "Bloqueios por dependência",
   "loadTestResults.dispatcherLaggedStarts": "Atrasos do dispatcher",
   "loadTestResults.runtimeLaggedStarts": "Atrasos do emissor",
-  "loadTestResults.senderLaggedStarts": "Descartes do sender",
+  "loadTestResults.senderLaggedStarts": "Starts atrasados no sender",
   "loadTestResults.senderQueueDepth": "Fila do sender",
   "loadTestResults.schedulerLagMs": "Atraso do agendador",
   "loadTestResults.schedulerLaggedStarts": "Disparos perdidos por atraso",

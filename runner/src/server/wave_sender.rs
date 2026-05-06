@@ -170,23 +170,18 @@ struct SenderDeadlineCheck<'a> {
     expires_at_elapsed_ms: u64,
     started: Instant,
     metric_tx: &'a mpsc::UnboundedSender<WaveMetricEvent>,
-    ready_to_send: &'a Arc<AtomicUsize>,
     token: &'a tokio_util::sync::CancellationToken,
 }
 
-fn drop_if_expired(args: SenderDeadlineCheck<'_>) -> bool {
+fn record_if_sender_late(args: SenderDeadlineCheck<'_>) -> bool {
     let elapsed_ms = args.started.elapsed().as_millis() as u64;
     if args.token.is_cancelled() || elapsed_ms <= args.expires_at_elapsed_ms {
         return false;
     }
 
-    args.ready_to_send.fetch_sub(1, Ordering::SeqCst);
     let _ = args.metric_tx.send(WaveMetricEvent::SenderLaggedStarts {
         elapsed_ms: args.scheduled_elapsed_ms,
         count: 1,
-    });
-    let _ = args.metric_tx.send(WaveMetricEvent::SenderQueueDepth {
-        depth: args.ready_to_send.load(Ordering::SeqCst),
     });
     true
 }
@@ -201,6 +196,7 @@ async fn observe_ready_request<C>(
 where
     C: Send + 'static,
 {
+    let metrics_for_start = metric_tx.clone();
     let metrics_for_send = metric_tx.clone();
     let metrics_for_body = metric_tx.clone();
     let result = send_prepared_http_step_with_hooks(
@@ -212,6 +208,14 @@ where
         Some(request.env_groups.as_slice()),
         request.selected_env_group_slug.as_deref(),
         || token.is_cancelled(),
+        move || {
+            let metric_tx = metrics_for_start.clone();
+            async move {
+                let _ = metric_tx.send(WaveMetricEvent::HttpStarted {
+                    elapsed_ms: started.elapsed().as_millis() as u64,
+                });
+            }
+        },
         move || {
             let metric_tx = metrics_for_send.clone();
             async move {
@@ -341,16 +345,13 @@ async fn run_sender_worker<C>(
                     continue;
                 };
                 let request = command.request;
-                if drop_if_expired(SenderDeadlineCheck {
+                let _sender_was_late = record_if_sender_late(SenderDeadlineCheck {
                     scheduled_elapsed_ms: request.scheduled_elapsed_ms,
                     expires_at_elapsed_ms: request.expires_at_elapsed_ms,
                     started,
                     metric_tx: &metric_tx,
-                    ready_to_send: &ready_to_send,
                     token: &token,
-                }) {
-                    continue;
-                }
+                });
 
                 let dispatch_elapsed_ms = started.elapsed().as_millis() as u64;
                 let _sender_queue_wait_ms =
@@ -367,9 +368,6 @@ async fn run_sender_worker<C>(
                     elapsed_ms: dispatch_elapsed_ms,
                 });
                 let _ = metric_tx.send(WaveMetricEvent::DispatchStarted {
-                    elapsed_ms: dispatch_elapsed_ms,
-                });
-                let _ = metric_tx.send(WaveMetricEvent::HttpStarted {
                     elapsed_ms: dispatch_elapsed_ms,
                 });
 
@@ -592,23 +590,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sender_drops_expired_request_instead_of_late_catchup() {
+    async fn sender_records_late_request_without_dropping_it() {
         let started = Instant::now() - Duration::from_millis(500);
         let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
         let ready_to_send = Arc::new(AtomicUsize::new(1));
         let token = tokio_util::sync::CancellationToken::new();
 
-        let dropped = drop_if_expired(SenderDeadlineCheck {
+        let was_late = record_if_sender_late(SenderDeadlineCheck {
             scheduled_elapsed_ms: 100,
             expires_at_elapsed_ms: 200,
             started,
             metric_tx: &metric_tx,
-            ready_to_send: &ready_to_send,
             token: &token,
         });
 
-        assert!(dropped);
-        assert_eq!(ready_to_send.load(Ordering::SeqCst), 0);
+        assert!(was_late);
+        assert_eq!(ready_to_send.load(Ordering::SeqCst), 1);
         assert!(matches!(
             metric_rx.try_recv(),
             Ok(WaveMetricEvent::SenderLaggedStarts {
@@ -616,6 +613,46 @@ mod tests {
                 count: 1
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn sender_forwards_expired_request_after_recording_late_start() {
+        let (request_tx, request_rx) = mpsc::unbounded_channel();
+        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
+        let (observer_tx, mut observer_rx) = mpsc::unbounded_channel();
+        let ready_to_send = Arc::new(AtomicUsize::new(0));
+        let response_in_flight = Arc::new(AtomicUsize::new(0));
+        let token = tokio_util::sync::CancellationToken::new();
+        let started = Instant::now() - Duration::from_millis(500);
+
+        ready_to_send.fetch_add(1, Ordering::SeqCst);
+        request_tx
+            .send(test_ready_wave_request(7, started, 100, 200))
+            .expect("request should enqueue");
+        drop(request_tx);
+
+        run_fire_only_sender_for_test(
+            started,
+            metric_tx,
+            Arc::clone(&response_in_flight),
+            Arc::clone(&ready_to_send),
+            request_rx,
+            observer_tx,
+            token,
+        )
+        .await;
+
+        assert!(observer_rx.try_recv().is_ok());
+        assert_eq!(ready_to_send.load(Ordering::SeqCst), 0);
+        assert_eq!(response_in_flight.load(Ordering::SeqCst), 1);
+
+        let mut late_starts = 0usize;
+        while let Ok(event) = metric_rx.try_recv() {
+            if let WaveMetricEvent::SenderLaggedStarts { count, .. } = event {
+                late_starts += count;
+            }
+        }
+        assert_eq!(late_starts, 1);
     }
 
     #[tokio::test]
@@ -718,14 +755,19 @@ mod tests {
         }
 
         let mut http_started = 0usize;
+        let mut send_started = 0usize;
         while let Ok(event) = metric_rx.try_recv() {
             if matches!(event, WaveMetricEvent::HttpStarted { .. }) {
                 http_started += 1;
             }
+            if matches!(event, WaveMetricEvent::SendStarted { .. }) {
+                send_started += 1;
+            }
         }
 
         assert_eq!(observer_commands, 128);
-        assert_eq!(http_started, 128);
+        assert_eq!(send_started, 128);
+        assert_eq!(http_started, 0);
         assert_eq!(ready_to_send.load(Ordering::SeqCst), 0);
         assert_eq!(response_in_flight.load(Ordering::SeqCst), 128);
     }
@@ -908,7 +950,7 @@ mod tests {
 
         assert_eq!(observer_commands, 2);
         assert_eq!(dispatch_started, 2);
-        assert_eq!(http_started, 2);
+        assert_eq!(http_started, 0);
         assert_eq!(send_started, 2);
     }
 }

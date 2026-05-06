@@ -239,7 +239,7 @@
   "loadTestResults.dependencyLimitedStarts": "Dependency blocked",
   "loadTestResults.dispatcherLaggedStarts": "Dispatcher lag",
   "loadTestResults.runtimeLaggedStarts": "Sender lag",
-  "loadTestResults.senderLaggedStarts": "Sender drops",
+  "loadTestResults.senderLaggedStarts": "Late sender starts",
   "loadTestResults.senderQueueDepth": "Sender queue",
   "loadTestResults.schedulerLagMs": "Scheduler lag",
   "loadTestResults.schedulerLaggedStarts": "Starts missed by lag",
