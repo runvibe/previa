@@ -2007,6 +2007,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "previa-load-target"
+version = "1.0.0-alpha.20"
+dependencies = [
+ "axum",
+ "dotenvy",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "previa-main"
 version = "1.0.0-alpha.20"
 dependencies = [
