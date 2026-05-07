@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ['engine', 'main', 'previa', 'runner']
+members = ['engine', 'main', 'previa', 'runner', 'load-target']
 
 [workspace.package]
 version = "1.0.0-alpha.20"
