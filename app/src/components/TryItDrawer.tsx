@@ -195,7 +195,7 @@ export function TryItDrawer({ route, servers, onClose, allRoutes, onSelectRoute 
 
       {isMobile && hasRoutes && (
         <Sheet open={routesSheetOpen} onOpenChange={setRoutesSheetOpen}>
-          <SheetContent side="left" className="w-[260px] p-0">
+          <SheetContent side="left" className="w-screen max-w-none p-0 sm:max-w-none">
             <SheetHeader className="px-4 py-3 border-border/30">
               <SheetTitle className="text-sm">{t("tryIt.routes")}</SheetTitle>
             </SheetHeader>

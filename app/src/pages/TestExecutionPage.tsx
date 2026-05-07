@@ -1414,7 +1414,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                 <Menu className="h-4 w-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
+            <SheetContent side="left" className="w-screen max-w-none p-0 flex flex-col sm:max-w-none">
               <SheetHeader className="px-4 py-3 border-border/50">
                 <SheetTitle className="text-sm">{t("testExecution.navigation")}</SheetTitle>
               </SheetHeader>
