@@ -517,16 +517,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
             <LineChart data={latencyChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis yAxisId="count" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              {lifecycleChart.series.some((series) => series.axis === "ms") && (
-                <YAxis
-                  yAxisId="ms"
-                  orientation="right"
-                  tick={{ fontSize: 9 }}
-                  stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={(v) => `${v}ms`}
-                />
-              )}
+              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
               <RechartsTooltip
                 contentStyle={{
                   background: "hsl(var(--popover))",
@@ -652,7 +643,16 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
             <LineChart data={lifecycleChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis yAxisId="count" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+              {lifecycleChart.series.some((series) => series.axis === "ms") && (
+                <YAxis
+                  yAxisId="ms"
+                  orientation="right"
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  tickFormatter={(v) => `${v}ms`}
+                />
+              )}
               <RechartsTooltip
                 contentStyle={{
                   background: "hsl(var(--popover))",

@@ -333,6 +333,32 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("loadTestResults.lifecycleHttpStarted")).toBeInTheDocument();
   });
 
+  it("renders lifecycle lag series with separate count and millisecond axes", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      lifecycleBuckets: [
+        {
+          elapsedMs: 1_000,
+          planned: 100,
+          sendStarted: 98,
+          httpStarted: 97,
+          httpSendReturned: 30,
+          responseBodyCompleted: 5,
+          senderStartLagMsMax: 12,
+          httpSendDurationMsMax: 34,
+          responseObservationDurationMsMax: 56,
+        },
+      ],
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="completed" totalRequests={0} />);
+
+    expect(screen.getByTestId("wave-lifecycle-chart")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.lifecycleSenderStartLag")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.lifecycleHttpSendDuration")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.lifecycleResponseObservation")).toBeInTheDocument();
+  });
+
   it("shows the configured wave profile on wave load results", () => {
     const config: WaveLoadConfig = {
       points: [
