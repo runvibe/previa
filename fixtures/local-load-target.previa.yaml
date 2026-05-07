@@ -1,0 +1,17 @@
+id: local-load-target
+name: Local Load Target - Open Loop Reference
+description: Pipeline de referencia para medir wave load test contra uma API local deterministica.
+steps:
+  - id: local_target_ok
+    name: Local target OK
+    description: Endpoint rapido usado para validar a curva de envio sem depender de servico externo.
+    method: GET
+    url: "{{envs.local.api}}/load/ok"
+    headers: {}
+    asserts:
+      - field: status
+        operator: equals
+        expected: "200"
+      - field: body.status
+        operator: equals
+        expected: ok
