@@ -132,6 +132,28 @@ previa local export --project project_id --output ./project.sqlite3
 previa local import ./previa-projects.sqlite3
 ```
 
+### Local wave load target
+
+For validating wave load-test behavior without an external API, start the deterministic local target stack:
+
+```bash
+scripts/start-local-load-target-stack.sh
+```
+
+The script starts:
+
+- Previa main on `http://127.0.0.1:5610`
+- three runners on `5611`, `5612`, and `5613`
+- the deterministic load target on `http://127.0.0.1:5620`
+
+It also creates a project named `Local Load Target Reference` and prints the load-test URL. During or after a run, inspect the target-side counters:
+
+```bash
+curl -fsS http://127.0.0.1:5620/metrics | jq
+```
+
+Use this target to compare the configured wave, runner HTTP RPS, and target-side received RPS without depending on DNS, gateway behavior, or a remote application.
+
 `previa open` launches:
 
 ```text
