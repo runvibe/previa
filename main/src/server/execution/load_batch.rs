@@ -421,6 +421,21 @@ fn build_rps_history_sample(
                 metrics.sender_lagged_starts,
             );
             insert_optional(&mut runner, "senderQueueDepth", metrics.sender_queue_depth);
+            insert_optional(
+                &mut runner,
+                "senderStartLagP95Ms",
+                metrics.sender_start_lag_p95_ms,
+            );
+            insert_optional(
+                &mut runner,
+                "httpSendDurationP95Ms",
+                metrics.http_send_duration_p95_ms,
+            );
+            insert_optional(
+                &mut runner,
+                "responseObservationDurationP95Ms",
+                metrics.response_observation_duration_p95_ms,
+            );
             insert_optional(&mut runner, "schedulerLagMs", metrics.scheduler_lag_ms);
             insert_optional(
                 &mut runner,
@@ -519,6 +534,21 @@ fn build_rps_history_sample(
         metrics.sender_lagged_starts,
     );
     insert_optional(&mut sample, "senderQueueDepth", metrics.sender_queue_depth);
+    insert_optional(
+        &mut sample,
+        "senderStartLagP95Ms",
+        metrics.sender_start_lag_p95_ms,
+    );
+    insert_optional(
+        &mut sample,
+        "httpSendDurationP95Ms",
+        metrics.http_send_duration_p95_ms,
+    );
+    insert_optional(
+        &mut sample,
+        "responseObservationDurationP95Ms",
+        metrics.response_observation_duration_p95_ms,
+    );
     insert_optional(&mut sample, "schedulerLagMs", metrics.scheduler_lag_ms);
     insert_optional(
         &mut sample,
@@ -626,6 +656,24 @@ fn rps_history_elapsed_bucket_ms(elapsed_ms: u64) -> u64 {
 fn insert_optional<T: Serialize>(map: &mut Map<String, Value>, key: &str, value: Option<T>) {
     if let Some(value) = value {
         map.insert(key.to_owned(), json!(value));
+    }
+}
+
+fn max_optional_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
+}
+
+fn max_optional_f64(left: Option<f64>, right: Option<f64>) -> Option<f64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.max(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
     }
 }
 
@@ -809,6 +857,16 @@ pub fn consolidate_load_metrics(
     let mut sender_lagged_starts_nodes = 0usize;
     let mut sender_queue_depth = 0usize;
     let mut sender_queue_depth_nodes = 0usize;
+    let mut sender_start_lag_avg_ms: Option<f64> = None;
+    let mut sender_start_lag_p95_ms: Option<u64> = None;
+    let mut sender_start_lag_p99_ms: Option<u64> = None;
+    let mut sender_start_lag_max_ms: Option<u64> = None;
+    let mut http_send_duration_avg_ms: Option<f64> = None;
+    let mut http_send_duration_p95_ms: Option<u64> = None;
+    let mut http_send_duration_p99_ms: Option<u64> = None;
+    let mut response_observation_duration_avg_ms: Option<f64> = None;
+    let mut response_observation_duration_p95_ms: Option<u64> = None;
+    let mut response_observation_duration_p99_ms: Option<u64> = None;
     let mut scheduler_lag_ms = 0u64;
     let mut scheduler_lag_ms_nodes = 0usize;
     let mut scheduler_lagged_starts = 0usize;
@@ -867,6 +925,9 @@ pub fn consolidate_load_metrics(
                     dispatcher_lagged: 0,
                     runtime_lagged: 0,
                     sender_lagged: 0,
+                    sender_start_lag_ms_max: 0,
+                    http_send_duration_ms_max: 0,
+                    response_observation_duration_ms_max: 0,
                 });
             entry.planned = entry.planned.saturating_add(bucket.planned);
             entry.slot_enqueued = entry.slot_enqueued.saturating_add(bucket.slot_enqueued);
@@ -892,6 +953,15 @@ pub fn consolidate_load_metrics(
                 .saturating_add(bucket.dispatcher_lagged);
             entry.runtime_lagged = entry.runtime_lagged.saturating_add(bucket.runtime_lagged);
             entry.sender_lagged = entry.sender_lagged.saturating_add(bucket.sender_lagged);
+            entry.sender_start_lag_ms_max = entry
+                .sender_start_lag_ms_max
+                .max(bucket.sender_start_lag_ms_max);
+            entry.http_send_duration_ms_max = entry
+                .http_send_duration_ms_max
+                .max(bucket.http_send_duration_ms_max);
+            entry.response_observation_duration_ms_max = entry
+                .response_observation_duration_ms_max
+                .max(bucket.response_observation_duration_ms_max);
         }
 
         if let Some(value) = metrics.total_started {
@@ -945,6 +1015,46 @@ pub fn consolidate_load_metrics(
             sender_queue_depth = sender_queue_depth.saturating_add(value);
             sender_queue_depth_nodes += 1;
         }
+        sender_start_lag_avg_ms = max_optional_f64(
+            sender_start_lag_avg_ms,
+            metrics.sender_start_lag_avg_ms,
+        );
+        sender_start_lag_p95_ms = max_optional_u64(
+            sender_start_lag_p95_ms,
+            metrics.sender_start_lag_p95_ms,
+        );
+        sender_start_lag_p99_ms = max_optional_u64(
+            sender_start_lag_p99_ms,
+            metrics.sender_start_lag_p99_ms,
+        );
+        sender_start_lag_max_ms = max_optional_u64(
+            sender_start_lag_max_ms,
+            metrics.sender_start_lag_max_ms,
+        );
+        http_send_duration_avg_ms = max_optional_f64(
+            http_send_duration_avg_ms,
+            metrics.http_send_duration_avg_ms,
+        );
+        http_send_duration_p95_ms = max_optional_u64(
+            http_send_duration_p95_ms,
+            metrics.http_send_duration_p95_ms,
+        );
+        http_send_duration_p99_ms = max_optional_u64(
+            http_send_duration_p99_ms,
+            metrics.http_send_duration_p99_ms,
+        );
+        response_observation_duration_avg_ms = max_optional_f64(
+            response_observation_duration_avg_ms,
+            metrics.response_observation_duration_avg_ms,
+        );
+        response_observation_duration_p95_ms = max_optional_u64(
+            response_observation_duration_p95_ms,
+            metrics.response_observation_duration_p95_ms,
+        );
+        response_observation_duration_p99_ms = max_optional_u64(
+            response_observation_duration_p99_ms,
+            metrics.response_observation_duration_p99_ms,
+        );
         if let Some(value) = metrics.scheduler_lag_ms {
             scheduler_lag_ms = scheduler_lag_ms.saturating_add(value);
             scheduler_lag_ms_nodes += 1;
@@ -1039,6 +1149,16 @@ pub fn consolidate_load_metrics(
         runtime_lagged_starts: (runtime_lagged_starts_nodes > 0).then_some(runtime_lagged_starts),
         sender_lagged_starts: (sender_lagged_starts_nodes > 0).then_some(sender_lagged_starts),
         sender_queue_depth: (sender_queue_depth_nodes > 0).then_some(sender_queue_depth),
+        sender_start_lag_avg_ms,
+        sender_start_lag_p95_ms,
+        sender_start_lag_p99_ms,
+        sender_start_lag_max_ms,
+        http_send_duration_avg_ms,
+        http_send_duration_p95_ms,
+        http_send_duration_p99_ms,
+        response_observation_duration_avg_ms,
+        response_observation_duration_p95_ms,
+        response_observation_duration_p99_ms,
         scheduler_lag_ms: (scheduler_lag_ms_nodes > 0).then_some(scheduler_lag_ms),
         scheduler_lagged_starts: (scheduler_lagged_starts_nodes > 0)
             .then_some(scheduler_lagged_starts),
@@ -1258,6 +1378,35 @@ mod tests {
         ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, LoadEventContext,
         LoadLatencyAccumulator, LoadLatencySummary, NodePlan, RunnerLoadLine,
     };
+
+    fn with_wave_lag_metrics(
+        mut payload: Value,
+        sender_start_lag: (f64, u64, u64, u64),
+        http_send_duration: (f64, u64, u64),
+        response_observation_duration: (f64, u64, u64),
+    ) -> Value {
+        let object = payload.as_object_mut().expect("payload should be an object");
+        object.insert("senderStartLagAvgMs".to_owned(), json!(sender_start_lag.0));
+        object.insert("senderStartLagP95Ms".to_owned(), json!(sender_start_lag.1));
+        object.insert("senderStartLagP99Ms".to_owned(), json!(sender_start_lag.2));
+        object.insert("senderStartLagMaxMs".to_owned(), json!(sender_start_lag.3));
+        object.insert("httpSendDurationAvgMs".to_owned(), json!(http_send_duration.0));
+        object.insert("httpSendDurationP95Ms".to_owned(), json!(http_send_duration.1));
+        object.insert("httpSendDurationP99Ms".to_owned(), json!(http_send_duration.2));
+        object.insert(
+            "responseObservationDurationAvgMs".to_owned(),
+            json!(response_observation_duration.0),
+        );
+        object.insert(
+            "responseObservationDurationP95Ms".to_owned(),
+            json!(response_observation_duration.1),
+        );
+        object.insert(
+            "responseObservationDurationP99Ms".to_owned(),
+            json!(response_observation_duration.2),
+        );
+        payload
+    }
 
     #[test]
     fn load_context_fields_include_registered_and_active_nodes() {
@@ -1489,7 +1638,7 @@ mod tests {
                     node: "http://runner-a:3000".to_owned(),
                     runner_event: "metrics".to_owned(),
                     received_at: 1,
-                    payload: json!({
+                    payload: with_wave_lag_metrics(json!({
                         "totalSent": 10,
                         "totalSuccess": 8,
                         "totalError": 2,
@@ -1519,9 +1668,9 @@ mod tests {
                         "outstandingRequests": 30,
                         "curveAdherence": 95.0,
                         "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 7, "senderLagged": 2}
+                            {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 7, "senderLagged": 2, "senderStartLagMsMax": 11, "httpSendDurationMsMax": 22, "responseObservationDurationMsMax": 33}
                         ]
-                    }),
+                    }), (10.0, 20, 30, 40), (50.0, 60, 70), (80.0, 90, 100)),
                 },
             ),
             (
@@ -1530,7 +1679,7 @@ mod tests {
                     node: "http://runner-b:3000".to_owned(),
                     runner_event: "metrics".to_owned(),
                     received_at: 1,
-                    payload: json!({
+                    payload: with_wave_lag_metrics(json!({
                         "totalSent": 20,
                         "totalSuccess": 19,
                         "totalError": 1,
@@ -1560,9 +1709,9 @@ mod tests {
                         "outstandingRequests": 40,
                         "curveAdherence": 85.0,
                         "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 20, "sendStarted": 20, "httpStarted": 14, "senderLagged": 5}
+                            {"elapsedMs": 1_000, "planned": 20, "sendStarted": 20, "httpStarted": 14, "senderLagged": 5, "senderStartLagMsMax": 44, "httpSendDurationMsMax": 55, "responseObservationDurationMsMax": 66}
                         ]
-                    }),
+                    }), (15.0, 25, 35, 45), (55.0, 65, 75), (85.0, 95, 105)),
                 },
             ),
         ]);
@@ -1581,6 +1730,16 @@ mod tests {
         assert_eq!(consolidated.runtime_lagged_starts, Some(6));
         assert_eq!(consolidated.sender_lagged_starts, Some(12));
         assert_eq!(consolidated.sender_queue_depth, Some(24));
+        assert_eq!(consolidated.sender_start_lag_avg_ms, Some(15.0));
+        assert_eq!(consolidated.sender_start_lag_p95_ms, Some(25));
+        assert_eq!(consolidated.sender_start_lag_p99_ms, Some(35));
+        assert_eq!(consolidated.sender_start_lag_max_ms, Some(45));
+        assert_eq!(consolidated.http_send_duration_avg_ms, Some(55.0));
+        assert_eq!(consolidated.http_send_duration_p95_ms, Some(65));
+        assert_eq!(consolidated.http_send_duration_p99_ms, Some(75));
+        assert_eq!(consolidated.response_observation_duration_avg_ms, Some(85.0));
+        assert_eq!(consolidated.response_observation_duration_p95_ms, Some(95));
+        assert_eq!(consolidated.response_observation_duration_p99_ms, Some(105));
         assert_eq!(consolidated.scheduler_lag_ms, Some(80));
         assert_eq!(consolidated.scheduler_lagged_starts, Some(10));
         assert_eq!(consolidated.slot_enqueued, Some(200));
@@ -1592,6 +1751,12 @@ mod tests {
         assert_eq!(consolidated.active_pipelines, Some(110));
         assert_eq!(consolidated.outstanding_requests, Some(70));
         assert_eq!(consolidated.lifecycle_buckets[0].sender_lagged, 7);
+        assert_eq!(consolidated.lifecycle_buckets[0].sender_start_lag_ms_max, 44);
+        assert_eq!(consolidated.lifecycle_buckets[0].http_send_duration_ms_max, 55);
+        assert_eq!(
+            consolidated.lifecycle_buckets[0].response_observation_duration_ms_max,
+            66
+        );
         assert_eq!(consolidated.curve_adherence, Some(96.67));
     }
 
@@ -1613,6 +1778,9 @@ mod tests {
                 dispatcher_lagged: 0,
                 runtime_lagged: 0,
                 sender_lagged: 0,
+                sender_start_lag_ms_max: 0,
+                http_send_duration_ms_max: 0,
+                response_observation_duration_ms_max: 0,
             },
         )]);
 
@@ -1733,6 +1901,16 @@ mod tests {
             runtime_lagged_starts: None,
             sender_lagged_starts: None,
             sender_queue_depth: None,
+            sender_start_lag_avg_ms: None,
+            sender_start_lag_p95_ms: None,
+            sender_start_lag_p99_ms: None,
+            sender_start_lag_max_ms: None,
+            http_send_duration_avg_ms: None,
+            http_send_duration_p95_ms: None,
+            http_send_duration_p99_ms: None,
+            response_observation_duration_avg_ms: None,
+            response_observation_duration_p95_ms: None,
+            response_observation_duration_p99_ms: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
             slot_enqueued: None,
@@ -1830,6 +2008,16 @@ mod tests {
             runtime_lagged_starts: None,
             sender_lagged_starts: None,
             sender_queue_depth: None,
+            sender_start_lag_avg_ms: None,
+            sender_start_lag_p95_ms: None,
+            sender_start_lag_p99_ms: None,
+            sender_start_lag_max_ms: None,
+            http_send_duration_avg_ms: None,
+            http_send_duration_p95_ms: None,
+            http_send_duration_p99_ms: None,
+            response_observation_duration_avg_ms: None,
+            response_observation_duration_p95_ms: None,
+            response_observation_duration_p99_ms: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
             slot_enqueued: None,
@@ -1924,6 +2112,16 @@ mod tests {
             runtime_lagged_starts: None,
             sender_lagged_starts: None,
             sender_queue_depth: None,
+            sender_start_lag_avg_ms: None,
+            sender_start_lag_p95_ms: None,
+            sender_start_lag_p99_ms: None,
+            sender_start_lag_max_ms: None,
+            http_send_duration_avg_ms: None,
+            http_send_duration_p95_ms: None,
+            http_send_duration_p99_ms: None,
+            response_observation_duration_avg_ms: None,
+            response_observation_duration_p95_ms: None,
+            response_observation_duration_p99_ms: None,
             scheduler_lag_ms: None,
             scheduler_lagged_starts: None,
             slot_enqueued: None,

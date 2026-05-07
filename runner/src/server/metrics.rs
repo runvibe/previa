@@ -54,6 +54,9 @@ pub struct MetricsAccumulator {
     send_started: usize,
     sender_lagged_starts: usize,
     sender_queue_depth: usize,
+    sender_start_lag_histogram: BTreeMap<u64, usize>,
+    http_send_duration_histogram: BTreeMap<u64, usize>,
+    response_observation_duration_histogram: BTreeMap<u64, usize>,
     start_time: u64,
     network_tx_bytes: u64,
     network_rx_bytes: u64,
@@ -90,6 +93,9 @@ impl MetricsAccumulator {
             send_started: 0,
             sender_lagged_starts: 0,
             sender_queue_depth: 0,
+            sender_start_lag_histogram: BTreeMap::new(),
+            http_send_duration_histogram: BTreeMap::new(),
+            response_observation_duration_histogram: BTreeMap::new(),
             start_time: now_ms(),
             network_tx_bytes: 0,
             network_rx_bytes: 0,
@@ -218,6 +224,31 @@ impl MetricsAccumulator {
         self.sender_queue_depth = depth;
     }
 
+    pub fn record_sender_start_lag_at(&mut self, elapsed_ms: u64, lag_ms: u64) {
+        *self.sender_start_lag_histogram.entry(lag_ms).or_insert(0) += 1;
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.sender_start_lag_ms_max = bucket.sender_start_lag_ms_max.max(lag_ms);
+    }
+
+    pub fn record_http_send_duration_at(&mut self, elapsed_ms: u64, duration_ms: u64) {
+        *self
+            .http_send_duration_histogram
+            .entry(duration_ms)
+            .or_insert(0) += 1;
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.http_send_duration_ms_max = bucket.http_send_duration_ms_max.max(duration_ms);
+    }
+
+    pub fn record_response_observation_duration_at(&mut self, elapsed_ms: u64, duration_ms: u64) {
+        *self
+            .response_observation_duration_histogram
+            .entry(duration_ms)
+            .or_insert(0) += 1;
+        let bucket = self.lifecycle_bucket_mut(elapsed_ms);
+        bucket.response_observation_duration_ms_max =
+            bucket.response_observation_duration_ms_max.max(duration_ms);
+    }
+
     pub fn record_http_send_returned(&mut self) {
         self.http_send_returned = self.http_send_returned.saturating_add(1);
     }
@@ -340,6 +371,12 @@ impl MetricsAccumulator {
         let scheduled_starts = wave
             .as_ref()
             .map(|value| self.dispatch_submitted.max(value.scheduled_starts));
+        let sender_start_lag =
+            summarize_duration_histogram(&self.sender_start_lag_histogram);
+        let http_send_duration =
+            summarize_duration_histogram(&self.http_send_duration_histogram);
+        let response_observation_duration =
+            summarize_duration_histogram(&self.response_observation_duration_histogram);
         let curve_adherence = wave.as_ref().map(|value| {
             let scheduled_starts = self.dispatch_submitted.max(value.scheduled_starts);
             if scheduled_starts == 0 {
@@ -386,6 +423,22 @@ impl MetricsAccumulator {
             sender_lagged_starts: (self.sender_lagged_starts > 0)
                 .then_some(self.sender_lagged_starts),
             sender_queue_depth: (self.sender_queue_depth > 0).then_some(self.sender_queue_depth),
+            sender_start_lag_avg_ms: sender_start_lag.as_ref().map(|summary| summary.avg_ms),
+            sender_start_lag_p95_ms: sender_start_lag.as_ref().map(|summary| summary.p95_ms),
+            sender_start_lag_p99_ms: sender_start_lag.as_ref().map(|summary| summary.p99_ms),
+            sender_start_lag_max_ms: sender_start_lag.as_ref().map(|summary| summary.max_ms),
+            http_send_duration_avg_ms: http_send_duration.as_ref().map(|summary| summary.avg_ms),
+            http_send_duration_p95_ms: http_send_duration.as_ref().map(|summary| summary.p95_ms),
+            http_send_duration_p99_ms: http_send_duration.as_ref().map(|summary| summary.p99_ms),
+            response_observation_duration_avg_ms: response_observation_duration
+                .as_ref()
+                .map(|summary| summary.avg_ms),
+            response_observation_duration_p95_ms: response_observation_duration
+                .as_ref()
+                .map(|summary| summary.p95_ms),
+            response_observation_duration_p99_ms: response_observation_duration
+                .as_ref()
+                .map(|summary| summary.p99_ms),
             rps,
             start_time: self.start_time,
             elapsed_ms,
@@ -436,6 +489,55 @@ impl MetricsAccumulator {
 
 fn lifecycle_bucket_ms(elapsed_ms: u64) -> u64 {
     (elapsed_ms / 1000).saturating_mul(1000)
+}
+
+struct DurationHistogramSummary {
+    avg_ms: f64,
+    p95_ms: u64,
+    p99_ms: u64,
+    max_ms: u64,
+}
+
+fn summarize_duration_histogram(
+    histogram: &BTreeMap<u64, usize>,
+) -> Option<DurationHistogramSummary> {
+    let sample_count = histogram.values().copied().sum::<usize>();
+    if sample_count == 0 {
+        return None;
+    }
+
+    let total_ms = histogram.iter().fold(0_u128, |total, (duration_ms, count)| {
+        total.saturating_add((*duration_ms as u128).saturating_mul(*count as u128))
+    });
+    let max_ms = histogram.keys().next_back().copied().unwrap_or(0);
+
+    Some(DurationHistogramSummary {
+        avg_ms: round2(total_ms as f64 / sample_count as f64),
+        p95_ms: histogram_percentile(histogram, sample_count, 0.95),
+        p99_ms: histogram_percentile(histogram, sample_count, 0.99),
+        max_ms,
+    })
+}
+
+fn histogram_percentile(
+    histogram: &BTreeMap<u64, usize>,
+    sample_count: usize,
+    percentile: f64,
+) -> u64 {
+    if sample_count == 0 {
+        return 0;
+    }
+
+    let rank = ((sample_count as f64) * percentile).ceil().max(1.0) as usize;
+    let mut seen = 0usize;
+    for (duration_ms, count) in histogram {
+        seen = seen.saturating_add(*count);
+        if seen >= rank {
+            return *duration_ms;
+        }
+    }
+
+    histogram.keys().next_back().copied().unwrap_or(0)
 }
 
 fn bucket_in_live_window(
@@ -667,6 +769,38 @@ mod tests {
         assert_eq!(snapshot.lifecycle_buckets.len(), 1);
         assert_eq!(snapshot.lifecycle_buckets[0].elapsed_ms, 10_000);
         assert_eq!(snapshot.lifecycle_buckets[0].sender_lagged, 2);
+    }
+
+    #[test]
+    fn snapshot_includes_wave_lag_summaries_and_bucket_maxima() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_sender_start_lag_at(1_050, 10);
+        metrics.record_sender_start_lag_at(1_080, 30);
+        metrics.record_http_send_duration_at(1_090, 40);
+        metrics.record_http_send_duration_at(1_100, 80);
+        metrics.record_response_observation_duration_at(1_110, 100);
+        metrics.record_response_observation_duration_at(1_120, 120);
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.sender_start_lag_avg_ms, Some(20.0));
+        assert_eq!(snapshot.sender_start_lag_p95_ms, Some(30));
+        assert_eq!(snapshot.sender_start_lag_p99_ms, Some(30));
+        assert_eq!(snapshot.sender_start_lag_max_ms, Some(30));
+        assert_eq!(snapshot.http_send_duration_avg_ms, Some(60.0));
+        assert_eq!(snapshot.http_send_duration_p95_ms, Some(80));
+        assert_eq!(snapshot.http_send_duration_p99_ms, Some(80));
+        assert_eq!(snapshot.response_observation_duration_avg_ms, Some(110.0));
+        assert_eq!(snapshot.response_observation_duration_p95_ms, Some(120));
+        assert_eq!(snapshot.response_observation_duration_p99_ms, Some(120));
+        assert_eq!(snapshot.lifecycle_buckets.len(), 1);
+        assert_eq!(snapshot.lifecycle_buckets[0].sender_start_lag_ms_max, 30);
+        assert_eq!(snapshot.lifecycle_buckets[0].http_send_duration_ms_max, 80);
+        assert_eq!(
+            snapshot.lifecycle_buckets[0].response_observation_duration_ms_max,
+            120
+        );
     }
 
     #[test]

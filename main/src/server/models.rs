@@ -702,6 +702,26 @@ pub struct ConsolidatedLoadMetrics {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_queue_depth: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_p99_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_max_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_p99_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_p99_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler_lag_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler_lagged_starts: Option<usize>,
@@ -764,6 +784,9 @@ pub struct ConsolidatedLoadLifecycleBucket {
     pub dispatcher_lagged: usize,
     pub runtime_lagged: usize,
     pub sender_lagged: usize,
+    pub sender_start_lag_ms_max: u64,
+    pub http_send_duration_ms_max: u64,
+    pub response_observation_duration_ms_max: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -816,6 +839,9 @@ pub struct RunnerLoadLifecycleBucket {
     pub dispatcher_lagged: usize,
     pub runtime_lagged: usize,
     pub sender_lagged: usize,
+    pub sender_start_lag_ms_max: u64,
+    pub http_send_duration_ms_max: u64,
+    pub response_observation_duration_ms_max: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -868,6 +894,16 @@ pub struct RunnerLoadMetricsPoint {
     pub runtime_lagged_starts: Option<usize>,
     pub sender_lagged_starts: Option<usize>,
     pub sender_queue_depth: Option<usize>,
+    pub sender_start_lag_avg_ms: Option<f64>,
+    pub sender_start_lag_p95_ms: Option<u64>,
+    pub sender_start_lag_p99_ms: Option<u64>,
+    pub sender_start_lag_max_ms: Option<u64>,
+    pub http_send_duration_avg_ms: Option<f64>,
+    pub http_send_duration_p95_ms: Option<u64>,
+    pub http_send_duration_p99_ms: Option<u64>,
+    pub response_observation_duration_avg_ms: Option<f64>,
+    pub response_observation_duration_p95_ms: Option<u64>,
+    pub response_observation_duration_p99_ms: Option<u64>,
     pub scheduler_lag_ms: Option<u64>,
     pub scheduler_lagged_starts: Option<usize>,
     pub slot_enqueued: Option<usize>,

@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::cmp::{Ordering as CmpOrdering, Reverse};
+use std::collections::{BinaryHeap, HashMap};
 #[cfg(test)]
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use futures_util::stream::{FuturesUnordered, StreamExt};
@@ -27,6 +28,7 @@ pub struct ReadyWaveRequest<C> {
     pub env_groups: Arc<Vec<RuntimeEnvGroup>>,
     pub selected_env_group_slug: Option<String>,
     pub scheduled_elapsed_ms: u64,
+    pub target_start_elapsed_ms: u64,
     pub expires_at_elapsed_ms: u64,
     pub sender_enqueued_elapsed_ms: u64,
 }
@@ -44,6 +46,7 @@ enum ObserverCommand<C> {
     Started {
         request: ReadyWaveRequest<C>,
         started: StartedHttpStep,
+        http_send_returned_elapsed_ms: u64,
     },
     StartError {
         cursor: C,
@@ -182,6 +185,83 @@ where
     }
 }
 
+struct DeadlineReadyRequest<C> {
+    target_start_elapsed_ms: u64,
+    sequence: u64,
+    request: ReadyWaveRequest<C>,
+}
+
+impl<C> DeadlineReadyRequest<C> {
+    fn new(request: ReadyWaveRequest<C>, sequence: u64) -> Self {
+        Self {
+            target_start_elapsed_ms: request.target_start_elapsed_ms,
+            sequence,
+            request,
+        }
+    }
+}
+
+impl<C> PartialEq for DeadlineReadyRequest<C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.target_start_elapsed_ms == other.target_start_elapsed_ms
+            && self.sequence == other.sequence
+    }
+}
+
+impl<C> Eq for DeadlineReadyRequest<C> {}
+
+impl<C> PartialOrd for DeadlineReadyRequest<C> {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<C> Ord for DeadlineReadyRequest<C> {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.target_start_elapsed_ms
+            .cmp(&other.target_start_elapsed_ms)
+            .then_with(|| self.sequence.cmp(&other.sequence))
+    }
+}
+
+struct DeadlineReadyQueue<C> {
+    heap: BinaryHeap<Reverse<DeadlineReadyRequest<C>>>,
+}
+
+impl<C> Default for DeadlineReadyQueue<C> {
+    fn default() -> Self {
+        Self {
+            heap: BinaryHeap::new(),
+        }
+    }
+}
+
+impl<C> DeadlineReadyQueue<C> {
+    fn is_empty(&self) -> bool {
+        self.heap.is_empty()
+    }
+
+    fn push(&mut self, request: DeadlineReadyRequest<C>) {
+        self.heap.push(Reverse(request));
+    }
+
+    fn next_deadline_ms(&self) -> Option<u64> {
+        self.heap
+            .peek()
+            .map(|Reverse(request)| request.target_start_elapsed_ms)
+    }
+
+    fn pop_due(&mut self, elapsed_ms: u64) -> Option<DeadlineReadyRequest<C>> {
+        let Some(Reverse(request)) = self.heap.peek() else {
+            return None;
+        };
+        if request.target_start_elapsed_ms > elapsed_ms {
+            return None;
+        }
+        self.heap.pop().map(|Reverse(request)| request)
+    }
+}
+
 struct SenderDeadlineCheck<'a> {
     scheduled_elapsed_ms: u64,
     expires_at_elapsed_ms: u64,
@@ -226,6 +306,11 @@ async fn start_ready_request<C>(
 {
     let metrics_for_start = metric_tx.clone();
     let metrics_for_send = metric_tx.clone();
+    let http_started_elapsed_ms = Arc::new(AtomicU64::new(0));
+    let http_send_returned_elapsed_ms = Arc::new(AtomicU64::new(0));
+    let http_started_elapsed_for_start = Arc::clone(&http_started_elapsed_ms);
+    let http_started_elapsed_for_send = Arc::clone(&http_started_elapsed_ms);
+    let http_send_returned_elapsed_for_send = Arc::clone(&http_send_returned_elapsed_ms);
     let prepared = request.prepared.clone();
     let step = request.step.clone();
     let started_result = start_prepared_http_step_with_hooks(
@@ -235,18 +320,32 @@ async fn start_ready_request<C>(
         || token.is_cancelled(),
         move || {
             let metric_tx = metrics_for_start.clone();
+            let http_started_elapsed_ms = Arc::clone(&http_started_elapsed_for_start);
             async move {
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+                http_started_elapsed_ms.store(elapsed_ms, Ordering::SeqCst);
                 let _ = metric_tx.send(WaveMetricEvent::HttpStarted {
-                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    elapsed_ms,
                 });
             }
         },
         move || {
             let metric_tx = metrics_for_send.clone();
+            let http_started_elapsed_ms = Arc::clone(&http_started_elapsed_for_send);
+            let http_send_returned_elapsed_ms = Arc::clone(&http_send_returned_elapsed_for_send);
             async move {
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+                http_send_returned_elapsed_ms.store(elapsed_ms, Ordering::SeqCst);
                 let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned {
-                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    elapsed_ms,
                 });
+                let started_elapsed_ms = http_started_elapsed_ms.load(Ordering::SeqCst);
+                if started_elapsed_ms > 0 {
+                    let _ = metric_tx.send(WaveMetricEvent::HttpSendDuration {
+                        elapsed_ms,
+                        duration_ms: elapsed_ms.saturating_sub(started_elapsed_ms),
+                    });
+                }
             }
         },
     )
@@ -258,7 +357,11 @@ async fn start_ready_request<C>(
     };
 
     let command = match started_result {
-        Ok(started) => ObserverCommand::Started { request, started },
+        Ok(started) => ObserverCommand::Started {
+            request,
+            started,
+            http_send_returned_elapsed_ms: http_send_returned_elapsed_ms.load(Ordering::SeqCst),
+        },
         Err(result) => ObserverCommand::StartError {
             cursor: request.cursor,
             result,
@@ -275,6 +378,7 @@ async fn observe_started_request<C>(
     metric_tx: mpsc::UnboundedSender<WaveMetricEvent>,
     request: ReadyWaveRequest<C>,
     started_http: StartedHttpStep,
+    http_send_returned_elapsed_ms: u64,
     token: tokio_util::sync::CancellationToken,
 ) -> Option<WaveObserverEvent<C>>
 where
@@ -292,10 +396,17 @@ where
         move || {
             let metric_tx = metrics_for_body.clone();
             async move {
+                let elapsed_ms = started.elapsed().as_millis() as u64;
                 let _ = metric_tx.send(WaveMetricEvent::ResponseBodyCompleted {
-                    elapsed_ms: started.elapsed().as_millis() as u64,
+                    elapsed_ms,
                     count: 1,
                 });
+                if http_send_returned_elapsed_ms > 0 {
+                    let _ = metric_tx.send(WaveMetricEvent::ResponseObservationDuration {
+                        elapsed_ms,
+                        duration_ms: elapsed_ms.saturating_sub(http_send_returned_elapsed_ms),
+                    });
+                }
             }
         },
     )
@@ -352,7 +463,18 @@ async fn run_observer_request<C>(
         ObserverCommand::Started {
             request,
             started: started_http,
-        } => observe_started_request(started, metric_tx, request, started_http, token).await,
+            http_send_returned_elapsed_ms,
+        } => {
+            observe_started_request(
+                started,
+                metric_tx,
+                request,
+                started_http,
+                http_send_returned_elapsed_ms,
+                token,
+            )
+            .await
+        }
         ObserverCommand::StartError { cursor, result } => {
             observe_start_error(metric_tx, cursor, result).await
         }
@@ -424,12 +546,61 @@ async fn run_sender_worker<C>(
 {
     let mut worker_closed = false;
     let mut start_tasks = FuturesUnordered::new();
+    let mut ready_queue = DeadlineReadyQueue::default();
+    let mut sequence = 0_u64;
 
     loop {
-        if worker_closed && start_tasks.is_empty() {
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        while let Some(deadline_request) = ready_queue.pop_due(elapsed_ms) {
+            let request = deadline_request.request;
+            let _sender_was_late = record_if_sender_late(SenderDeadlineCheck {
+                scheduled_elapsed_ms: request.scheduled_elapsed_ms,
+                expires_at_elapsed_ms: request.expires_at_elapsed_ms,
+                started,
+                metric_tx: &metric_tx,
+                token: &token,
+            });
+
+            let dispatch_elapsed_ms = started.elapsed().as_millis() as u64;
+            let _sender_queue_wait_ms =
+                dispatch_elapsed_ms.saturating_sub(request.sender_enqueued_elapsed_ms);
+            let sender_start_lag_ms =
+                dispatch_elapsed_ms.saturating_sub(request.target_start_elapsed_ms);
+            ready_to_send.fetch_sub(1, Ordering::SeqCst);
+            response_in_flight.fetch_add(1, Ordering::SeqCst);
+            let _ = metric_tx.send(WaveMetricEvent::SenderQueueDepth {
+                depth: ready_to_send.load(Ordering::SeqCst),
+            });
+            let _ = metric_tx.send(WaveMetricEvent::SendTaskSpawned {
+                elapsed_ms: dispatch_elapsed_ms,
+            });
+            let _ = metric_tx.send(WaveMetricEvent::SendStarted {
+                elapsed_ms: dispatch_elapsed_ms,
+            });
+            let _ = metric_tx.send(WaveMetricEvent::SenderStartLag {
+                elapsed_ms: dispatch_elapsed_ms,
+                lag_ms: sender_start_lag_ms,
+            });
+            let _ = metric_tx.send(WaveMetricEvent::DispatchStarted {
+                elapsed_ms: dispatch_elapsed_ms,
+            });
+
+            start_tasks.push(start_ready_request(
+                Arc::clone(&client),
+                started,
+                metric_tx.clone(),
+                request,
+                Arc::clone(&response_in_flight),
+                observer_tx.clone(),
+                token.clone(),
+            ));
+        }
+
+        if worker_closed && ready_queue.is_empty() && start_tasks.is_empty() {
             break;
         }
 
+        let next_deadline_ms = ready_queue.next_deadline_ms();
         tokio::select! {
             _ = token.cancelled() => break,
             maybe_command = worker_rx.recv(), if !worker_closed => {
@@ -437,44 +608,21 @@ async fn run_sender_worker<C>(
                     worker_closed = true;
                     continue;
                 };
-                let request = command.request;
-                let _sender_was_late = record_if_sender_late(SenderDeadlineCheck {
-                    scheduled_elapsed_ms: request.scheduled_elapsed_ms,
-                    expires_at_elapsed_ms: request.expires_at_elapsed_ms,
-                    started,
-                    metric_tx: &metric_tx,
-                    token: &token,
-                });
-
-                let dispatch_elapsed_ms = started.elapsed().as_millis() as u64;
-                let _sender_queue_wait_ms =
-                    dispatch_elapsed_ms.saturating_sub(request.sender_enqueued_elapsed_ms);
-                ready_to_send.fetch_sub(1, Ordering::SeqCst);
-                response_in_flight.fetch_add(1, Ordering::SeqCst);
-                let _ = metric_tx.send(WaveMetricEvent::SenderQueueDepth {
-                    depth: ready_to_send.load(Ordering::SeqCst),
-                });
-                let _ = metric_tx.send(WaveMetricEvent::SendTaskSpawned {
-                    elapsed_ms: dispatch_elapsed_ms,
-                });
-                let _ = metric_tx.send(WaveMetricEvent::SendStarted {
-                    elapsed_ms: dispatch_elapsed_ms,
-                });
-                let _ = metric_tx.send(WaveMetricEvent::DispatchStarted {
-                    elapsed_ms: dispatch_elapsed_ms,
-                });
-
-                start_tasks.push(start_ready_request(
-                    Arc::clone(&client),
-                    started,
-                    metric_tx.clone(),
-                    request,
-                    Arc::clone(&response_in_flight),
-                    observer_tx.clone(),
-                    token.clone(),
-                ));
+                ready_queue.push(DeadlineReadyRequest::new(command.request, sequence));
+                sequence = sequence.wrapping_add(1);
             }
             Some(_) = start_tasks.next(), if !start_tasks.is_empty() => {}
+            _ = async {
+                if let Some(deadline_ms) = next_deadline_ms {
+                    let now_ms = started.elapsed().as_millis() as u64;
+                    if deadline_ms > now_ms {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            deadline_ms.saturating_sub(now_ms),
+                        ))
+                        .await;
+                    }
+                }
+            }, if next_deadline_ms.is_some() => {}
         }
     }
 
@@ -688,6 +836,7 @@ mod tests {
             env_groups: Arc::new(Vec::new()),
             selected_env_group_slug: None,
             scheduled_elapsed_ms,
+            target_start_elapsed_ms: scheduled_elapsed_ms,
             expires_at_elapsed_ms,
             sender_enqueued_elapsed_ms: scheduled_elapsed_ms,
         }
@@ -781,6 +930,61 @@ mod tests {
         decrement_response_in_flight(&counter);
 
         assert_eq!(counter.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn deadline_queue_orders_by_target_then_sequence() {
+        let started = Instant::now();
+        let first = DeadlineReadyRequest::new(test_ready_wave_request(1, started, 0, 1_000), 2);
+        let second = DeadlineReadyRequest::new(test_ready_wave_request(2, started, 0, 1_000), 1);
+        let third = DeadlineReadyRequest::new(test_ready_wave_request(3, started, 0, 1_000), 3);
+
+        let mut queue = DeadlineReadyQueue::default();
+        queue.push(first);
+        queue.push(second);
+        queue.push(third);
+
+        assert_eq!(queue.pop_due(100).unwrap().request.cursor, 2);
+        assert_eq!(queue.pop_due(100).unwrap().request.cursor, 1);
+        assert_eq!(queue.pop_due(100).unwrap().request.cursor, 3);
+    }
+
+    #[tokio::test]
+    async fn sender_records_start_lag_against_target_deadline() {
+        let (request_tx, request_rx) = mpsc::unbounded_channel();
+        let (metric_tx, mut metric_rx) = mpsc::unbounded_channel();
+        let (observer_tx, _observer_rx) = mpsc::unbounded_channel();
+        let ready_to_send = Arc::new(AtomicUsize::new(0));
+        let response_in_flight = Arc::new(AtomicUsize::new(0));
+        let token = tokio_util::sync::CancellationToken::new();
+        let started = Instant::now() - Duration::from_millis(250);
+
+        let mut request = test_ready_wave_request(7, started, 100, 1_000);
+        request.target_start_elapsed_ms = 100;
+        ready_to_send.fetch_add(1, Ordering::SeqCst);
+        request_tx.send(request).expect("request should enqueue");
+        drop(request_tx);
+
+        run_fire_only_sender_for_test(
+            Arc::new(Client::new()),
+            started,
+            metric_tx,
+            Arc::clone(&response_in_flight),
+            Arc::clone(&ready_to_send),
+            request_rx,
+            observer_tx,
+            token,
+        )
+        .await;
+
+        let mut lag_ms = None;
+        while let Ok(event) = metric_rx.try_recv() {
+            if let WaveMetricEvent::SenderStartLag { lag_ms: value, .. } = event {
+                lag_ms = Some(value);
+            }
+        }
+
+        assert!(lag_ms.expect("start lag should be recorded") >= 100);
     }
 
     #[tokio::test]
@@ -1071,6 +1275,7 @@ mod tests {
             .send(ObserverCommand::Started {
                 request,
                 started: started_http,
+                http_send_returned_elapsed_ms: 0,
             })
             .expect("observer command should enqueue");
         drop(observer_command_tx);

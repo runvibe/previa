@@ -83,6 +83,12 @@ function toNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function maxOptional(left: number | undefined, right: number | undefined) {
+  if (typeof left !== "number") return right;
+  if (typeof right !== "number") return left;
+  return Math.max(left, right);
+}
+
 function pickString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string" && value.trim().length > 0) return value;
@@ -207,6 +213,16 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
   const runtimeLaggedStarts = toNumber(value.runtimeLaggedStarts);
   const senderLaggedStarts = toNumber(value.senderLaggedStarts);
   const senderQueueDepth = toNumber(value.senderQueueDepth);
+  const senderStartLagAvgMs = toNumber(value.senderStartLagAvgMs);
+  const senderStartLagP95Ms = toNumber(value.senderStartLagP95Ms);
+  const senderStartLagP99Ms = toNumber(value.senderStartLagP99Ms);
+  const senderStartLagMaxMs = toNumber(value.senderStartLagMaxMs);
+  const httpSendDurationAvgMs = toNumber(value.httpSendDurationAvgMs);
+  const httpSendDurationP95Ms = toNumber(value.httpSendDurationP95Ms);
+  const httpSendDurationP99Ms = toNumber(value.httpSendDurationP99Ms);
+  const responseObservationDurationAvgMs = toNumber(value.responseObservationDurationAvgMs);
+  const responseObservationDurationP95Ms = toNumber(value.responseObservationDurationP95Ms);
+  const responseObservationDurationP99Ms = toNumber(value.responseObservationDurationP99Ms);
   const schedulerLagMs = toNumber(value.schedulerLagMs);
   const schedulerLaggedStarts = toNumber(value.schedulerLaggedStarts);
   const rps = toNumber(value.rps);
@@ -239,6 +255,16 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     runtimeLaggedStarts,
     senderLaggedStarts,
     senderQueueDepth,
+    senderStartLagAvgMs,
+    senderStartLagP95Ms,
+    senderStartLagP99Ms,
+    senderStartLagMaxMs,
+    httpSendDurationAvgMs,
+    httpSendDurationP95Ms,
+    httpSendDurationP99Ms,
+    responseObservationDurationAvgMs,
+    responseObservationDurationP95Ms,
+    responseObservationDurationP99Ms,
     schedulerLagMs,
     schedulerLaggedStarts,
     rps: rps ?? 0,
@@ -296,6 +322,9 @@ function extractLifecycleBuckets(value: unknown): LoadLifecycleBucket[] | undefi
         dispatcherLagged: toNumber(item.dispatcherLagged),
         runtimeLagged: toNumber(item.runtimeLagged),
         senderLagged: toNumber(item.senderLagged),
+        senderStartLagMsMax: toNumber(item.senderStartLagMsMax),
+        httpSendDurationMsMax: toNumber(item.httpSendDurationMsMax),
+        responseObservationDurationMsMax: toNumber(item.responseObservationDurationMsMax),
       };
     })
     .filter((item): item is LoadLifecycleBucket => item !== null);
@@ -415,6 +444,18 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
         dispatcherLagged: (current?.dispatcherLagged ?? 0) + (bucket.dispatcherLagged ?? 0),
         runtimeLagged: (current?.runtimeLagged ?? 0) + (bucket.runtimeLagged ?? 0),
         senderLagged: (current?.senderLagged ?? 0) + (bucket.senderLagged ?? 0),
+        senderStartLagMsMax: Math.max(
+          current?.senderStartLagMsMax ?? 0,
+          bucket.senderStartLagMsMax ?? 0,
+        ) || undefined,
+        httpSendDurationMsMax: Math.max(
+          current?.httpSendDurationMsMax ?? 0,
+          bucket.httpSendDurationMsMax ?? 0,
+        ) || undefined,
+        responseObservationDurationMsMax: Math.max(
+          current?.responseObservationDurationMsMax ?? 0,
+          bucket.responseObservationDurationMsMax ?? 0,
+        ) || undefined,
       });
     }
   }
@@ -465,6 +506,25 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
         senderQueueDepth: item.senderQueueDepth !== undefined
           ? (acc.senderQueueDepth ?? 0) + item.senderQueueDepth
           : acc.senderQueueDepth,
+        senderStartLagAvgMs: maxOptional(acc.senderStartLagAvgMs, item.senderStartLagAvgMs),
+        senderStartLagP95Ms: maxOptional(acc.senderStartLagP95Ms, item.senderStartLagP95Ms),
+        senderStartLagP99Ms: maxOptional(acc.senderStartLagP99Ms, item.senderStartLagP99Ms),
+        senderStartLagMaxMs: maxOptional(acc.senderStartLagMaxMs, item.senderStartLagMaxMs),
+        httpSendDurationAvgMs: maxOptional(acc.httpSendDurationAvgMs, item.httpSendDurationAvgMs),
+        httpSendDurationP95Ms: maxOptional(acc.httpSendDurationP95Ms, item.httpSendDurationP95Ms),
+        httpSendDurationP99Ms: maxOptional(acc.httpSendDurationP99Ms, item.httpSendDurationP99Ms),
+        responseObservationDurationAvgMs: maxOptional(
+          acc.responseObservationDurationAvgMs,
+          item.responseObservationDurationAvgMs,
+        ),
+        responseObservationDurationP95Ms: maxOptional(
+          acc.responseObservationDurationP95Ms,
+          item.responseObservationDurationP95Ms,
+        ),
+        responseObservationDurationP99Ms: maxOptional(
+          acc.responseObservationDurationP99Ms,
+          item.responseObservationDurationP99Ms,
+        ),
         schedulerLagMs: item.schedulerLagMs !== undefined
           ? (acc.schedulerLagMs ?? 0) + item.schedulerLagMs
           : acc.schedulerLagMs,
@@ -552,6 +612,16 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const runtimeLaggedStarts = toNumber(consolidated?.runtimeLaggedStarts) ?? aggregated?.runtimeLaggedStarts;
   const senderLaggedStarts = toNumber(consolidated?.senderLaggedStarts) ?? aggregated?.senderLaggedStarts;
   const senderQueueDepth = toNumber(consolidated?.senderQueueDepth) ?? aggregated?.senderQueueDepth;
+  const senderStartLagAvgMs = toNumber(consolidated?.senderStartLagAvgMs) ?? aggregated?.senderStartLagAvgMs;
+  const senderStartLagP95Ms = toNumber(consolidated?.senderStartLagP95Ms) ?? aggregated?.senderStartLagP95Ms;
+  const senderStartLagP99Ms = toNumber(consolidated?.senderStartLagP99Ms) ?? aggregated?.senderStartLagP99Ms;
+  const senderStartLagMaxMs = toNumber(consolidated?.senderStartLagMaxMs) ?? aggregated?.senderStartLagMaxMs;
+  const httpSendDurationAvgMs = toNumber(consolidated?.httpSendDurationAvgMs) ?? aggregated?.httpSendDurationAvgMs;
+  const httpSendDurationP95Ms = toNumber(consolidated?.httpSendDurationP95Ms) ?? aggregated?.httpSendDurationP95Ms;
+  const httpSendDurationP99Ms = toNumber(consolidated?.httpSendDurationP99Ms) ?? aggregated?.httpSendDurationP99Ms;
+  const responseObservationDurationAvgMs = toNumber(consolidated?.responseObservationDurationAvgMs) ?? aggregated?.responseObservationDurationAvgMs;
+  const responseObservationDurationP95Ms = toNumber(consolidated?.responseObservationDurationP95Ms) ?? aggregated?.responseObservationDurationP95Ms;
+  const responseObservationDurationP99Ms = toNumber(consolidated?.responseObservationDurationP99Ms) ?? aggregated?.responseObservationDurationP99Ms;
   const schedulerLagMs = toNumber(consolidated?.schedulerLagMs) ?? aggregated?.schedulerLagMs;
   const schedulerLaggedStarts = toNumber(consolidated?.schedulerLaggedStarts) ?? aggregated?.schedulerLaggedStarts;
   const targetIntensity = toNumber(consolidated?.targetIntensity) ?? aggregated?.targetIntensity;
@@ -601,6 +671,16 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
       runtimeLaggedStarts,
       senderLaggedStarts,
       senderQueueDepth,
+      senderStartLagAvgMs,
+      senderStartLagP95Ms,
+      senderStartLagP99Ms,
+      senderStartLagMaxMs,
+      httpSendDurationAvgMs,
+      httpSendDurationP95Ms,
+      httpSendDurationP99Ms,
+      responseObservationDurationAvgMs,
+      responseObservationDurationP95Ms,
+      responseObservationDurationP99Ms,
       schedulerLagMs,
       schedulerLaggedStarts,
       targetIntensity,
@@ -635,6 +715,16 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
     runtimeLaggedStarts,
     senderLaggedStarts,
     senderQueueDepth,
+    senderStartLagAvgMs,
+    senderStartLagP95Ms,
+    senderStartLagP99Ms,
+    senderStartLagMaxMs,
+    httpSendDurationAvgMs,
+    httpSendDurationP95Ms,
+    httpSendDurationP99Ms,
+    responseObservationDurationAvgMs,
+    responseObservationDurationP95Ms,
+    responseObservationDurationP99Ms,
     schedulerLagMs,
     schedulerLaggedStarts,
     readyRequests,
@@ -977,6 +1067,16 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
   let runtimeLaggedStarts = 0, hasRuntimeLaggedStarts = false;
   let senderLaggedStarts = 0, hasSenderLaggedStarts = false;
   let senderQueueDepth = 0, hasSenderQueueDepth = false;
+  let senderStartLagAvgMs: number | undefined;
+  let senderStartLagP95Ms: number | undefined;
+  let senderStartLagP99Ms: number | undefined;
+  let senderStartLagMaxMs: number | undefined;
+  let httpSendDurationAvgMs: number | undefined;
+  let httpSendDurationP95Ms: number | undefined;
+  let httpSendDurationP99Ms: number | undefined;
+  let responseObservationDurationAvgMs: number | undefined;
+  let responseObservationDurationP95Ms: number | undefined;
+  let responseObservationDurationP99Ms: number | undefined;
   let schedulerLagMs = 0, hasSchedulerLagMs = false;
   let schedulerLaggedStarts = 0, hasSchedulerLaggedStarts = false;
   let readyRequests = 0, hasReadyRequests = false;
@@ -1057,6 +1157,25 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
       senderQueueDepth += p.senderQueueDepth;
       hasSenderQueueDepth = true;
     }
+    senderStartLagAvgMs = maxOptional(senderStartLagAvgMs, p.senderStartLagAvgMs);
+    senderStartLagP95Ms = maxOptional(senderStartLagP95Ms, p.senderStartLagP95Ms);
+    senderStartLagP99Ms = maxOptional(senderStartLagP99Ms, p.senderStartLagP99Ms);
+    senderStartLagMaxMs = maxOptional(senderStartLagMaxMs, p.senderStartLagMaxMs);
+    httpSendDurationAvgMs = maxOptional(httpSendDurationAvgMs, p.httpSendDurationAvgMs);
+    httpSendDurationP95Ms = maxOptional(httpSendDurationP95Ms, p.httpSendDurationP95Ms);
+    httpSendDurationP99Ms = maxOptional(httpSendDurationP99Ms, p.httpSendDurationP99Ms);
+    responseObservationDurationAvgMs = maxOptional(
+      responseObservationDurationAvgMs,
+      p.responseObservationDurationAvgMs,
+    );
+    responseObservationDurationP95Ms = maxOptional(
+      responseObservationDurationP95Ms,
+      p.responseObservationDurationP95Ms,
+    );
+    responseObservationDurationP99Ms = maxOptional(
+      responseObservationDurationP99Ms,
+      p.responseObservationDurationP99Ms,
+    );
     if (typeof p.schedulerLagMs === "number") {
       schedulerLagMs += p.schedulerLagMs;
       hasSchedulerLagMs = true;
@@ -1107,6 +1226,16 @@ function consolidateNodeMetrics(nodeMap: Map<string, RemoteMetricsEvent>): Remot
     runtimeLaggedStarts: hasRuntimeLaggedStarts ? runtimeLaggedStarts : undefined,
     senderLaggedStarts: hasSenderLaggedStarts ? senderLaggedStarts : undefined,
     senderQueueDepth: hasSenderQueueDepth ? senderQueueDepth : undefined,
+    senderStartLagAvgMs,
+    senderStartLagP95Ms,
+    senderStartLagP99Ms,
+    senderStartLagMaxMs,
+    httpSendDurationAvgMs,
+    httpSendDurationP95Ms,
+    httpSendDurationP99Ms,
+    responseObservationDurationAvgMs,
+    responseObservationDurationP95Ms,
+    responseObservationDurationP99Ms,
     schedulerLagMs: hasSchedulerLagMs ? schedulerLagMs : undefined,
     schedulerLaggedStarts: hasSchedulerLaggedStarts ? schedulerLaggedStarts : undefined,
     readyRequests: hasReadyRequests ? readyRequests : undefined,
@@ -1194,6 +1323,16 @@ function buildRpsHistoryPoint(
     runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
     senderLaggedStarts: consolidated?.senderLaggedStarts ?? event.senderLaggedStarts,
     senderQueueDepth: consolidated?.senderQueueDepth ?? event.senderQueueDepth,
+    senderStartLagAvgMs: consolidated?.senderStartLagAvgMs ?? event.senderStartLagAvgMs,
+    senderStartLagP95Ms: consolidated?.senderStartLagP95Ms ?? event.senderStartLagP95Ms,
+    senderStartLagP99Ms: consolidated?.senderStartLagP99Ms ?? event.senderStartLagP99Ms,
+    senderStartLagMaxMs: consolidated?.senderStartLagMaxMs ?? event.senderStartLagMaxMs,
+    httpSendDurationAvgMs: consolidated?.httpSendDurationAvgMs ?? event.httpSendDurationAvgMs,
+    httpSendDurationP95Ms: consolidated?.httpSendDurationP95Ms ?? event.httpSendDurationP95Ms,
+    httpSendDurationP99Ms: consolidated?.httpSendDurationP99Ms ?? event.httpSendDurationP99Ms,
+    responseObservationDurationAvgMs: consolidated?.responseObservationDurationAvgMs ?? event.responseObservationDurationAvgMs,
+    responseObservationDurationP95Ms: consolidated?.responseObservationDurationP95Ms ?? event.responseObservationDurationP95Ms,
+    responseObservationDurationP99Ms: consolidated?.responseObservationDurationP99Ms ?? event.responseObservationDurationP99Ms,
     schedulerLagMs: consolidated?.schedulerLagMs ?? event.schedulerLagMs,
     schedulerLaggedStarts: consolidated?.schedulerLaggedStarts ?? event.schedulerLaggedStarts,
     targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
@@ -1251,6 +1390,16 @@ export function runRemoteLoadTest(
       runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
       senderLaggedStarts: consolidated?.senderLaggedStarts ?? event.senderLaggedStarts,
       senderQueueDepth: consolidated?.senderQueueDepth ?? event.senderQueueDepth,
+      senderStartLagAvgMs: consolidated?.senderStartLagAvgMs ?? event.senderStartLagAvgMs,
+      senderStartLagP95Ms: consolidated?.senderStartLagP95Ms ?? event.senderStartLagP95Ms,
+      senderStartLagP99Ms: consolidated?.senderStartLagP99Ms ?? event.senderStartLagP99Ms,
+      senderStartLagMaxMs: consolidated?.senderStartLagMaxMs ?? event.senderStartLagMaxMs,
+      httpSendDurationAvgMs: consolidated?.httpSendDurationAvgMs ?? event.httpSendDurationAvgMs,
+      httpSendDurationP95Ms: consolidated?.httpSendDurationP95Ms ?? event.httpSendDurationP95Ms,
+      httpSendDurationP99Ms: consolidated?.httpSendDurationP99Ms ?? event.httpSendDurationP99Ms,
+      responseObservationDurationAvgMs: consolidated?.responseObservationDurationAvgMs ?? event.responseObservationDurationAvgMs,
+      responseObservationDurationP95Ms: consolidated?.responseObservationDurationP95Ms ?? event.responseObservationDurationP95Ms,
+      responseObservationDurationP99Ms: consolidated?.responseObservationDurationP99Ms ?? event.responseObservationDurationP99Ms,
       schedulerLagMs: consolidated?.schedulerLagMs ?? event.schedulerLagMs,
       schedulerLaggedStarts: consolidated?.schedulerLaggedStarts ?? event.schedulerLaggedStarts,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,
@@ -1628,6 +1777,16 @@ export function reconnectToLoadExecution(
       runtimeLaggedStarts: consolidated?.runtimeLaggedStarts ?? event.runtimeLaggedStarts,
       senderLaggedStarts: consolidated?.senderLaggedStarts ?? event.senderLaggedStarts,
       senderQueueDepth: consolidated?.senderQueueDepth ?? event.senderQueueDepth,
+      senderStartLagAvgMs: consolidated?.senderStartLagAvgMs ?? event.senderStartLagAvgMs,
+      senderStartLagP95Ms: consolidated?.senderStartLagP95Ms ?? event.senderStartLagP95Ms,
+      senderStartLagP99Ms: consolidated?.senderStartLagP99Ms ?? event.senderStartLagP99Ms,
+      senderStartLagMaxMs: consolidated?.senderStartLagMaxMs ?? event.senderStartLagMaxMs,
+      httpSendDurationAvgMs: consolidated?.httpSendDurationAvgMs ?? event.httpSendDurationAvgMs,
+      httpSendDurationP95Ms: consolidated?.httpSendDurationP95Ms ?? event.httpSendDurationP95Ms,
+      httpSendDurationP99Ms: consolidated?.httpSendDurationP99Ms ?? event.httpSendDurationP99Ms,
+      responseObservationDurationAvgMs: consolidated?.responseObservationDurationAvgMs ?? event.responseObservationDurationAvgMs,
+      responseObservationDurationP95Ms: consolidated?.responseObservationDurationP95Ms ?? event.responseObservationDurationP95Ms,
+      responseObservationDurationP99Ms: consolidated?.responseObservationDurationP99Ms ?? event.responseObservationDurationP99Ms,
       schedulerLagMs: consolidated?.schedulerLagMs ?? event.schedulerLagMs,
       schedulerLaggedStarts: consolidated?.schedulerLaggedStarts ?? event.schedulerLaggedStarts,
       totalSuccess: consolidated?.totalSuccess ?? event.totalSuccess,

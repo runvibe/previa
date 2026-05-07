@@ -48,6 +48,16 @@ export interface RpsPoint {
   runtimeLaggedStarts?: number;
   senderLaggedStarts?: number;
   senderQueueDepth?: number;
+  senderStartLagAvgMs?: number;
+  senderStartLagP95Ms?: number;
+  senderStartLagP99Ms?: number;
+  senderStartLagMaxMs?: number;
+  httpSendDurationAvgMs?: number;
+  httpSendDurationP95Ms?: number;
+  httpSendDurationP99Ms?: number;
+  responseObservationDurationAvgMs?: number;
+  responseObservationDurationP95Ms?: number;
+  responseObservationDurationP99Ms?: number;
   schedulerLagMs?: number;
   schedulerLaggedStarts?: number;
   slotEnqueued?: number;
@@ -81,6 +91,16 @@ export interface RunnerRpsSample {
   runtimeLaggedStarts?: number;
   senderLaggedStarts?: number;
   senderQueueDepth?: number;
+  senderStartLagAvgMs?: number;
+  senderStartLagP95Ms?: number;
+  senderStartLagP99Ms?: number;
+  senderStartLagMaxMs?: number;
+  httpSendDurationAvgMs?: number;
+  httpSendDurationP95Ms?: number;
+  httpSendDurationP99Ms?: number;
+  responseObservationDurationAvgMs?: number;
+  responseObservationDurationP95Ms?: number;
+  responseObservationDurationP99Ms?: number;
   schedulerLagMs?: number;
   schedulerLaggedStarts?: number;
   slotEnqueued?: number;
@@ -141,6 +161,9 @@ export interface LoadLifecycleBucket {
   dispatcherLagged?: number;
   runtimeLagged?: number;
   senderLagged?: number;
+  senderStartLagMsMax?: number;
+  httpSendDurationMsMax?: number;
+  responseObservationDurationMsMax?: number;
 }
 
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */
@@ -161,6 +184,16 @@ export interface RemoteMetricsEvent {
   runtimeLaggedStarts?: number;
   senderLaggedStarts?: number;
   senderQueueDepth?: number;
+  senderStartLagAvgMs?: number;
+  senderStartLagP95Ms?: number;
+  senderStartLagP99Ms?: number;
+  senderStartLagMaxMs?: number;
+  httpSendDurationAvgMs?: number;
+  httpSendDurationP95Ms?: number;
+  httpSendDurationP99Ms?: number;
+  responseObservationDurationAvgMs?: number;
+  responseObservationDurationP95Ms?: number;
+  responseObservationDurationP99Ms?: number;
   schedulerLagMs?: number;
   schedulerLaggedStarts?: number;
   slotEnqueued?: number;
@@ -205,6 +238,16 @@ export interface LoadTestMetrics {
   runtimeLaggedStarts?: number;
   senderLaggedStarts?: number;
   senderQueueDepth?: number;
+  senderStartLagAvgMs?: number;
+  senderStartLagP95Ms?: number;
+  senderStartLagP99Ms?: number;
+  senderStartLagMaxMs?: number;
+  httpSendDurationAvgMs?: number;
+  httpSendDurationP95Ms?: number;
+  httpSendDurationP99Ms?: number;
+  responseObservationDurationAvgMs?: number;
+  responseObservationDurationP95Ms?: number;
+  responseObservationDurationP99Ms?: number;
   schedulerLagMs?: number;
   schedulerLaggedStarts?: number;
   slotEnqueued?: number;
@@ -253,6 +296,16 @@ export interface ConsolidatedLoadMetrics {
   runtimeLaggedStarts?: number;
   senderLaggedStarts?: number;
   senderQueueDepth?: number;
+  senderStartLagAvgMs?: number;
+  senderStartLagP95Ms?: number;
+  senderStartLagP99Ms?: number;
+  senderStartLagMaxMs?: number;
+  httpSendDurationAvgMs?: number;
+  httpSendDurationP95Ms?: number;
+  httpSendDurationP99Ms?: number;
+  responseObservationDurationAvgMs?: number;
+  responseObservationDurationP95Ms?: number;
+  responseObservationDurationP99Ms?: number;
   schedulerLagMs?: number;
   schedulerLaggedStarts?: number;
   slotEnqueued?: number;

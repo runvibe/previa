@@ -29,16 +29,28 @@ pub enum WaveMetricEvent {
     SendStarted {
         elapsed_ms: u64,
     },
+    SenderStartLag {
+        elapsed_ms: u64,
+        lag_ms: u64,
+    },
     HttpStarted {
         elapsed_ms: u64,
     },
     HttpSendReturned {
         elapsed_ms: u64,
     },
+    HttpSendDuration {
+        elapsed_ms: u64,
+        duration_ms: u64,
+    },
     HttpCompleted(usize),
     ResponseBodyCompleted {
         elapsed_ms: u64,
         count: usize,
+    },
+    ResponseObservationDuration {
+        elapsed_ms: u64,
+        duration_ms: u64,
     },
     PipelineFinished {
         duration_ms: f64,
@@ -130,18 +142,29 @@ pub async fn run_wave_metrics_actor(
             WaveMetricEvent::SendStarted { elapsed_ms } => {
                 accumulator.record_send_started_at(elapsed_ms)
             }
+            WaveMetricEvent::SenderStartLag { elapsed_ms, lag_ms } => {
+                accumulator.record_sender_start_lag_at(elapsed_ms, lag_ms)
+            }
             WaveMetricEvent::HttpStarted { elapsed_ms } => {
                 accumulator.record_http_start_at(elapsed_ms)
             }
             WaveMetricEvent::HttpSendReturned { elapsed_ms } => {
                 accumulator.record_http_send_returned_at(elapsed_ms)
             }
+            WaveMetricEvent::HttpSendDuration {
+                elapsed_ms,
+                duration_ms,
+            } => accumulator.record_http_send_duration_at(elapsed_ms, duration_ms),
             WaveMetricEvent::HttpCompleted(count) => {
                 accumulator.record_http_completed_count(count);
             }
             WaveMetricEvent::ResponseBodyCompleted { elapsed_ms, count } => {
                 accumulator.record_response_body_completed_at(elapsed_ms, count);
             }
+            WaveMetricEvent::ResponseObservationDuration {
+                elapsed_ms,
+                duration_ms,
+            } => accumulator.record_response_observation_duration_at(elapsed_ms, duration_ms),
             WaveMetricEvent::PipelineFinished {
                 duration_ms,
                 success,

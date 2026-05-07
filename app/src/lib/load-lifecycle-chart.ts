@@ -5,14 +5,18 @@ export type LifecycleSeriesKey =
   | "sendStarted"
   | "httpStarted"
   | "httpSendReturned"
-  | "responseBodyCompleted";
+  | "responseBodyCompleted"
+  | "senderStartLagMsMax"
+  | "httpSendDurationMsMax"
+  | "responseObservationDurationMsMax";
 
-export type LifecycleSeriesTone = "planned" | "send" | "http" | "returned" | "body";
+export type LifecycleSeriesTone = "planned" | "send" | "http" | "returned" | "body" | "startLag" | "sendLag" | "observeLag";
 
 export interface LifecycleSeries {
   key: LifecycleSeriesKey;
   labelKey: string;
   tone: LifecycleSeriesTone;
+  axis: "count" | "ms";
 }
 
 export interface LifecycleChartRow {
@@ -22,6 +26,9 @@ export interface LifecycleChartRow {
   httpStarted: number;
   httpSendReturned: number;
   responseBodyCompleted: number;
+  senderStartLagMsMax: number;
+  httpSendDurationMsMax: number;
+  responseObservationDurationMsMax: number;
 }
 
 export interface LifecycleChartData {
@@ -30,11 +37,14 @@ export interface LifecycleChartData {
 }
 
 const SERIES: LifecycleSeries[] = [
-  { key: "planned", labelKey: "loadTestResults.lifecyclePlanned", tone: "planned" },
-  { key: "sendStarted", labelKey: "loadTestResults.lifecycleSendStarted", tone: "send" },
-  { key: "httpStarted", labelKey: "loadTestResults.lifecycleHttpStarted", tone: "http" },
-  { key: "httpSendReturned", labelKey: "loadTestResults.lifecycleHttpSendReturned", tone: "returned" },
-  { key: "responseBodyCompleted", labelKey: "loadTestResults.lifecycleBodyCompleted", tone: "body" },
+  { key: "planned", labelKey: "loadTestResults.lifecyclePlanned", tone: "planned", axis: "count" },
+  { key: "sendStarted", labelKey: "loadTestResults.lifecycleSendStarted", tone: "send", axis: "count" },
+  { key: "httpStarted", labelKey: "loadTestResults.lifecycleHttpStarted", tone: "http", axis: "count" },
+  { key: "httpSendReturned", labelKey: "loadTestResults.lifecycleHttpSendReturned", tone: "returned", axis: "count" },
+  { key: "responseBodyCompleted", labelKey: "loadTestResults.lifecycleBodyCompleted", tone: "body", axis: "count" },
+  { key: "senderStartLagMsMax", labelKey: "loadTestResults.lifecycleSenderStartLag", tone: "startLag", axis: "ms" },
+  { key: "httpSendDurationMsMax", labelKey: "loadTestResults.lifecycleHttpSendDuration", tone: "sendLag", axis: "ms" },
+  { key: "responseObservationDurationMsMax", labelKey: "loadTestResults.lifecycleResponseObservation", tone: "observeLag", axis: "ms" },
 ];
 
 function elapsedMsForPoint(point: RpsPoint, metrics: LoadTestMetrics) {
@@ -62,6 +72,9 @@ function ensureRow(rows: Map<number, LifecycleChartRow>, time: number): Lifecycl
     httpStarted: 0,
     httpSendReturned: 0,
     responseBodyCompleted: 0,
+    senderStartLagMsMax: 0,
+    httpSendDurationMsMax: 0,
+    responseObservationDurationMsMax: 0,
   };
   rows.set(time, row);
   return row;
@@ -88,6 +101,12 @@ export function buildLifecycleChartData(metrics: LoadTestMetrics): LifecycleChar
     row.httpStarted += bucket.httpStarted ?? 0;
     row.httpSendReturned += bucket.httpSendReturned ?? 0;
     row.responseBodyCompleted += bucket.responseBodyCompleted ?? 0;
+    row.senderStartLagMsMax = Math.max(row.senderStartLagMsMax, bucket.senderStartLagMsMax ?? 0);
+    row.httpSendDurationMsMax = Math.max(row.httpSendDurationMsMax, bucket.httpSendDurationMsMax ?? 0);
+    row.responseObservationDurationMsMax = Math.max(
+      row.responseObservationDurationMsMax,
+      bucket.responseObservationDurationMsMax ?? 0,
+    );
     directRowTimes.add(time);
   }
 
@@ -106,6 +125,12 @@ export function buildLifecycleChartData(metrics: LoadTestMetrics): LifecycleChar
       row.httpStarted += directBucket.httpStarted ?? 0;
       row.httpSendReturned += directBucket.httpSendReturned ?? 0;
       row.responseBodyCompleted += directBucket.responseBodyCompleted ?? 0;
+      row.senderStartLagMsMax = Math.max(row.senderStartLagMsMax, directBucket.senderStartLagMsMax ?? 0);
+      row.httpSendDurationMsMax = Math.max(row.httpSendDurationMsMax, directBucket.httpSendDurationMsMax ?? 0);
+      row.responseObservationDurationMsMax = Math.max(
+        row.responseObservationDurationMsMax,
+        directBucket.responseObservationDurationMsMax ?? 0,
+      );
       continue;
     }
 
@@ -135,6 +160,9 @@ export function buildLifecycleChartData(metrics: LoadTestMetrics): LifecycleChar
       httpStarted: roundOne(row.httpStarted),
       httpSendReturned: roundOne(row.httpSendReturned),
       responseBodyCompleted: roundOne(row.responseBodyCompleted),
+      senderStartLagMsMax: roundOne(row.senderStartLagMsMax),
+      httpSendDurationMsMax: roundOne(row.httpSendDurationMsMax),
+      responseObservationDurationMsMax: roundOne(row.responseObservationDurationMsMax),
     }))
     .filter(
       (row) =>
@@ -142,8 +170,16 @@ export function buildLifecycleChartData(metrics: LoadTestMetrics): LifecycleChar
         row.sendStarted > 0 ||
         row.httpStarted > 0 ||
         row.httpSendReturned > 0 ||
-        row.responseBodyCompleted > 0,
+        row.responseBodyCompleted > 0 ||
+        row.senderStartLagMsMax > 0 ||
+        row.httpSendDurationMsMax > 0 ||
+        row.responseObservationDurationMsMax > 0,
     );
 
-  return { data, series: SERIES };
+  const series = SERIES.filter((series) => {
+    if (series.axis === "count") return true;
+    return data.some((row) => row[series.key] > 0);
+  });
+
+  return { data, series };
 }

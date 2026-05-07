@@ -135,9 +135,19 @@ pub struct LoadLifecycleBucket {
     pub runtime_lagged: usize,
     #[serde(skip_serializing_if = "is_zero")]
     pub sender_lagged: usize,
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub sender_start_lag_ms_max: u64,
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub http_send_duration_ms_max: u64,
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub response_observation_duration_ms_max: u64,
 }
 
 fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
+
+fn is_zero_u64(value: &u64) -> bool {
     *value == 0
 }
 
@@ -193,6 +203,26 @@ pub struct LoadTestMetrics {
     pub sender_lagged_starts: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_queue_depth: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_p99_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_start_lag_max_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_send_duration_p99_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_avg_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_p95_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_observation_duration_p99_ms: Option<u64>,
     pub rps: f64,
     pub start_time: u64,
     pub elapsed_ms: u64,
@@ -262,6 +292,16 @@ impl Default for LoadTestMetrics {
             send_started: None,
             sender_lagged_starts: None,
             sender_queue_depth: None,
+            sender_start_lag_avg_ms: None,
+            sender_start_lag_p95_ms: None,
+            sender_start_lag_p99_ms: None,
+            sender_start_lag_max_ms: None,
+            http_send_duration_avg_ms: None,
+            http_send_duration_p95_ms: None,
+            http_send_duration_p99_ms: None,
+            response_observation_duration_avg_ms: None,
+            response_observation_duration_p95_ms: None,
+            response_observation_duration_p99_ms: None,
             rps: 0.0,
             start_time: crate::server::utils::now_ms(),
             elapsed_ms: 0,

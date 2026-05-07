@@ -40,6 +40,7 @@ pub type ObserverEvent = WaveObserverEvent<PipelineCursor>;
 pub struct WavePrepareIntent {
     pub cursor: PipelineCursor,
     pub scheduled_elapsed_ms: u64,
+    pub target_start_elapsed_ms: u64,
     pub expires_at_elapsed_ms: u64,
 }
 
@@ -97,6 +98,16 @@ impl WaveDispatcherHandle {
 }
 
 const OBSERVER_EVENTS_PER_TICK_BUDGET: usize = 1024;
+
+pub fn spread_deadlines(slot_elapsed_ms: u64, tick_ms: u64, count: usize) -> Vec<u64> {
+    if count == 0 {
+        return Vec::new();
+    }
+
+    (0..count)
+        .map(|index| slot_elapsed_ms.saturating_add((index as u64 * tick_ms) / count as u64))
+        .collect()
+}
 
 pub fn next_cursor_for_slot(
     ready: &mut VecDeque<PipelineCursor>,
@@ -167,7 +178,9 @@ pub async fn dispatch_slot_prepare_intents(args: DispatchSlotPrepareArgs<'_>) {
         return;
     }
 
-    for _ in 0..args.slot.planned_starts {
+    for target_start_elapsed_ms in
+        spread_deadlines(args.slot.elapsed_ms, args.tick_ms, args.slot.planned_starts)
+    {
         if args.token.is_cancelled() {
             break;
         }
@@ -199,6 +212,7 @@ pub async fn dispatch_slot_prepare_intents(args: DispatchSlotPrepareArgs<'_>) {
             .send(WavePrepareIntent {
                 cursor,
                 scheduled_elapsed_ms: args.slot.elapsed_ms,
+                target_start_elapsed_ms,
                 expires_at_elapsed_ms: args.slot.expires_at_elapsed_ms,
             })
             .is_err()
@@ -295,6 +309,7 @@ async fn prepare_and_enqueue_wave_request(
             env_groups: Arc::clone(&config.env_groups),
             selected_env_group_slug: config.selected_env_group_slug.clone(),
             scheduled_elapsed_ms: intent.scheduled_elapsed_ms,
+            target_start_elapsed_ms: intent.target_start_elapsed_ms,
             expires_at_elapsed_ms: intent.expires_at_elapsed_ms,
             sender_enqueued_elapsed_ms: enqueue_elapsed_ms,
         })
@@ -609,6 +624,24 @@ mod tests {
         assert_eq!(snapshot.ready_requests(), 12);
     }
 
+    #[test]
+    fn spread_deadlines_evenly_inside_tick() {
+        assert_eq!(
+            spread_deadlines(10_000, 1_000, 5),
+            vec![10_000, 10_200, 10_400, 10_600, 10_800]
+        );
+        assert_eq!(
+            spread_deadlines(10_000, 100, 4),
+            vec![10_000, 10_025, 10_050, 10_075]
+        );
+    }
+
+    #[test]
+    fn spread_deadlines_handles_single_start() {
+        assert_eq!(spread_deadlines(10_000, 1_000, 1), vec![10_000]);
+        assert!(spread_deadlines(10_000, 1_000, 0).is_empty());
+    }
+
     #[tokio::test]
     async fn observer_drain_respects_per_tick_budget() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ObserverEvent>();
@@ -804,6 +837,7 @@ mod tests {
 
         let intent = prepare_rx.try_recv().expect("prepare intent should exist");
         assert_eq!(intent.scheduled_elapsed_ms, 4_200);
+        assert_eq!(intent.target_start_elapsed_ms, 4_200);
         assert_eq!(intent.expires_at_elapsed_ms, 4_300);
     }
 

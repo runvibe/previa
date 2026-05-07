@@ -114,6 +114,9 @@ describe("LoadTestResultsPanel", () => {
           httpStarted: 97,
           httpSendReturned: 40,
           responseBodyCompleted: 10,
+          senderStartLagMsMax: 0,
+          httpSendDurationMsMax: 0,
+          responseObservationDurationMsMax: 0,
         },
         {
           timestamp: 3_000,
@@ -137,6 +140,9 @@ describe("LoadTestResultsPanel", () => {
           httpStarted: 97,
           httpSendReturned: 40,
           responseBodyCompleted: 10,
+          senderStartLagMsMax: 0,
+          httpSendDurationMsMax: 0,
+          responseObservationDurationMsMax: 0,
         },
         {
           time: 2,
@@ -145,16 +151,47 @@ describe("LoadTestResultsPanel", () => {
           httpStarted: 147,
           httpSendReturned: 50,
           responseBodyCompleted: 10,
+          senderStartLagMsMax: 0,
+          httpSendDurationMsMax: 0,
+          responseObservationDurationMsMax: 0,
         },
       ],
       series: [
-        { key: "planned", labelKey: "loadTestResults.lifecyclePlanned", tone: "planned" },
-        { key: "sendStarted", labelKey: "loadTestResults.lifecycleSendStarted", tone: "send" },
-        { key: "httpStarted", labelKey: "loadTestResults.lifecycleHttpStarted", tone: "http" },
-        { key: "httpSendReturned", labelKey: "loadTestResults.lifecycleHttpSendReturned", tone: "returned" },
-        { key: "responseBodyCompleted", labelKey: "loadTestResults.lifecycleBodyCompleted", tone: "body" },
+        { key: "planned", labelKey: "loadTestResults.lifecyclePlanned", tone: "planned", axis: "count" },
+        { key: "sendStarted", labelKey: "loadTestResults.lifecycleSendStarted", tone: "send", axis: "count" },
+        { key: "httpStarted", labelKey: "loadTestResults.lifecycleHttpStarted", tone: "http", axis: "count" },
+        { key: "httpSendReturned", labelKey: "loadTestResults.lifecycleHttpSendReturned", tone: "returned", axis: "count" },
+        { key: "responseBodyCompleted", labelKey: "loadTestResults.lifecycleBodyCompleted", tone: "body", axis: "count" },
       ],
     });
+  });
+
+  it("builds lifecycle chart with lag series from direct buckets", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      lifecycleBuckets: [
+        {
+          elapsedMs: 2_000,
+          planned: 10,
+          httpStarted: 10,
+          senderStartLagMsMax: 12,
+          httpSendDurationMsMax: 34,
+          responseObservationDurationMsMax: 56,
+        },
+      ],
+    };
+
+    const chart = buildLifecycleChartData(metrics);
+
+    expect(chart.data[0]).toMatchObject({
+      time: 2,
+      senderStartLagMsMax: 12,
+      httpSendDurationMsMax: 34,
+      responseObservationDurationMsMax: 56,
+    });
+    expect(chart.series.map((series) => series.key)).toContain("senderStartLagMsMax");
+    expect(chart.series.map((series) => series.key)).toContain("httpSendDurationMsMax");
+    expect(chart.series.map((series) => series.key)).toContain("responseObservationDurationMsMax");
   });
 
   it("builds lifecycle chart from direct lifecycle buckets", () => {
@@ -185,6 +222,9 @@ describe("LoadTestResultsPanel", () => {
         httpStarted: 28,
         httpSendReturned: 20,
         responseBodyCompleted: 10,
+        senderStartLagMsMax: 0,
+        httpSendDurationMsMax: 0,
+        responseObservationDurationMsMax: 0,
       },
     ]);
   });
@@ -222,6 +262,9 @@ describe("LoadTestResultsPanel", () => {
         httpStarted: 99,
         httpSendReturned: 0,
         responseBodyCompleted: 0,
+        senderStartLagMsMax: 0,
+        httpSendDurationMsMax: 0,
+        responseObservationDurationMsMax: 0,
       },
       {
         time: 1,
@@ -230,6 +273,9 @@ describe("LoadTestResultsPanel", () => {
         httpStarted: 125,
         httpSendReturned: 0,
         responseBodyCompleted: 0,
+        senderStartLagMsMax: 0,
+        httpSendDurationMsMax: 0,
+        responseObservationDurationMsMax: 0,
       },
     ]);
   });
@@ -690,6 +736,9 @@ describe("LoadTestResultsPanel", () => {
           runtimeLaggedStarts: 7,
           senderLaggedStarts: 5,
           senderQueueDepth: 11,
+          senderStartLagP95Ms: 12,
+          httpSendDurationP95Ms: 34,
+          responseObservationDurationP95Ms: 56,
           dependencyLimitedStarts: 3,
           slotEnqueued: 118,
           requestPrepared: 117,
@@ -725,6 +774,12 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.senderQueueDepth")).toBeInTheDocument();
     expect(screen.getByText("11")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.senderStartLagP95Ms")).toBeInTheDocument();
+    expect(screen.getByText("12ms")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.httpSendDurationP95Ms")).toBeInTheDocument();
+    expect(screen.getByText("34ms")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.responseObservationDurationP95Ms")).toBeInTheDocument();
+    expect(screen.getByText("56ms")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.dependencyLimitedStarts")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.slotEnqueued")).toBeInTheDocument();

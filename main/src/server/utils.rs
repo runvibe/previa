@@ -49,6 +49,25 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         runtime_lagged_starts: get_usize_field(payload, "runtimeLaggedStarts"),
         sender_lagged_starts: get_usize_field(payload, "senderLaggedStarts"),
         sender_queue_depth: get_usize_field(payload, "senderQueueDepth"),
+        sender_start_lag_avg_ms: get_f64_field(payload, "senderStartLagAvgMs"),
+        sender_start_lag_p95_ms: get_u64_field(payload, "senderStartLagP95Ms"),
+        sender_start_lag_p99_ms: get_u64_field(payload, "senderStartLagP99Ms"),
+        sender_start_lag_max_ms: get_u64_field(payload, "senderStartLagMaxMs"),
+        http_send_duration_avg_ms: get_f64_field(payload, "httpSendDurationAvgMs"),
+        http_send_duration_p95_ms: get_u64_field(payload, "httpSendDurationP95Ms"),
+        http_send_duration_p99_ms: get_u64_field(payload, "httpSendDurationP99Ms"),
+        response_observation_duration_avg_ms: get_f64_field(
+            payload,
+            "responseObservationDurationAvgMs",
+        ),
+        response_observation_duration_p95_ms: get_u64_field(
+            payload,
+            "responseObservationDurationP95Ms",
+        ),
+        response_observation_duration_p99_ms: get_u64_field(
+            payload,
+            "responseObservationDurationP99Ms",
+        ),
         scheduler_lag_ms: get_u64_field(payload, "schedulerLagMs"),
         scheduler_lagged_starts: get_usize_field(payload, "schedulerLaggedStarts"),
         slot_enqueued: get_usize_field(payload, "slotEnqueued"),
@@ -162,6 +181,15 @@ fn parse_lifecycle_buckets(payload: &Value) -> Vec<RunnerLoadLifecycleBucket> {
                         dispatcher_lagged: get_usize_field(item, "dispatcherLagged").unwrap_or(0),
                         runtime_lagged: get_usize_field(item, "runtimeLagged").unwrap_or(0),
                         sender_lagged: get_usize_field(item, "senderLagged").unwrap_or(0),
+                        sender_start_lag_ms_max: get_u64_field(item, "senderStartLagMsMax")
+                            .unwrap_or(0),
+                        http_send_duration_ms_max: get_u64_field(item, "httpSendDurationMsMax")
+                            .unwrap_or(0),
+                        response_observation_duration_ms_max: get_u64_field(
+                            item,
+                            "responseObservationDurationMsMax",
+                        )
+                        .unwrap_or(0),
                     })
                 })
                 .collect()

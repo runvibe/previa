@@ -25,6 +25,9 @@ const LIFECYCLE_COLORS: Record<LifecycleSeriesTone, string> = {
   http: "hsl(var(--status-success))",
   returned: "hsl(var(--warning))",
   body: "hsl(var(--muted-foreground))",
+  startLag: "#a855f7",
+  sendLag: "#06b6d4",
+  observeLag: "#f97316",
 };
 
 function formatCompact(value: string | number): { display: string; full: string; needsTooltip: boolean } {
@@ -281,6 +284,9 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
         typeof metrics.runtimeLaggedStarts === "number" ||
         typeof metrics.senderLaggedStarts === "number" ||
         typeof metrics.senderQueueDepth === "number" ||
+        typeof metrics.senderStartLagP95Ms === "number" ||
+        typeof metrics.httpSendDurationP95Ms === "number" ||
+        typeof metrics.responseObservationDurationP95Ms === "number" ||
         typeof metrics.schedulerLagMs === "number" ||
         typeof metrics.schedulerLaggedStarts === "number" ||
         typeof metrics.slotEnqueued === "number" ||
@@ -409,6 +415,28 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
               color="text-primary"
             />
           )}
+          {typeof metrics.senderStartLagP95Ms === "number" && (
+            <MetricCard
+              icon={Clock}
+              label={t("loadTestResults.senderStartLagP95Ms")}
+              value={`${metrics.senderStartLagP95Ms}ms`}
+              color="text-warning"
+            />
+          )}
+          {typeof metrics.httpSendDurationP95Ms === "number" && (
+            <MetricCard
+              icon={Clock}
+              label={t("loadTestResults.httpSendDurationP95Ms")}
+              value={`${metrics.httpSendDurationP95Ms}ms`}
+            />
+          )}
+          {typeof metrics.responseObservationDurationP95Ms === "number" && (
+            <MetricCard
+              icon={Clock}
+              label={t("loadTestResults.responseObservationDurationP95Ms")}
+              value={`${metrics.responseObservationDurationP95Ms}ms`}
+            />
+          )}
           {typeof metrics.schedulerLagMs === "number" && (
             <MetricCard
               icon={Clock}
@@ -489,7 +517,16 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
             <LineChart data={latencyChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis yAxisId="count" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+              {lifecycleChart.series.some((series) => series.axis === "ms") && (
+                <YAxis
+                  yAxisId="ms"
+                  orientation="right"
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  tickFormatter={(v) => `${v}ms`}
+                />
+              )}
               <RechartsTooltip
                 contentStyle={{
                   background: "hsl(var(--popover))",
@@ -624,7 +661,9 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                   fontSize: 11,
                 }}
                 formatter={(v: number, name: string) => [
-                  typeof v === "number" ? v.toFixed(1) : v,
+                  typeof v === "number"
+                    ? `${v.toFixed(1)}${lifecycleChart.series.find((series) => series.key === name)?.axis === "ms" ? "ms" : ""}`
+                    : v,
                   t(lifecycleChart.series.find((series) => series.key === name)?.labelKey ?? name),
                 ]}
                 labelFormatter={(v) => `${v}s`}
@@ -634,9 +673,10 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                   key={series.key}
                   type="monotone"
                   dataKey={series.key}
+                  yAxisId={series.axis}
                   stroke={LIFECYCLE_COLORS[series.tone]}
                   strokeWidth={series.key === "planned" || series.key === "httpStarted" ? 1.75 : 1.4}
-                  strokeDasharray={series.key === "planned" ? "2 4" : undefined}
+                  strokeDasharray={series.key === "planned" ? "2 4" : series.axis === "ms" ? "4 3" : undefined}
                   dot={lifecycleChartData.length === 1}
                   connectNulls
                 />
