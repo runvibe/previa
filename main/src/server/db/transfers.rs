@@ -12,13 +12,20 @@ use crate::server::models::{
 };
 use crate::server::utils::{new_uuid_v7, now_ms};
 
+fn tags_from_row(row: &sqlx::any::AnyRow) -> Vec<String> {
+    row.try_get::<String, _>("tags_json")
+        .ok()
+        .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+        .unwrap_or_default()
+}
+
 pub async fn load_project_export(
     db: &DbPool,
     project_id: &str,
 ) -> Result<Option<ProjectExportProject>, sqlx::Error> {
     let row = db
         .query(
-            "SELECT id, name, description, created_at, updated_at, spec_json
+            "SELECT id, name, description, tags_json, created_at, updated_at, spec_json
         FROM projects
         WHERE id = ?",
         )
@@ -44,6 +51,7 @@ pub async fn load_project_export(
         id: row.try_get("id").unwrap_or_default(),
         name: row.try_get("name").unwrap_or_default(),
         description: row.try_get("description").ok(),
+        tags: tags_from_row(&row),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
         spec,
@@ -213,12 +221,13 @@ pub async fn import_project_bundle(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&project.id)
     .bind(&project.name)
     .bind(&project.description)
+    .bind(serde_json::to_string(&project.tags).unwrap_or_else(|_| "[]".to_owned()))
     .bind(&project.created_at)
     .bind(&project.updated_at)
     .bind(created_at_ms)

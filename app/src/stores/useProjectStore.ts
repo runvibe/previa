@@ -155,6 +155,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const record = await api.createProject(apiUrl, {
           name: data.name || "Novo Projeto",
           description: data.description ?? null,
+          tags: data.tags ?? [],
           spec: data.spec?.raw ? (data.spec as unknown as Record<string, unknown>) : null,
           
         });
@@ -206,6 +207,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           id: projectId,
           name: record.name,
           description: record.description ?? undefined,
+          tags: record.tags ?? data.tags ?? [],
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           pipelines: createdPipelines,
@@ -229,6 +231,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       id: generateUUID(),
       name: data.name || "Novo Projeto",
       description: data.description,
+      tags: data.tags ?? [],
       createdAt: now,
       updatedAt: now,
       pipelines: data.pipelines || [],
@@ -259,6 +262,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         api.upsertProject(apiUrl, id, {
           name: updated.name,
           description: updated.description ?? null,
+          tags: updated.tags ?? [],
           
         }).catch((err) => {
           console.warn("Failed to sync project to backend:", err);
@@ -312,6 +316,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const record = await api.createProject(apiUrl, {
           name: `${source.name} (cópia)`,
           description: source.description ?? null,
+          tags: source.tags ?? [],
           spec: source.spec?.raw ? (source.spec as unknown as Record<string, unknown>) : null,
           
         });
@@ -393,6 +398,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           id: projectId,
           name: record.name,
           description: record.description ?? undefined,
+          tags: record.tags ?? source.tags ?? [],
           createdAt: record.createdAt,
           updatedAt: record.updatedAt,
           pipelines: createdPipelines,

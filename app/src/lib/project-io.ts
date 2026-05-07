@@ -85,6 +85,9 @@ export async function importProject(fileContent: string): Promise<Project> {
     id: result.id,
     name: result.name,
     description: parsed.project?.description,
+    tags: Array.isArray(parsed.project?.tags)
+      ? parsed.project.tags.filter((tag): tag is string => typeof tag === "string")
+      : [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     specs: parsed.project?.specs || [],

@@ -3683,6 +3683,7 @@ mod tests {
             ProjectMetadataUpsertRequest {
                 name: "Project".to_owned(),
                 description: Some("Queue test project".to_owned()),
+                tags: Vec::new(),
             },
         )
         .await

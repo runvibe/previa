@@ -250,12 +250,17 @@ mod tests {
     }
 
     async fn add_project(db: &DbPool, id: &str, name: &str) {
+        add_project_with_tags(db, id, name, Vec::new()).await;
+    }
+
+    async fn add_project_with_tags(db: &DbPool, id: &str, name: &str, tags: Vec<String>) {
         upsert_project_metadata(
             db,
             id.to_owned(),
             ProjectMetadataUpsertRequest {
                 name: name.to_owned(),
                 description: None,
+                tags,
             },
         )
         .await
@@ -270,7 +275,13 @@ mod tests {
     async fn exports_selected_projects_to_sqlite() {
         let source = migrated_db("sqlite::memory:").await;
         add_project(&source, "project-a", "Project A").await;
-        add_project(&source, "project-b", "Project B").await;
+        add_project_with_tags(
+            &source,
+            "project-b",
+            "Project B",
+            vec!["billing".to_owned(), "critical".to_owned()],
+        )
+        .await;
 
         let path = std::env::temp_dir().join(format!(
             "previa-export-selected-{}.sqlite3",
@@ -296,6 +307,7 @@ mod tests {
 
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "Project B");
+        assert_eq!(projects[0].tags, vec!["billing", "critical"]);
     }
 
     #[tokio::test]

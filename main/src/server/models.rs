@@ -171,6 +171,8 @@ pub struct ProxyRequest {
 pub struct ProjectUpsertRequest {
     pub name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     #[schema(value_type = Object, nullable = true)]
@@ -184,6 +186,8 @@ pub struct ProjectUpsertRequest {
 pub struct ProjectMetadataUpsertRequest {
     pub name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -192,6 +196,7 @@ pub struct ProjectRecord {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    pub tags: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -345,6 +350,8 @@ pub struct ProjectExportProject {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
     #[schema(value_type = Object, nullable = true)]

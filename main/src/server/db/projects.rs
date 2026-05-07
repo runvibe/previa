@@ -11,6 +11,17 @@ use crate::server::models::{
 };
 use crate::server::utils::{new_uuid_v7, now_iso, now_ms};
 
+fn tags_to_json(tags: &[String]) -> String {
+    serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_owned())
+}
+
+fn tags_from_row(row: &sqlx::any::AnyRow) -> Vec<String> {
+    row.try_get::<String, _>("tags_json")
+        .ok()
+        .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+        .unwrap_or_default()
+}
+
 pub async fn list_project_records(
     db: &DbPool,
     query: ProjectListQuery,
@@ -20,7 +31,7 @@ pub async fn list_project_records(
     let order_sql = history_order_to_sql(query.order);
 
     let mut qb = QueryBuilder::<sqlx::Any>::new(
-        "SELECT id, name, description, created_at, updated_at FROM projects ORDER BY updated_at_ms ",
+        "SELECT id, name, description, tags_json, created_at, updated_at FROM projects ORDER BY updated_at_ms ",
     );
     qb.push(order_sql)
         .push(" LIMIT ")
@@ -39,6 +50,7 @@ pub async fn list_project_records(
             id: row.try_get("id").unwrap_or_default(),
             name: row.try_get("name").unwrap_or_default(),
             description,
+            tags: tags_from_row(&row),
             created_at: row.try_get("created_at").unwrap_or_default(),
             updated_at: row.try_get("updated_at").unwrap_or_default(),
         });
@@ -52,7 +64,7 @@ pub async fn load_project_record(
     project_id: &str,
 ) -> Result<Option<ProjectRecord>, sqlx::Error> {
     let row = db
-        .query("SELECT id, name, description, created_at, updated_at FROM projects WHERE id = ?")
+        .query("SELECT id, name, description, tags_json, created_at, updated_at FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_optional(db)
         .await?;
@@ -70,6 +82,7 @@ pub async fn load_project_record(
         id: row.try_get("id").unwrap_or_default(),
         name: row.try_get("name").unwrap_or_default(),
         description,
+        tags: tags_from_row(&row),
         created_at: row.try_get("created_at").unwrap_or_default(),
         updated_at: row.try_get("updated_at").unwrap_or_default(),
     }))
@@ -110,17 +123,19 @@ pub async fn upsert_project_metadata(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, created_at, updated_at, created_at_ms, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             description = excluded.description,
+            tags_json = excluded.tags_json,
             updated_at = excluded.updated_at,
             updated_at_ms = excluded.updated_at_ms",
     )
     .bind(&project_id)
     .bind(&payload.name)
     .bind(&payload.description)
+    .bind(tags_to_json(&payload.tags))
     .bind(&created_at)
     .bind(&now_iso)
     .bind(created_at_ms)
@@ -165,11 +180,12 @@ pub async fn upsert_project_with_pipelines(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             description = excluded.description,
+            tags_json = excluded.tags_json,
             updated_at = excluded.updated_at,
             updated_at_ms = excluded.updated_at_ms,
             spec_json = excluded.spec_json",
@@ -177,6 +193,7 @@ pub async fn upsert_project_with_pipelines(
     .bind(&project_id)
     .bind(&payload.name)
     .bind(&payload.description)
+    .bind(tags_to_json(&payload.tags))
     .bind(&created_at)
     .bind(&updated_at)
     .bind(created_at_ms)
@@ -234,12 +251,13 @@ pub async fn create_project_with_pipelines(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&project_id)
     .bind(&project_name)
     .bind(Option::<String>::None)
+    .bind("[]")
     .bind(&now_iso)
     .bind(&now_iso)
     .bind(now_ms_i64)
@@ -273,4 +291,45 @@ pub async fn create_project_with_pipelines(
     load_project_record(db, &project_id)
         .await?
         .ok_or(sqlx::Error::RowNotFound)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn db() -> crate::server::db::DbPool {
+        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+            .await
+            .expect("sqlite memory db");
+        sqlx::migrate!("./migrations/sqlite")
+            .run(db.pool())
+            .await
+            .expect("migrations");
+        db
+    }
+
+    #[tokio::test]
+    async fn project_records_round_trip_tags() {
+        let db = db().await;
+
+        let project = upsert_project_metadata(
+            &db,
+            "project-1".to_owned(),
+            ProjectMetadataUpsertRequest {
+                name: "Payments".to_owned(),
+                description: Some("Checkout".to_owned()),
+                tags: vec!["billing".to_owned(), "critical".to_owned()],
+            },
+        )
+        .await
+        .expect("upsert project");
+
+        assert_eq!(project.tags, vec!["billing", "critical"]);
+
+        let loaded = load_project_record(&db, "project-1")
+            .await
+            .expect("load project")
+            .expect("project exists");
+        assert_eq!(loaded.tags, vec!["billing", "critical"]);
+    }
 }

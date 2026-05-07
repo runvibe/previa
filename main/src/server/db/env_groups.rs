@@ -219,6 +219,7 @@ mod tests {
             ProjectMetadataUpsertRequest {
                 name: "Project".to_owned(),
                 description: None,
+                tags: Vec::new(),
             },
         )
         .await

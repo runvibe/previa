@@ -77,6 +77,7 @@ vi.mock("react-i18next", () => ({
         "common.import": "Import",
         "common.open": "Open",
         "common.rename": "Rename",
+        "common.cancel": "Cancel",
         "dashboard.title": "Dashboard",
         "export.sqlite.error": "Error exporting projects.",
         "export.sqlite.success": "Projects exported successfully!",
@@ -85,6 +86,10 @@ vi.mock("react-i18next", () => ({
         "projects.empty.button": "Create First Stack",
         "projects.empty.description": "Create your first stack.",
         "projects.empty.title": "No stacks yet",
+        "projects.filters.clear": "Clear filters",
+        "projects.filters.noResults.description": "Try another search or remove a tag filter.",
+        "projects.filters.noResults.title": "No stacks match",
+        "projects.filters.searchPlaceholder": "Search title or description",
         "projects.importError": "Error importing project.",
         "projects.imported": "Project imported!",
         "projects.loading": "Loading...",
@@ -92,6 +97,12 @@ vi.mock("react-i18next", () => ({
         "projects.open": "Open Stack",
         "projects.renamed": "Project renamed!",
         "projects.subtitle": "Manage your API stacks and pipelines",
+        "projects.tags.add": "Add tag",
+        "projects.tags.edit": "Edit tags",
+        "projects.tags.inputLabel": "Tag name",
+        "projects.tags.save": "Save tags",
+        "projects.tags.title": "Edit stack tags",
+        "projects.tags.updated": "Stack tags updated.",
         "projects.title": "My Stacks",
         "projects.deleteConfirm.description": `Delete ${params?.name ?? ""}?`,
         "projects.deleteConfirm.title": "Delete stack?",
@@ -157,5 +168,53 @@ describe("ProjectsPage", () => {
     });
     expect(projectStoreMock.loadProjects).toHaveBeenCalledTimes(1);
     expect(toastSuccessMock).toHaveBeenCalledWith("Project duplicated!");
+  });
+
+  it("saves edited stack tags through the project store", async () => {
+    projectStoreMock.projects = [{ ...project, tags: ["billing"] }];
+    renderPage();
+
+    await openProjectMenu();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit tags" }));
+
+    fireEvent.change(await screen.findByLabelText("Tag name"), { target: { value: "critical" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add tag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save tags" }));
+
+    await waitFor(() => {
+      expect(projectStoreMock.updateProject).toHaveBeenCalledWith("project-1", {
+        tags: ["billing", "critical"],
+      });
+    });
+  });
+
+  it("filters stacks by title and description search", () => {
+    projectStoreMock.projects = [
+      { ...project, id: "project-1", name: "Payments", description: "Checkout flows" },
+      { ...project, id: "project-2", name: "Orders", description: "Fulfillment APIs" },
+    ];
+
+    renderPage();
+
+    fireEvent.change(screen.getByPlaceholderText("Search title or description"), {
+      target: { value: "checkout" },
+    });
+
+    expect(screen.getByText("Payments")).toBeInTheDocument();
+    expect(screen.queryByText("Orders")).not.toBeInTheDocument();
+  });
+
+  it("filters stacks by selected tag", () => {
+    projectStoreMock.projects = [
+      { ...project, id: "project-1", name: "Payments", tags: ["billing"] },
+      { ...project, id: "project-2", name: "Orders", tags: ["fulfillment"] },
+    ];
+
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "billing" }));
+
+    expect(screen.getByText("Payments")).toBeInTheDocument();
+    expect(screen.queryByText("Orders")).not.toBeInTheDocument();
   });
 });

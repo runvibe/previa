@@ -626,6 +626,7 @@ mod tests {
             ProjectMetadataUpsertRequest {
                 name: "Users API".to_owned(),
                 description: Some("Project resource test".to_owned()),
+                tags: Vec::new(),
             },
         )
         .await

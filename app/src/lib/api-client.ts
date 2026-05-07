@@ -17,6 +17,7 @@ export interface ProjectRecord {
   id: string;
   name: string;
   description?: string | null;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +52,7 @@ export interface PipelineInput {
 export interface ProjectUpsertRequest {
   name: string;
   description?: string | null;
+  tags?: string[];
   spec?: Record<string, unknown> | null;
   executionBackendUrl?: string | null;
   createdAt?: string | null;
@@ -60,6 +62,7 @@ export interface ProjectUpsertRequest {
 export interface ProjectUpdateRequest {
   name: string;
   description?: string | null;
+  tags?: string[];
   executionBackendUrl?: string | null;
 }
 
@@ -365,6 +368,7 @@ function projectRecordToLocal(
     id: r.id,
     name: r.name,
     description: r.description ?? undefined,
+    tags: r.tags ?? [],
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     spec,

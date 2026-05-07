@@ -23,6 +23,7 @@ interface ProjectRow {
   createdAtMs: number;
   updatedAtMs: number;
   specJson: string | null;
+  tagsJson?: string | null;
   envGroupsJson?: string | null;
 }
 
@@ -55,6 +56,7 @@ function toProjectRow(p: Project): ProjectRow {
     createdAtMs: new Date(p.createdAt).getTime(),
     updatedAtMs: new Date(p.updatedAt).getTime(),
     specJson,
+    tagsJson: JSON.stringify(p.tags ?? []),
     envGroupsJson: JSON.stringify(p.envGroups ?? []),
   };
 }
@@ -62,6 +64,7 @@ function toProjectRow(p: Project): ProjectRow {
 function fromProjectRow(row: ProjectRow, pipelines: Pipeline[]): Project {
   let specs: ProjectSpec[] = [];
   let envGroups: ProjectEnvGroup[] = [];
+  let tags: string[] = [];
   let legacySpec: OpenAPISpec | undefined;
 
   if (row.specJson) {
@@ -83,10 +86,20 @@ function fromProjectRow(row: ProjectRow, pipelines: Pipeline[]): Project {
     } catch { /* ignore parse errors */ }
   }
 
+  if (row.tagsJson) {
+    try {
+      const parsed = JSON.parse(row.tagsJson);
+      tags = Array.isArray(parsed)
+        ? parsed.filter((tag): tag is string => typeof tag === "string")
+        : [];
+    } catch { /* ignore parse errors */ }
+  }
+
   const project: Project = {
     id: row.id,
     name: row.name,
     description: row.description ?? undefined,
+    tags,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     spec: legacySpec,
@@ -287,6 +300,7 @@ export async function duplicateProject(id: string): Promise<Project | null> {
     ...project,
     id: generateUUID(),
     name: `${project.name} (cópia)`,
+    tags: [...(project.tags ?? [])],
     createdAt: now,
     updatedAt: now,
   };

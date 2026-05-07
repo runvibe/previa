@@ -41,6 +41,7 @@ export interface Project {
   id: string;
   name: string;
   description?: string;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
   /** @deprecated Use specs[] instead. Kept for backward compatibility — returns merged routes from all specs. */
