@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LoadTestResultsPanel } from "@/components/LoadTestResultsPanel";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { buildLifecycleChartData } from "@/lib/load-lifecycle-chart";
 import { buildRpsChartData } from "@/lib/load-rps-chart";
 import type { LoadTestMetrics, WaveLoadConfig } from "@/types/load-test";
@@ -21,6 +23,14 @@ describe("LoadTestResultsPanel", () => {
     expect(labelElement.previousElementSibling).toHaveTextContent(value);
   }
 
+  function expectBefore(first: HTMLElement, second: HTMLElement) {
+    expect(Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  }
+
+  function renderWithTooltipProvider(ui: ReactElement) {
+    return render(<TooltipProvider>{ui}</TooltipProvider>);
+  }
+
   const emptyMetrics: LoadTestMetrics = {
     totalSent: 0,
     totalSuccess: 0,
@@ -35,6 +45,132 @@ describe("LoadTestResultsPanel", () => {
     startTime: 1_000,
     elapsedMs: 0,
   };
+
+  it("shows outcome before wave, response, generator diagnostics, and runner infrastructure", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      totalSent: 1200,
+      totalSuccess: 1198,
+      totalError: 2,
+      rps: 80,
+      avgLatency: 42,
+      p95: 90,
+      p99: 110,
+      elapsedMs: 15_000,
+      targetIntensity: 50,
+      targetRpsLimit: 100,
+      curveAdherence: 99.7,
+      schedulerLaggedStarts: 3,
+      readyRequests: 0,
+      dispatchSubmitted: 1200,
+      dispatchStarted: 1200,
+      httpStarted: 1200,
+      httpSendReturned: 1200,
+      responseBodyCompleted: 1198,
+      senderQueueDepth: 0,
+      senderStartLagP95Ms: 1,
+      httpSendDurationP95Ms: 1,
+      responseObservationDurationP95Ms: 2,
+      schedulerLagMs: 12,
+      inFlight: 2,
+      latencyHistory: [
+        { index: 1, latency: 40, timestamp: 1_000 },
+        { index: 2, latency: 42, timestamp: 2_000 },
+      ],
+      rpsHistory: [
+        { timestamp: 1_000, elapsedMs: 1_000, rps: 50, totalSent: 50 },
+        { timestamp: 2_000, elapsedMs: 2_000, rps: 80, totalSent: 130 },
+      ],
+      lifecycleBuckets: [
+        { elapsedMs: 1_000, planned: 50, httpStarted: 50 },
+        { elapsedMs: 2_000, planned: 80, httpStarted: 80 },
+      ],
+      runnerResourceHistory: [
+        {
+          node: "runner-a",
+          timestamp: 1_000,
+          elapsedMs: 1_000,
+          cpuUsagePercent: 10,
+          memoryBytes: 134_217_728,
+          memoryMb: 128,
+          networkRxBytes: 1_024,
+          networkTxBytes: 2_048,
+          networkTotalBytes: 3_072,
+          networkTotalKb: 3,
+        },
+      ],
+    };
+
+    renderWithTooltipProvider(
+      <LoadTestResultsPanel
+        metrics={metrics}
+        state="completed"
+        totalRequests={0}
+        config={{
+          points: [
+            { atMs: 0, intensity: 10 },
+            { atMs: 2000, intensity: 80 },
+          ],
+          interpolation: "linear",
+        }}
+      />,
+    );
+
+    const outcome = screen.getByTestId("load-results-outcome");
+    const wave = screen.getByTestId("load-results-wave");
+    const response = screen.getByTestId("load-results-response");
+    const generator = screen.getByTestId("load-results-generator");
+    const runnerInfra = screen.getByTestId("load-results-runner-infra");
+
+    expectBefore(outcome, wave);
+    expectBefore(wave, response);
+    expectBefore(response, generator);
+    expectBefore(generator, runnerInfra);
+    expect(screen.getByText("loadTestResults.httpStarted")).toBeInTheDocument();
+    expectBefore(response, screen.getByText("loadTestResults.httpStarted").closest("div")!);
+  });
+
+  it("prioritizes observed RPS before configured wave and lifecycle diagnostics", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      totalSent: 100,
+      totalSuccess: 100,
+      rps: 50,
+      elapsedMs: 2000,
+      rpsHistory: [
+        { timestamp: 1_000, elapsedMs: 1_000, rps: 20, totalSent: 20 },
+        { timestamp: 2_000, elapsedMs: 2_000, rps: 50, totalSent: 70 },
+      ],
+      lifecycleBuckets: [
+        { elapsedMs: 1_000, planned: 20, httpStarted: 20 },
+        { elapsedMs: 2_000, planned: 50, httpStarted: 50 },
+      ],
+    };
+
+    render(
+      <LoadTestResultsPanel
+        metrics={metrics}
+        state="completed"
+        totalRequests={0}
+        config={{
+          points: [
+            { atMs: 0, intensity: 10 },
+            { atMs: 2000, intensity: 80 },
+          ],
+          interpolation: "linear",
+        }}
+      />,
+    );
+
+    expectBefore(screen.getByTestId("rps-over-time-chart"), screen.getByTestId("configured-wave-chart"));
+    expectBefore(screen.getByTestId("configured-wave-chart"), screen.getByTestId("wave-lifecycle-chart"));
+  });
+
+  it("does not render an empty runner infrastructure section", () => {
+    render(<LoadTestResultsPanel metrics={emptyMetrics} state="completed" totalRequests={0} />);
+
+    expect(screen.queryByTestId("load-results-runner-infra")).not.toBeInTheDocument();
+  });
 
   it("shows runner resource charts when a single runtime sample exists", () => {
     const metrics: LoadTestMetrics = {

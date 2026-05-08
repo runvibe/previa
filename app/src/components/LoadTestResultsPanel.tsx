@@ -73,6 +73,25 @@ function MetricCard({ icon: Icon, label, value, color }: { icon: React.ElementTy
   );
 }
 
+function ResultsSection({
+  title,
+  testId,
+  children,
+}: {
+  title: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section data-testid={testId} className="space-y-2">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
 function buildRunnerResourceChartData(
   points: RunnerResourcePoint[],
   valueKey: "cpuUsagePercent" | "memoryMb" | "networkTotalKb",
@@ -158,647 +177,678 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
   const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, "memoryMb");
   const networkChartData = buildRunnerResourceChartData(runnerResourceHistory, "networkTotalKb");
+  const hasWaveSection = rpsChartData.length > 1 || (waveConfig && waveChartData.length > 1) || lifecycleChartData.length > 0;
+  const hasResponseSection =
+    metrics.avgLatency > 0 ||
+    typeof metrics.inFlight === "number" ||
+    latencyChartData.length > 1 ||
+    Boolean(metrics.errors && metrics.errors.length > 0);
+  const hasGeneratorSummary =
+    typeof metrics.schedulerLaggedStarts === "number" ||
+    typeof metrics.readyRequests === "number" ||
+    typeof metrics.schedulerLagMs === "number";
+  const hasGeneratorDetails =
+    typeof metrics.dispatchSubmitted === "number" ||
+    typeof metrics.dispatchStarted === "number" ||
+    typeof metrics.httpSendReturned === "number" ||
+    typeof metrics.responseBodyCompleted === "number" ||
+    typeof metrics.dependencyLimitedStarts === "number" ||
+    typeof metrics.dispatcherLaggedStarts === "number" ||
+    typeof metrics.runtimeLaggedStarts === "number" ||
+    typeof metrics.senderLaggedStarts === "number" ||
+    typeof metrics.senderQueueDepth === "number" ||
+    typeof metrics.senderStartLagP95Ms === "number" ||
+    typeof metrics.httpSendDurationP95Ms === "number" ||
+    typeof metrics.responseObservationDurationP95Ms === "number" ||
+    typeof metrics.slotEnqueued === "number" ||
+    typeof metrics.requestPrepared === "number" ||
+    typeof metrics.requestEnqueued === "number" ||
+    typeof metrics.sendTaskSpawned === "number" ||
+    typeof metrics.sendStarted === "number" ||
+    typeof metrics.httpStarted === "number" ||
+    typeof metrics.outstandingRequests === "number";
+  const hasRunnerInfraSection = runnerNames.length > 0 && (cpuChartData.length > 0 || memoryChartData.length > 0 || networkChartData.length > 0);
 
   return (
     <div className="space-y-4 p-1">
-      {nodesInfo && nodesInfo.nodesUsed > 0 && (
-        <div className="glass rounded-lg p-3 flex items-center gap-3">
-          <Server className="h-4 w-4 text-primary shrink-0" />
-          <div className="min-w-0 flex-1">
+      <ResultsSection title={t("loadTestResults.sectionOutcome")} testId="load-results-outcome">
+        {nodesInfo && nodesInfo.nodesUsed > 0 && (
+          <div className="glass rounded-lg p-3 flex items-center gap-3">
+            <Server className="h-4 w-4 text-primary shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold">
+                  {t(nodesInfo.nodesUsed === 1 ? "loadTestResults.nodes" : "loadTestResults.nodes_plural", { count: nodesInfo.nodesUsed })}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {t("loadTestResults.nodesOf", { count: nodesInfo.nodesFound, suffix: nodesInfo.nodesFound !== 1 ? "is" : "l" })}
+                </span>
+              </div>
+              {nodesInfo.nodeNames.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {nodesInfo.nodeNames.map((name) => (
+                    <span key={name} className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {totalRequests > 0 && (
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold">
-                {t(nodesInfo.nodesUsed === 1 ? "loadTestResults.nodes" : "loadTestResults.nodes_plural", { count: nodesInfo.nodesUsed })}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {t("loadTestResults.nodesOf", { count: nodesInfo.nodesFound, suffix: nodesInfo.nodesFound !== 1 ? "is" : "l" })}
+              <Progress value={progressPercent} className="h-3.5 flex-1" />
+              <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+                {metrics.totalSent}/{totalRequests}
               </span>
             </div>
-            {nodesInfo.nodeNames.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
-                {nodesInfo.nodeNames.map((name) => (
-                  <span key={name} className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                    {name}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
-      )}
-      {/* Progress */}
-      {totalRequests > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Progress value={progressPercent} className="h-3.5 flex-1" />
-            <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-              {metrics.totalSent}/{totalRequests}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Metric cards */}
-      <div className="grid grid-cols-3 gap-2">
-        <MetricCard icon={Zap} label={t("loadTestResults.sent")} value={metrics.totalSent} />
-        <MetricCard icon={CheckCircle2} label={t("loadTestResults.success")} value={metrics.totalSuccess} color="text-success" />
-        <MetricCard icon={AlertCircle} label={t("loadTestResults.error")} value={metrics.totalError} color="text-destructive" />
-      </div>
-      <div className={`grid gap-2 ${metrics.avgLatency > 0 ? 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-5' : 'grid-cols-2'}`}>
-        <MetricCard icon={TrendingUp} label="RPS" value={metrics.rps} color="text-primary" />
-        <MetricCard
-          icon={Clock}
-          label={t("loadTestResults.elapsedLabel", "Time")}
-          value={`${Math.round(metrics.elapsedMs / 1000)}s`}
-        />
-        {metrics.avgLatency > 0 && (
-          <>
-            <MetricCard icon={Clock} label={t("loadTestResults.avg")} value={`${metrics.avgLatency}ms`} />
-            <MetricCard icon={Activity} label="P95" value={`${metrics.p95}ms`} />
-            <MetricCard icon={Activity} label="P99" value={`${metrics.p99}ms`} />
-          </>
         )}
-      </div>
-      {metrics.errors && metrics.errors.length > 0 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            {t("loadTestResults.errorSamples")}
-          </p>
-          <div className="space-y-1">
-            {metrics.errors.slice(0, 5).map((error, index) => (
-              <p key={`${error}-${index}`} className="break-words text-xs text-destructive">
-                {error}
-              </p>
-            ))}
-          </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <MetricCard icon={Zap} label={t("loadTestResults.sent")} value={metrics.totalSent} />
+          <MetricCard icon={CheckCircle2} label={t("loadTestResults.success")} value={metrics.totalSuccess} color="text-success" />
+          <MetricCard icon={AlertCircle} label={t("loadTestResults.error")} value={metrics.totalError} color="text-destructive" />
         </div>
-      )}
-      {(typeof metrics.targetIntensity === "number" ||
-        typeof metrics.targetRpsLimit === "number" ||
-        typeof metrics.inFlight === "number") && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <MetricCard icon={TrendingUp} label="RPS" value={metrics.rps} color="text-primary" />
+          <MetricCard
+            icon={Clock}
+            label={t("loadTestResults.elapsedLabel", "Time")}
+            value={`${Math.round(metrics.elapsedMs / 1000)}s`}
+          />
           {typeof metrics.targetIntensity === "number" && (
             <MetricCard icon={Gauge} label={t("loadTestResults.targetIntensity")} value={`${metrics.targetIntensity.toFixed(1)}%`} color="text-primary" />
           )}
           {typeof metrics.targetRpsLimit === "number" && (
             <MetricCard icon={Gauge} label={t("loadTestResults.targetRpsLimit")} value={metrics.targetRpsLimit.toFixed(1)} color="text-primary" />
           )}
+        </div>
+
+        {(typeof metrics.curveAdherence === "number" || waveDiagnostics.actualMissedStarts > 0) && (
+          <div className="grid grid-cols-2 gap-2">
+            {typeof metrics.curveAdherence === "number" && (
+              <MetricCard
+                icon={Activity}
+                label={t("loadTestResults.curveAdherence")}
+                value={`${parseFloat(metrics.curveAdherence.toFixed(1))}%`}
+                color="text-success"
+              />
+            )}
+            <MetricCard
+              icon={waveDiagnostics.hasActualWaveLoss ? AlertTriangle : Activity}
+              label={t("loadTestResults.actualMissedStarts")}
+              value={waveDiagnostics.hasActualWaveLoss ? waveDiagnostics.actualMissedStarts : 0}
+              color={waveDiagnostics.hasActualWaveLoss ? "text-warning" : "text-success"}
+            />
+          </div>
+        )}
+      </ResultsSection>
+
+      {hasWaveSection && (
+        <ResultsSection title={t("loadTestResults.sectionWave")} testId="load-results-wave">
+          {rpsChartData.length > 1 && (
+            <div data-testid="rps-over-time-chart" className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {rpsChart.usesHttpRps ? t("loadTestResults.httpRpsOverTime") : t("loadTestResults.rpsOverTime")}
+                </p>
+                <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
+                  {rpsChart.runnerSeries.slice(0, 4).map((runner, index) => (
+                    <span key={runner.key} className="inline-flex items-center gap-1">
+                      <span
+                        className="h-0 w-3 border-t"
+                        style={{ borderColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
+                      />
+                      {runner.label}
+                    </span>
+                  ))}
+                  {rpsChart.runnerSeries.length > 4 && <span>+{rpsChart.runnerSeries.length - 4}</span>}
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-0 w-3 border-t border-dashed border-success" />
+                    {rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")}
+                  </span>
+                  {hasTargetRpsLine && (
+                    <span data-testid="rps-target-legend" className="inline-flex items-center gap-1">
+                      <span className="h-0 w-3 border-t border-dotted border-primary" />
+                      {t("loadTestResults.rpsTarget")}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={100}>
+                <AreaChart data={rpsChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [
+                      typeof v === "number" ? v.toFixed(1) : v,
+                      name === "targetRpsLimit"
+                        ? t("loadTestResults.rpsTarget")
+                        : name === "rpsTotal"
+                          ? rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")
+                          : rpsChart.runnerSeries.find((runner) => runner.key === name)?.label ?? name,
+                    ]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {rpsChart.runnerSeries.map((runner, index) => (
+                    <Line
+                      key={runner.key}
+                      type="monotone"
+                      dataKey={runner.key}
+                      stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                      strokeWidth={1.5}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
+                  <Area
+                    type="monotone"
+                    dataKey="rpsTotal"
+                    stroke="hsl(var(--status-success))"
+                    fill="hsl(var(--status-success) / 0.10)"
+                    strokeWidth={1.75}
+                    strokeDasharray={rpsChart.usesHttpRps ? "5 4" : undefined}
+                  />
+                  {hasTargetRpsLine && (
+                    <Line
+                      type={waveConfig ? waveChartType(waveConfig.interpolation) : "monotone"}
+                      dataKey="targetRpsLimit"
+                      stroke="hsl(var(--primary))"
+                      strokeDasharray="2 5"
+                      strokeWidth={1.5}
+                      dot={false}
+                      connectNulls
+                    />
+                  )}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {waveConfig && waveChartData.length > 1 && (
+            <div data-testid="configured-wave-chart" className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("loadTestResults.configuredWave")}
+                </p>
+                <span className="text-[10px] text-muted-foreground">
+                  {t(interpolationLabelKey(waveConfig.interpolation))}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <AreaChart data={waveChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number) => [`${v}%`, t("loadTestResults.targetIntensity")]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  <Area
+                    type={waveChartType(waveConfig.interpolation)}
+                    dataKey="intensity"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary) / 0.14)"
+                    strokeWidth={1.8}
+                    dot={waveChartData.length <= 12}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+              <div className="flex flex-wrap gap-1">
+                {waveConfig.points.map((point, index) => (
+                  <span key={`${point.atMs}-${point.intensity}-${index}`} className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[10px]">
+                    <span className="font-mono text-muted-foreground">{formatPointTime(point)}</span>
+                    <span className="font-semibold">{point.intensity}%</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {lifecycleChartData.length > 0 && (
+            <div data-testid="wave-lifecycle-chart" className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("loadTestResults.waveLifecycle")}
+                </p>
+                <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
+                  {lifecycleChart.series.map((series) => (
+                    <span key={series.key} className="inline-flex items-center gap-1">
+                      <span
+                        className="h-0 w-3 border-t"
+                        style={{ borderColor: LIFECYCLE_COLORS[series.tone] }}
+                      />
+                      {t(series.labelKey)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={lifecycleChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis yAxisId="count" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  {lifecycleChart.series.some((series) => series.axis === "ms") && (
+                    <YAxis
+                      yAxisId="ms"
+                      orientation="right"
+                      tick={{ fontSize: 9 }}
+                      stroke="hsl(var(--muted-foreground))"
+                      tickFormatter={(v) => `${v}ms`}
+                    />
+                  )}
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [
+                      typeof v === "number"
+                        ? `${v.toFixed(1)}${lifecycleChart.series.find((series) => series.key === name)?.axis === "ms" ? "ms" : ""}`
+                        : v,
+                      t(lifecycleChart.series.find((series) => series.key === name)?.labelKey ?? name),
+                    ]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {lifecycleChart.series.map((series) => (
+                    <Line
+                      key={series.key}
+                      type="monotone"
+                      dataKey={series.key}
+                      yAxisId={series.axis}
+                      stroke={LIFECYCLE_COLORS[series.tone]}
+                      strokeWidth={series.key === "planned" || series.key === "httpStarted" ? 1.75 : 1.4}
+                      strokeDasharray={series.key === "planned" ? "2 4" : series.axis === "ms" ? "4 3" : undefined}
+                      dot={lifecycleChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ResultsSection>
+      )}
+
+      {hasResponseSection && (
+        <ResultsSection title={t("loadTestResults.sectionResponse")} testId="load-results-response">
+          {metrics.avgLatency > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              <MetricCard icon={Clock} label={t("loadTestResults.avg")} value={`${metrics.avgLatency}ms`} />
+              <MetricCard icon={Activity} label="P95" value={`${metrics.p95}ms`} />
+              <MetricCard icon={Activity} label="P99" value={`${metrics.p99}ms`} />
+            </div>
+          )}
+
           {typeof metrics.inFlight === "number" && (
-            <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
-          )}
-        </div>
-      )}
-      {(typeof metrics.curveAdherence === "number" ||
-        typeof metrics.schedulerLaggedStarts === "number" ||
-        waveDiagnostics.actualMissedStarts > 0 ||
-        typeof metrics.readyRequests === "number") && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {typeof metrics.curveAdherence === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.curveAdherence")}
-              value={`${parseFloat(metrics.curveAdherence.toFixed(1))}%`}
-              color="text-success"
-            />
-          )}
-          <MetricCard
-            icon={waveDiagnostics.hasActualWaveLoss ? AlertTriangle : Activity}
-            label={t("loadTestResults.actualMissedStarts")}
-            value={waveDiagnostics.hasActualWaveLoss ? waveDiagnostics.actualMissedStarts : 0}
-            color={waveDiagnostics.hasActualWaveLoss ? "text-warning" : "text-success"}
-          />
-          {typeof metrics.schedulerLaggedStarts === "number" && (
-            <MetricCard
-              icon={Clock}
-              label={t("loadTestResults.compensatedSchedulerStarts")}
-              value={metrics.schedulerLaggedStarts}
-              color={waveDiagnostics.schedulerDelayWasCompensated ? "text-success" : "text-warning"}
-            />
-          )}
-          {typeof metrics.readyRequests === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.readyRequests")}
-              value={metrics.readyRequests}
-              color="text-primary"
-            />
-          )}
-        </div>
-      )}
-      {(typeof metrics.dispatchSubmitted === "number" ||
-        typeof metrics.dispatchStarted === "number" ||
-        typeof metrics.httpSendReturned === "number" ||
-        typeof metrics.responseBodyCompleted === "number" ||
-        typeof metrics.dependencyLimitedStarts === "number" ||
-        typeof metrics.dispatcherLaggedStarts === "number" ||
-        typeof metrics.runtimeLaggedStarts === "number" ||
-        typeof metrics.senderLaggedStarts === "number" ||
-        typeof metrics.senderQueueDepth === "number" ||
-        typeof metrics.senderStartLagP95Ms === "number" ||
-        typeof metrics.httpSendDurationP95Ms === "number" ||
-        typeof metrics.responseObservationDurationP95Ms === "number" ||
-        typeof metrics.schedulerLagMs === "number" ||
-        typeof metrics.slotEnqueued === "number" ||
-        typeof metrics.requestPrepared === "number" ||
-        typeof metrics.requestEnqueued === "number" ||
-        typeof metrics.sendTaskSpawned === "number" ||
-        typeof metrics.sendStarted === "number" ||
-        typeof metrics.httpStarted === "number" ||
-        typeof metrics.outstandingRequests === "number") && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-5">
-          {typeof metrics.dispatchSubmitted === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.dispatchSubmitted")}
-              value={metrics.dispatchSubmitted}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.dispatchStarted === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.dispatchStarted")}
-              value={metrics.dispatchStarted}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.slotEnqueued === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.slotEnqueued")}
-              value={metrics.slotEnqueued}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.requestPrepared === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.requestPrepared")}
-              value={metrics.requestPrepared}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.requestEnqueued === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.requestEnqueued")}
-              value={metrics.requestEnqueued}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.sendTaskSpawned === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.sendTaskSpawned")}
-              value={metrics.sendTaskSpawned}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.sendStarted === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.sendStarted")}
-              value={metrics.sendStarted}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.httpStarted === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.httpStarted")}
-              value={metrics.httpStarted}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.httpSendReturned === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.httpSendReturned")}
-              value={metrics.httpSendReturned}
-            />
-          )}
-          {typeof metrics.responseBodyCompleted === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.responseBodyCompleted")}
-              value={metrics.responseBodyCompleted}
-            />
-          )}
-          {typeof metrics.dependencyLimitedStarts === "number" && (
-            <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.dependencyLimitedStarts")}
-              value={metrics.dependencyLimitedStarts}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.dispatcherLaggedStarts === "number" && (
-            <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.dispatcherLaggedStarts")}
-              value={metrics.dispatcherLaggedStarts}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.runtimeLaggedStarts === "number" && (
-            <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.runtimeLaggedStarts")}
-              value={metrics.runtimeLaggedStarts}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.senderLaggedStarts === "number" && (
-            <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.senderLaggedStarts")}
-              value={metrics.senderLaggedStarts}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.senderQueueDepth === "number" && (
-            <MetricCard
-              icon={ListChecks}
-              label={t("loadTestResults.senderQueueDepth")}
-              value={metrics.senderQueueDepth}
-              color="text-primary"
-            />
-          )}
-          {typeof metrics.senderStartLagP95Ms === "number" && (
-            <MetricCard
-              icon={Clock}
-              label={t("loadTestResults.senderStartLagP95Ms")}
-              value={`${metrics.senderStartLagP95Ms}ms`}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.httpSendDurationP95Ms === "number" && (
-            <MetricCard
-              icon={Clock}
-              label={t("loadTestResults.httpSendDurationP95Ms")}
-              value={`${metrics.httpSendDurationP95Ms}ms`}
-            />
-          )}
-          {typeof metrics.responseObservationDurationP95Ms === "number" && (
-            <MetricCard
-              icon={Clock}
-              label={t("loadTestResults.responseObservationDurationP95Ms")}
-              value={`${metrics.responseObservationDurationP95Ms}ms`}
-            />
-          )}
-          {typeof metrics.schedulerLagMs === "number" && (
-            <MetricCard
-              icon={Clock}
-              label={t("loadTestResults.schedulerLagMs")}
-              value={`${metrics.schedulerLagMs}ms`}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.outstandingRequests === "number" && (
-            <MetricCard
-              icon={Activity}
-              label={t("loadTestResults.observerBacklog")}
-              value={metrics.outstandingRequests}
-            />
-          )}
-        </div>
-      )}
-
-      {waveConfig && waveChartData.length > 1 && (
-        <div data-testid="configured-wave-chart" className="glass rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              {t("loadTestResults.configuredWave")}
-            </p>
-            <span className="text-[10px] text-muted-foreground">
-              {t(interpolationLabelKey(waveConfig.interpolation))}
-            </span>
-          </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <AreaChart data={waveChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number) => [`${v}%`, t("loadTestResults.targetIntensity")]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              <Area
-                type={waveChartType(waveConfig.interpolation)}
-                dataKey="intensity"
-                stroke="hsl(var(--primary))"
-                fill="hsl(var(--primary) / 0.14)"
-                strokeWidth={1.8}
-                dot={waveChartData.length <= 12}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-          <div className="flex flex-wrap gap-1">
-            {waveConfig.points.map((point, index) => (
-              <span key={`${point.atMs}-${point.intensity}-${index}`} className="inline-flex items-center gap-1 rounded-md bg-muted/50 px-1.5 py-0.5 text-[10px]">
-                <span className="font-mono text-muted-foreground">{formatPointTime(point)}</span>
-                <span className="font-semibold">{point.intensity}%</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Latency chart */}
-      {latencyChartData.length > 1 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.latencyOverTime")}</p>
-          <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={latencyChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                labelFormatter={(v) => `#${v}`}
-                formatter={(v: number) => [`${v}ms`, t("loadTestResults.latency")]}
-              />
-              <Line type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* RPS chart */}
-      {rpsChartData.length > 1 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              {rpsChart.usesHttpRps ? t("loadTestResults.httpRpsOverTime") : t("loadTestResults.rpsOverTime")}
-            </p>
-            <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
-              {rpsChart.runnerSeries.slice(0, 4).map((runner, index) => (
-                <span key={runner.key} className="inline-flex items-center gap-1">
-                  <span
-                    className="h-0 w-3 border-t"
-                    style={{ borderColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
-                  />
-                  {runner.label}
-                </span>
-              ))}
-              {rpsChart.runnerSeries.length > 4 && <span>+{rpsChart.runnerSeries.length - 4}</span>}
-              <span className="inline-flex items-center gap-1">
-                <span className="h-0 w-3 border-t border-dashed border-success" />
-                {rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")}
-              </span>
-              {hasTargetRpsLine && (
-                <span data-testid="rps-target-legend" className="inline-flex items-center gap-1">
-                  <span className="h-0 w-3 border-t border-dotted border-primary" />
-                  {t("loadTestResults.rpsTarget")}
-                </span>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
             </div>
-          </div>
-          <ResponsiveContainer width="100%" height={100}>
-            <AreaChart data={rpsChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number, name: string) => [
-                  typeof v === "number" ? v.toFixed(1) : v,
-                  name === "targetRpsLimit"
-                    ? t("loadTestResults.rpsTarget")
-                    : name === "rpsTotal"
-                      ? rpsChart.usesHttpRps ? t("loadTestResults.rpsTotal") : t("loadTestResults.rpsActual")
-                      : rpsChart.runnerSeries.find((runner) => runner.key === name)?.label ?? name,
-                ]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              {rpsChart.runnerSeries.map((runner, index) => (
-                <Line
-                  key={runner.key}
-                  type="monotone"
-                  dataKey={runner.key}
-                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls
-                />
-              ))}
-              <Area
-                type="monotone"
-                dataKey="rpsTotal"
-                stroke="hsl(var(--status-success))"
-                fill="hsl(var(--status-success) / 0.10)"
-                strokeWidth={1.75}
-                strokeDasharray={rpsChart.usesHttpRps ? "5 4" : undefined}
-              />
-              {hasTargetRpsLine && (
-                <Line
-                  type={waveConfig ? waveChartType(waveConfig.interpolation) : "monotone"}
-                  dataKey="targetRpsLimit"
-                  stroke="hsl(var(--primary))"
-                  strokeDasharray="2 5"
-                  strokeWidth={1.5}
-                  dot={false}
-                  connectNulls
+          )}
+
+          {latencyChartData.length > 1 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.latencyOverTime")}</p>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={latencyChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    labelFormatter={(v) => `#${v}`}
+                    formatter={(v: number) => [`${v}ms`, t("loadTestResults.latency")]}
+                  />
+                  <Line type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {metrics.errors && metrics.errors.length > 0 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                {t("loadTestResults.errorSamples")}
+              </p>
+              <div className="space-y-1">
+                {metrics.errors.slice(0, 5).map((error, index) => (
+                  <p key={`${error}-${index}`} className="break-words text-xs text-destructive">
+                    {error}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </ResultsSection>
+      )}
+
+      {(hasGeneratorSummary || hasGeneratorDetails) && (
+        <ResultsSection title={t("loadTestResults.sectionGenerator")} testId="load-results-generator">
+          {hasGeneratorSummary && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {typeof metrics.schedulerLaggedStarts === "number" && (
+                <MetricCard
+                  icon={Clock}
+                  label={t("loadTestResults.compensatedSchedulerStarts")}
+                  value={metrics.schedulerLaggedStarts}
+                  color={waveDiagnostics.schedulerDelayWasCompensated ? "text-success" : "text-warning"}
                 />
               )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {lifecycleChartData.length > 0 && (
-        <div data-testid="wave-lifecycle-chart" className="glass rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              {t("loadTestResults.waveLifecycle")}
-            </p>
-            <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
-              {lifecycleChart.series.map((series) => (
-                <span key={series.key} className="inline-flex items-center gap-1">
-                  <span
-                    className="h-0 w-3 border-t"
-                    style={{ borderColor: LIFECYCLE_COLORS[series.tone] }}
-                  />
-                  {t(series.labelKey)}
-                </span>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={lifecycleChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis yAxisId="count" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-              {lifecycleChart.series.some((series) => series.axis === "ms") && (
-                <YAxis
-                  yAxisId="ms"
-                  orientation="right"
-                  tick={{ fontSize: 9 }}
-                  stroke="hsl(var(--muted-foreground))"
-                  tickFormatter={(v) => `${v}ms`}
+              {typeof metrics.readyRequests === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.readyRequests")}
+                  value={metrics.readyRequests}
+                  color="text-primary"
                 />
               )}
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number, name: string) => [
-                  typeof v === "number"
-                    ? `${v.toFixed(1)}${lifecycleChart.series.find((series) => series.key === name)?.axis === "ms" ? "ms" : ""}`
-                    : v,
-                  t(lifecycleChart.series.find((series) => series.key === name)?.labelKey ?? name),
-                ]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              {lifecycleChart.series.map((series) => (
-                <Line
-                  key={series.key}
-                  type="monotone"
-                  dataKey={series.key}
-                  yAxisId={series.axis}
-                  stroke={LIFECYCLE_COLORS[series.tone]}
-                  strokeWidth={series.key === "planned" || series.key === "httpStarted" ? 1.75 : 1.4}
-                  strokeDasharray={series.key === "planned" ? "2 4" : series.axis === "ms" ? "4 3" : undefined}
-                  dot={lifecycleChartData.length === 1}
-                  connectNulls
+              {typeof metrics.schedulerLagMs === "number" && (
+                <MetricCard
+                  icon={Clock}
+                  label={t("loadTestResults.schedulerLagMs")}
+                  value={`${metrics.schedulerLagMs}ms`}
+                  color="text-warning"
                 />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {runnerNames.length > 0 && cpuChartData.length > 0 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
-            <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
-              {runnerNames.map((name, index) => (
-                <span key={name} className="inline-flex items-center gap-1 text-[9px] text-muted-foreground">
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ backgroundColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
-                  />
-                  <span className="max-w-28 truncate font-mono">{name}</span>
-                </span>
-              ))}
+              )}
             </div>
-          </div>
-          <ResponsiveContainer width="100%" height={110}>
-            <LineChart data={cpuChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number, name: string) => [`${v}%`, name]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              {runnerNames.map((name, index) => (
-                <Line
-                  key={name}
-                  type="monotone"
-                  dataKey={name}
-                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
-                  strokeWidth={1.5}
-                  dot={cpuChartData.length === 1}
-                  connectNulls
+          )}
+
+          {hasGeneratorDetails && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+              {typeof metrics.dispatchSubmitted === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.dispatchSubmitted")}
+                  value={metrics.dispatchSubmitted}
+                  color="text-primary"
                 />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+              )}
+              {typeof metrics.dispatchStarted === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.dispatchStarted")}
+                  value={metrics.dispatchStarted}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.slotEnqueued === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.slotEnqueued")}
+                  value={metrics.slotEnqueued}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.requestPrepared === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.requestPrepared")}
+                  value={metrics.requestPrepared}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.requestEnqueued === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.requestEnqueued")}
+                  value={metrics.requestEnqueued}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.sendTaskSpawned === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.sendTaskSpawned")}
+                  value={metrics.sendTaskSpawned}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.sendStarted === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.sendStarted")}
+                  value={metrics.sendStarted}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.httpStarted === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.httpStarted")}
+                  value={metrics.httpStarted}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.httpSendReturned === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.httpSendReturned")}
+                  value={metrics.httpSendReturned}
+                />
+              )}
+              {typeof metrics.responseBodyCompleted === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.responseBodyCompleted")}
+                  value={metrics.responseBodyCompleted}
+                />
+              )}
+              {typeof metrics.dependencyLimitedStarts === "number" && (
+                <MetricCard
+                  icon={AlertTriangle}
+                  label={t("loadTestResults.dependencyLimitedStarts")}
+                  value={metrics.dependencyLimitedStarts}
+                  color="text-warning"
+                />
+              )}
+              {typeof metrics.dispatcherLaggedStarts === "number" && (
+                <MetricCard
+                  icon={AlertTriangle}
+                  label={t("loadTestResults.dispatcherLaggedStarts")}
+                  value={metrics.dispatcherLaggedStarts}
+                  color="text-warning"
+                />
+              )}
+              {typeof metrics.runtimeLaggedStarts === "number" && (
+                <MetricCard
+                  icon={AlertTriangle}
+                  label={t("loadTestResults.runtimeLaggedStarts")}
+                  value={metrics.runtimeLaggedStarts}
+                  color="text-warning"
+                />
+              )}
+              {typeof metrics.senderLaggedStarts === "number" && (
+                <MetricCard
+                  icon={AlertTriangle}
+                  label={t("loadTestResults.senderLaggedStarts")}
+                  value={metrics.senderLaggedStarts}
+                  color="text-warning"
+                />
+              )}
+              {typeof metrics.senderQueueDepth === "number" && (
+                <MetricCard
+                  icon={ListChecks}
+                  label={t("loadTestResults.senderQueueDepth")}
+                  value={metrics.senderQueueDepth}
+                  color="text-primary"
+                />
+              )}
+              {typeof metrics.senderStartLagP95Ms === "number" && (
+                <MetricCard
+                  icon={Clock}
+                  label={t("loadTestResults.senderStartLagP95Ms")}
+                  value={`${metrics.senderStartLagP95Ms}ms`}
+                  color="text-warning"
+                />
+              )}
+              {typeof metrics.httpSendDurationP95Ms === "number" && (
+                <MetricCard
+                  icon={Clock}
+                  label={t("loadTestResults.httpSendDurationP95Ms")}
+                  value={`${metrics.httpSendDurationP95Ms}ms`}
+                />
+              )}
+              {typeof metrics.responseObservationDurationP95Ms === "number" && (
+                <MetricCard
+                  icon={Clock}
+                  label={t("loadTestResults.responseObservationDurationP95Ms")}
+                  value={`${metrics.responseObservationDurationP95Ms}ms`}
+                />
+              )}
+              {typeof metrics.outstandingRequests === "number" && (
+                <MetricCard
+                  icon={Activity}
+                  label={t("loadTestResults.observerBacklog")}
+                  value={metrics.outstandingRequests}
+                />
+              )}
+            </div>
+          )}
+        </ResultsSection>
       )}
 
-      {runnerNames.length > 0 && memoryChartData.length > 0 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
-          <ResponsiveContainer width="100%" height={110}>
-            <LineChart data={memoryChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatMemory(Number(v))} width={42} />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number, name: string) => [formatMemory(v), name]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              {runnerNames.map((name, index) => (
-                <Line
-                  key={name}
-                  type="monotone"
-                  dataKey={name}
-                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
-                  strokeWidth={1.5}
-                  dot={memoryChartData.length === 1}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {hasRunnerInfraSection && (
+        <ResultsSection title={t("loadTestResults.sectionRunnerInfra")} testId="load-results-runner-infra">
+          {runnerNames.length > 0 && cpuChartData.length > 0 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
+                <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+                  {runnerNames.map((name, index) => (
+                    <span key={name} className="inline-flex items-center gap-1 text-[9px] text-muted-foreground">
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
+                      />
+                      <span className="max-w-28 truncate font-mono">{name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={110}>
+                <LineChart data={cpuChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}%`} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [`${v}%`, name]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {runnerNames.map((name, index) => (
+                    <Line
+                      key={name}
+                      type="monotone"
+                      dataKey={name}
+                      stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                      strokeWidth={1.5}
+                      dot={cpuChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
-      {runnerNames.length > 0 && networkChartData.length > 0 && (
-        <div className="glass rounded-lg p-3 space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner network</p>
-          <ResponsiveContainer width="100%" height={110}>
-            <LineChart data={networkChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
-              <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatNetwork(Number(v))} width={42} />
-              <RechartsTooltip
-                contentStyle={{
-                  background: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                  fontSize: 11,
-                }}
-                formatter={(v: number, name: string) => [formatNetwork(v), name]}
-                labelFormatter={(v) => `${v}s`}
-              />
-              {runnerNames.map((name, index) => (
-                <Line
-                  key={name}
-                  type="monotone"
-                  dataKey={name}
-                  stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
-                  strokeWidth={1.5}
-                  dot={networkChartData.length === 1}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+          {runnerNames.length > 0 && memoryChartData.length > 0 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
+              <ResponsiveContainer width="100%" height={110}>
+                <LineChart data={memoryChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatMemory(Number(v))} width={42} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [formatMemory(v), name]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {runnerNames.map((name, index) => (
+                    <Line
+                      key={name}
+                      type="monotone"
+                      dataKey={name}
+                      stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                      strokeWidth={1.5}
+                      dot={memoryChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {runnerNames.length > 0 && networkChartData.length > 0 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner network</p>
+              <ResponsiveContainer width="100%" height={110}>
+                <LineChart data={networkChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => formatNetwork(Number(v))} width={42} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [formatNetwork(v), name]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {runnerNames.map((name, index) => (
+                    <Line
+                      key={name}
+                      type="monotone"
+                      dataKey={name}
+                      stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
+                      strokeWidth={1.5}
+                      dot={networkChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ResultsSection>
       )}
 
     </div>
