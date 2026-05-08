@@ -16,6 +16,11 @@ vi.mock("react-i18next", () => ({
 }));
 
 describe("LoadTestResultsPanel", () => {
+  function expectMetricValue(label: string, value: string) {
+    const labelElement = screen.getByText(label);
+    expect(labelElement.previousElementSibling).toHaveTextContent(value);
+  }
+
   const emptyMetrics: LoadTestMetrics = {
     totalSent: 0,
     totalSuccess: 0,
@@ -772,6 +777,10 @@ describe("LoadTestResultsPanel", () => {
           sendTaskSpawned: 115,
           sendStarted: 114,
           httpStarted: 113,
+          lifecycleBuckets: [
+            { elapsedMs: 0, planned: 100, httpStarted: 99 },
+            { elapsedMs: 1_000, planned: 100, httpStarted: 100 },
+          ],
         }}
         state="running"
         totalRequests={0}
@@ -780,16 +789,16 @@ describe("LoadTestResultsPanel", () => {
 
     expect(screen.getByText("loadTestResults.curveAdherence")).toBeInTheDocument();
     expect(screen.getByText("95%")).toBeInTheDocument();
-    expect(screen.getByText("loadTestResults.missedStarts")).toBeInTheDocument();
-    expect(screen.getByText("20")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.actualMissedStarts")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.compensatedSchedulerStarts")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.readyRequests")).toBeInTheDocument();
     expect(screen.getByText("50")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.dispatchStarted")).toBeInTheDocument();
     expect(screen.getByText("120")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.schedulerLagMs")).toBeInTheDocument();
     expect(screen.getByText("400ms")).toBeInTheDocument();
-    expect(screen.getByText("loadTestResults.schedulerLaggedStarts")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.observerBacklog")).toBeInTheDocument();
     expect(screen.getByText("90")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.dispatcherLaggedStarts")).toBeInTheDocument();
@@ -820,6 +829,33 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("114")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.httpStarted")).toBeInTheDocument();
     expect(screen.getByText("113")).toBeInTheDocument();
+  });
+
+  it("shows compensated scheduler delay without marking the wave as actually lost", () => {
+    render(
+      <LoadTestResultsPanel
+        metrics={{
+          ...emptyMetrics,
+          curveAdherence: 99.9,
+          schedulerLagMs: 3107,
+          schedulerLaggedStarts: 705,
+          lifecycleBuckets: [
+            { elapsedMs: 0, planned: 300, httpStarted: 300 },
+            { elapsedMs: 1_000, planned: 300, httpStarted: 300 },
+            { elapsedMs: 2_000, planned: 303, httpStarted: 305 },
+            { elapsedMs: 3_000, planned: 303, httpStarted: 301 },
+            { elapsedMs: 120_000, planned: 0, httpStarted: 7 },
+          ],
+        }}
+        state="completed"
+        totalRequests={0}
+      />,
+    );
+
+    expect(screen.getByText("loadTestResults.compensatedSchedulerStarts")).toBeInTheDocument();
+    expectMetricValue("loadTestResults.compensatedSchedulerStarts", "705");
+    expect(screen.getByText("loadTestResults.actualMissedStarts")).toBeInTheDocument();
+    expectMetricValue("loadTestResults.actualMissedStarts", "0");
   });
 
   it("shows actual and target RPS legend when target data exists", () => {

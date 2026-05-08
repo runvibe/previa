@@ -5,6 +5,7 @@ import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Ga
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { buildLifecycleChartData, type LifecycleSeriesTone } from "@/lib/load-lifecycle-chart";
 import { buildRpsChartData } from "@/lib/load-rps-chart";
+import { deriveWaveDiagnostics } from "@/lib/wave-diagnostics";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, LoadTestMetrics, LoadTestState, RunnerResourcePoint, WaveLoadConfig } from "@/types/load-test";
 
@@ -150,6 +151,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const rpsChartData = rpsChart.data;
   const lifecycleChart = buildLifecycleChartData(metrics);
   const lifecycleChartData = lifecycleChart.data;
+  const waveDiagnostics = deriveWaveDiagnostics(metrics);
   const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
   const runnerNames = getRunnerNames(runnerResourceHistory);
@@ -246,7 +248,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
         </div>
       )}
       {(typeof metrics.curveAdherence === "number" ||
-        typeof metrics.missedStarts === "number" ||
+        typeof metrics.schedulerLaggedStarts === "number" ||
+        waveDiagnostics.actualMissedStarts > 0 ||
         typeof metrics.readyRequests === "number") && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {typeof metrics.curveAdherence === "number" && (
@@ -257,12 +260,18 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
               color="text-success"
             />
           )}
-          {typeof metrics.missedStarts === "number" && (
+          <MetricCard
+            icon={waveDiagnostics.hasActualWaveLoss ? AlertTriangle : Activity}
+            label={t("loadTestResults.actualMissedStarts")}
+            value={waveDiagnostics.hasActualWaveLoss ? waveDiagnostics.actualMissedStarts : 0}
+            color={waveDiagnostics.hasActualWaveLoss ? "text-warning" : "text-success"}
+          />
+          {typeof metrics.schedulerLaggedStarts === "number" && (
             <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.missedStarts")}
-              value={metrics.missedStarts}
-              color="text-warning"
+              icon={Clock}
+              label={t("loadTestResults.compensatedSchedulerStarts")}
+              value={metrics.schedulerLaggedStarts}
+              color={waveDiagnostics.schedulerDelayWasCompensated ? "text-success" : "text-warning"}
             />
           )}
           {typeof metrics.readyRequests === "number" && (
@@ -288,7 +297,6 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
         typeof metrics.httpSendDurationP95Ms === "number" ||
         typeof metrics.responseObservationDurationP95Ms === "number" ||
         typeof metrics.schedulerLagMs === "number" ||
-        typeof metrics.schedulerLaggedStarts === "number" ||
         typeof metrics.slotEnqueued === "number" ||
         typeof metrics.requestPrepared === "number" ||
         typeof metrics.requestEnqueued === "number" ||
@@ -442,14 +450,6 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
               icon={Clock}
               label={t("loadTestResults.schedulerLagMs")}
               value={`${metrics.schedulerLagMs}ms`}
-              color="text-warning"
-            />
-          )}
-          {typeof metrics.schedulerLaggedStarts === "number" && (
-            <MetricCard
-              icon={AlertTriangle}
-              label={t("loadTestResults.schedulerLaggedStarts")}
-              value={metrics.schedulerLaggedStarts}
               color="text-warning"
             />
           )}
