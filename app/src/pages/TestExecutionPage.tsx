@@ -303,6 +303,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
   const loadExecutionHistory = useExecutionHistoryStore((state) => state.loadHistory);
   const fetchAllLatestStatuses = useExecutionHistoryStore((state) => state.fetchAllLatestStatuses);
   const runExecutionTest = useExecutionHistoryStore((state) => state.runTest);
+  const rerunExecutionFromStep = useExecutionHistoryStore((state) => state.rerunFromStep);
   const disconnectExecutionController = useExecutionHistoryStore((state) => state.disconnectController);
   const clearExecutionResults = useExecutionHistoryStore((state) => state.clearResults);
   const setExecutionRuns = useExecutionHistoryStore((state) => state.setRuns);
@@ -842,6 +843,25 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
     await executeSinglePipeline(selectedIndex);
   }, [selectedIndex, executeSinglePipeline]);
 
+  const handleRerunFromStep = useCallback(async (stepId: string) => {
+    if (!selectedPipeline || selectedIndex === null) return;
+    if (!executionBackendUrl) {
+      toast.error(t("testExecution.configureServerUrl"));
+      return;
+    }
+    await rerunExecutionFromStep(
+      selectedPipeline,
+      selectedIndex,
+      projectId,
+      stepId,
+      executionBackendUrl,
+      specs,
+      envGroups,
+      effectiveSelectedEnvGroupSlug,
+    );
+    setChartRefreshKey((prev) => prev + 1);
+  }, [selectedPipeline, selectedIndex, executionBackendUrl, t, rerunExecutionFromStep, projectId, specs, envGroups, effectiveSelectedEnvGroupSlug]);
+
   // Recover active queue on mount
   useEffect(() => {
     if (!executionBackendUrl || batchState !== "idle") return;
@@ -1181,7 +1201,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                               ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
                               return {
                                 key: step.id,
-                                content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
+                                content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} onRerunFromStep={handleRerunFromStep} canRerunFromStep={!running && !isBatchActive && !!executionBackendUrl} /></div>,
                               };
                             })}
                           />
@@ -1270,7 +1290,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                                   return {
                                     key: step.id,
                                     status: results[step.id]?.status,
-                                    content: <div data-step-id={step.id} className="h-full"><StepResultCard variant="grid" step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
+                                    content: <div data-step-id={step.id} className="h-full"><StepResultCard variant="grid" step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} onRerunFromStep={handleRerunFromStep} canRerunFromStep={!running && !isBatchActive && !!executionBackendUrl} /></div>,
                                   };
                                 })}
                               />
@@ -1284,7 +1304,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
                                   ) && (results[step.id]?.status === "pending" || results[step.id]?.status === "running" || !results[step.id]);
                                   return {
                                     key: step.id,
-                                    content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} /></div>,
+                                    content: <div data-step-id={step.id}><StepResultCard step={step} result={results[step.id]} shouldCountdown={!!shouldCountdown} onAnalyzeWithAI={onAnalyzeStepWithAI} onGoToCode={onEditPipeline ? handleGoToCode : undefined} onRerunFromStep={handleRerunFromStep} canRerunFromStep={!running && !isBatchActive && !!executionBackendUrl} /></div>,
                                   };
                                 })}
                               />

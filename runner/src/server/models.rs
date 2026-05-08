@@ -4,12 +4,27 @@ use utoipa::ToSchema;
 use previa_runner::Pipeline;
 use previa_runner::RuntimeEnvGroup;
 use previa_runner::RuntimeSpec;
+use previa_runner::StepExecutionResult;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct E2eTestRequest {
     pub pipeline: Pipeline,
     pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
+    #[serde(default)]
+    pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct E2eRerunFromStepRequest {
+    pub pipeline: Pipeline,
+    pub start_step_id: String,
+    #[serde(default)]
+    pub prior_results: std::collections::HashMap<String, StepExecutionResult>,
     pub selected_env_group_slug: Option<String>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,

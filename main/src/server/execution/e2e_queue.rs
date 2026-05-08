@@ -309,6 +309,8 @@ async fn run_e2e_queue(
                 selected_env_group_slug: request.selected_env_group_slug.clone(),
                 project_id: Some(project_id.clone()),
                 pipeline_index: Some(pipeline.1),
+                start_step_id: None,
+                prior_results: Default::default(),
                 specs: request.specs.clone(),
                 env_groups: request.env_groups.clone(),
             },

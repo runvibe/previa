@@ -13,7 +13,8 @@ use crate::server::execution::{
 };
 use crate::server::middleware::transaction::extract_transaction_id;
 use crate::server::models::{
-    E2eTestRequest, ErrorResponse, OrchestratorSseEventData, ProjectE2eTestRequest,
+    E2eTestRequest, ErrorResponse, OrchestratorSseEventData, ProjectE2eRerunFromStepRequest,
+    ProjectE2eTestRequest,
 };
 use crate::server::state::AppState;
 
@@ -118,6 +119,89 @@ pub async fn run_e2e_test_for_project(
         selected_env_group_slug: payload.selected_env_group_slug,
         project_id: Some(project_id.clone()),
         pipeline_index,
+        start_step_id: None,
+        prior_results: Default::default(),
+        specs: payload.specs,
+        env_groups: payload.env_groups,
+    };
+    run_e2e_test_internal(State(state), project_id, headers, Ok(Json(forwarded))).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/projects/{projectId}/tests/e2e/rerun-from-step",
+    params(
+        ("projectId" = String, Path, description = "ID do projeto"),
+        ("x-transaction-id" = Option<String>, Header, description = "ID de transação para rastreamento; será propagado para os runners e ecoado no response")
+    ),
+    request_body = ProjectE2eRerunFromStepRequest,
+    responses(
+        (
+            status = 200,
+            description = "Stream SSE para reexecução E2E a partir de um step.",
+            content_type = "text/event-stream",
+            body = OrchestratorSseEventData,
+            headers(
+                ("x-execution-id" = String, description = "ID da execução iniciada para reconexão via GET /executions/{executionId}"),
+                ("Location" = String, description = "Rota project-scoped da execução iniciada"),
+                ("x-transaction-id" = Option<String>, description = "Eco do x-transaction-id recebido")
+            )
+        ),
+        (
+            status = 400,
+            description = "Request inválido",
+            body = ErrorResponse,
+            headers(
+                ("x-transaction-id" = Option<String>, description = "Eco do x-transaction-id recebido")
+            )
+        ),
+        (
+            status = 503,
+            description = "Sem runners disponíveis",
+            body = ErrorResponse,
+            headers(
+                ("x-transaction-id" = Option<String>, description = "Eco do x-transaction-id recebido")
+            )
+        )
+    )
+)]
+pub async fn run_e2e_rerun_from_step_for_project(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    headers: HeaderMap,
+    payload: Result<Json<ProjectE2eRerunFromStepRequest>, JsonRejection>,
+) -> Response {
+    let Json(payload) = match payload {
+        Ok(payload) => payload,
+        Err(rejection) => return bad_request_response(rejection),
+    };
+
+    let (pipeline, pipeline_index) = match (payload.pipeline_id.clone(), payload.pipeline) {
+        (Some(pipeline_id), _) if !pipeline_id.trim().is_empty() => {
+            match load_project_pipeline_for_execution(&state.db, &project_id, &pipeline_id).await {
+                Ok(Some((pipeline, position))) => (pipeline, Some(position)),
+                Ok(None) => {
+                    return bad_request_message_response("pipelineId not found for project");
+                }
+                Err(err) => {
+                    return internal_error_response(format!(
+                        "failed to load pipeline for execution: {err}"
+                    ));
+                }
+            }
+        }
+        (_, Some(pipeline)) => (pipeline, payload.pipeline_index),
+        _ => return bad_request_message_response("pipelineId is required"),
+    };
+
+    let forwarded = E2eTestRequest {
+        pipeline,
+        selected_base_url_key: payload.selected_base_url_key,
+        selected_env_group_slug: payload.selected_env_group_slug,
+        project_id: Some(project_id.clone()),
+        pipeline_index,
+        start_step_id: Some(payload.start_step_id),
+        prior_results: payload.prior_results,
         specs: payload.specs,
         env_groups: payload.env_groups,
     };
@@ -157,7 +241,7 @@ mod tests {
     use reqwest::Client;
     use serde_json::{Value, json};
     use tokio::net::TcpListener;
-    use tokio::sync::{RwLock, mpsc};
+    use tokio::sync::{Mutex, RwLock, mpsc};
     use tokio_stream::StreamExt;
     use tokio_stream::wrappers::ReceiverStream;
     use tower::ServiceExt;
@@ -218,6 +302,68 @@ mod tests {
         let payload = String::from_utf8(first_chunk.to_vec()).unwrap();
         assert!(payload.contains("event: execution:init"));
         assert!(payload.contains(&format!("\"executionId\":\"{execution_id}\"")));
+    }
+
+    #[tokio::test]
+    async fn post_e2e_rerun_from_step_forwards_start_step_and_prior_results() {
+        let received = Arc::new(Mutex::new(None));
+        let (runner_url, _runner_task) = spawn_rerun_runner_server(Arc::clone(&received)).await;
+        let app = test_app(runner_url).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/projects/project-1/tests/e2e/rerun-from-step")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "pipelineId": "pipe-1",
+                            "startStepId": "step-1",
+                            "priorResults": {
+                                "setup": {
+                                    "stepId": "setup",
+                                    "status": "success",
+                                    "response": {
+                                        "status": 200,
+                                        "statusText": "OK",
+                                        "headers": {},
+                                        "body": { "token": "abc123" }
+                                    }
+                                }
+                            }
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body().into_data_stream();
+        let first_chunk = tokio::time::timeout(std::time::Duration::from_secs(2), body.next())
+            .await
+            .expect("first chunk timeout")
+            .expect("first chunk exists")
+            .expect("body chunk");
+        let payload = String::from_utf8(first_chunk.to_vec()).unwrap();
+        assert!(payload.contains("event: execution:init"));
+
+        let mut forwarded = None;
+        for _ in 0..20 {
+            forwarded = received.lock().await.clone();
+            if forwarded.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        let forwarded = forwarded.expect("forwarded payload");
+        assert_eq!(forwarded["startStepId"], "step-1");
+        assert_eq!(
+            forwarded["priorResults"]["setup"]["response"]["body"]["token"],
+            "abc123"
+        );
     }
 
     async fn test_app(runner_url: String) -> Router {
@@ -322,6 +468,49 @@ mod tests {
             .route("/health", get(health))
             .route("/api/v1/tests/e2e", post(e2e))
             .with_state(());
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("local addr");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("runner server");
+        });
+        (format!("http://{}", addr), task)
+    }
+
+    async fn spawn_rerun_runner_server(
+        received: Arc<Mutex<Option<Value>>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        async fn health() -> impl IntoResponse {
+            Json(json!({ "status": "ok" }))
+        }
+
+        async fn e2e_rerun(
+            State(received): State<Arc<Mutex<Option<Value>>>>,
+            Json(payload): Json<Value>,
+        ) -> Response {
+            *received.lock().await = Some(payload);
+            let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(8);
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(Ok(Bytes::from(
+                        "event: execution:init\ndata: {\"executionId\":\"runner-rerun\",\"status\":\"running\"}\n\n",
+                    )))
+                    .await;
+            });
+
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "text/event-stream")
+                .body(Body::from_stream(ReceiverStream::new(rx)))
+                .unwrap()
+        }
+
+        let app = Router::new()
+            .route("/health", get(health))
+            .route("/api/v1/tests/e2e/rerun-from-step", post(e2e_rerun))
+            .with_state(received);
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await

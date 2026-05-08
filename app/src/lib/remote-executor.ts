@@ -1029,6 +1029,125 @@ export function runRemoteIntegrationTest(
   };
 }
 
+export function runRemoteIntegrationFromStep(
+  backendUrl: string,
+  pipeline: Pipeline,
+  startStepId: string,
+  priorResults: Record<string, StepExecutionResult>,
+  callbacks: RemoteIntegrationCallbacks,
+  projectId: string,
+  selectedBaseUrlKey?: string,
+  pipelineIndex?: number,
+  specs?: Array<{ slug: string; servers: Record<string, string> }>,
+  envGroups?: Array<{ slug: string; urls: Record<string, string> }>,
+  selectedEnvGroupSlug?: string | null
+): RemoteExecutionController {
+  const abortController = new AbortController();
+  const transactionId = generateUUID();
+  let executionId: string | null = null;
+
+  const run = async () => {
+    try {
+      const base = ensureApiPrefix(backendUrl);
+      const basePath = `${base}/projects/${projectId}/tests/e2e/rerun-from-step`;
+      const body = {
+        pipelineId: pipeline.id,
+        startStepId,
+        priorResults,
+        selectedBaseUrlKey,
+        selectedEnvGroupSlug,
+        pipelineIndex,
+        specs,
+        envGroups,
+      };
+      const response = await fetch(basePath, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+          "x-transaction-id": transactionId,
+        },
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        callbacks.onError(`HTTP ${response.status}: ${err}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError("Stream não suportado pelo servidor");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const events = parseSSE(part + "\n\n");
+
+          for (const { event, data } of events) {
+            try {
+              const envelope = JSON.parse(data) as SseObject;
+              handleIntegrationEnvelope(event, envelope, callbacks, (id) => {
+                executionId = id;
+                callbacks.onExecutionInit?.(id);
+              });
+            } catch {
+              // Skip malformed JSON
+            }
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const events = parseSSE(buffer + "\n\n");
+        for (const { event, data } of events) {
+          try {
+            const envelope = JSON.parse(data) as SseObject;
+            handleIntegrationEnvelope(event, envelope, callbacks, (id) => {
+              executionId = id;
+              callbacks.onExecutionInit?.(id);
+            });
+          } catch {
+            // skip
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        callbacks.onError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  };
+
+  run();
+
+  return {
+    cancel: () => {
+      if (executionId) {
+        cancelExecution(backendUrl, executionId);
+      }
+      abortController.abort();
+    },
+    disconnect: () => {
+      abortController.abort();
+    },
+  };
+}
+
 // ============ Remote Load Test ============
 
 export interface RemoteLoadTestCallbacks {

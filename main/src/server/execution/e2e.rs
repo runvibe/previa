@@ -15,6 +15,7 @@ use crate::server::execution::{
 use crate::server::models::{
     E2eHistoryAccumulator, E2eHistoryWrite, E2eTestRequest, HistoryMetadata, NodePlan, SseMessage,
 };
+use crate::server::services::e2e_rerun::{ordered_prior_results, validate_rerun_context};
 use crate::server::state::{AppState, EXECUTION_SSE_BUFFER_SIZE, ExecutionCtx, ExecutionKind};
 use crate::server::utils::{new_uuid_v7, now_ms};
 use crate::server::validation::pipelines::validate_pipeline_templates;
@@ -47,6 +48,10 @@ pub async fn start_e2e_execution(
         return Err(StartE2eExecutionError::BadRequest(
             "pipeline must contain at least one step".to_owned(),
         ));
+    }
+    if let Some(start_step_id) = payload.start_step_id.as_deref() {
+        validate_rerun_context(&payload.pipeline, start_step_id, &payload.prior_results)
+            .map_err(StartE2eExecutionError::BadRequest)?;
     }
 
     let history_metadata = HistoryMetadata {
@@ -94,10 +99,14 @@ pub async fn start_e2e_execution(
     let selected_base_url_key = payload.selected_base_url_key.clone();
     let selected_base_url_key_for_runner = payload.selected_base_url_key.clone();
     let selected_env_group_slug_for_runner = payload.selected_env_group_slug.clone();
+    let start_step_id_for_runner = payload.start_step_id.clone();
+    let prior_results_for_runner = payload.prior_results.clone();
     let history_request = json!({
         "pipeline": payload.pipeline,
         "selectedBaseUrlKey": payload.selected_base_url_key,
         "selectedEnvGroupSlug": payload.selected_env_group_slug,
+        "startStepId": payload.start_step_id,
+        "priorResults": payload.prior_results,
         "specs": runtime_specs.clone(),
         "envGroups": runtime_env_groups.clone(),
         "projectId": payload.project_id,
@@ -154,7 +163,20 @@ pub async fn start_e2e_execution(
             queued_payload(&orchestrator_execution_id, active_nodes.len(), 1)
         }
     };
-    let history_accumulator = Arc::new(Mutex::new(E2eHistoryAccumulator::default()));
+    let initial_history = E2eHistoryAccumulator {
+        steps: start_step_id_for_runner
+            .as_deref()
+            .map(|start_step_id| {
+                ordered_prior_results(
+                    &pipeline_for_runner,
+                    start_step_id,
+                    &prior_results_for_runner,
+                )
+            })
+            .unwrap_or_default(),
+        ..E2eHistoryAccumulator::default()
+    };
+    let history_accumulator = Arc::new(Mutex::new(initial_history.clone()));
     let exec_ctx = Arc::new(ExecutionCtx {
         cancel: CancellationToken::new(),
         project_id: project_id_for_execution,
@@ -169,7 +191,7 @@ pub async fn start_e2e_execution(
                     .get("status")
                     .and_then(serde_json::Value::as_str)
                     .unwrap_or("queued"),
-                &E2eHistoryAccumulator::default(),
+                &initial_history,
             ),
         ),
     });
@@ -319,13 +341,31 @@ pub async fn start_e2e_execution(
             error!("failed to save e2e running history: {}", err);
         }
 
-        let request_body = json!({
-            "pipeline": pipeline_for_runner,
-            "selectedBaseUrlKey": selected_base_url_key_for_runner,
-            "selectedEnvGroupSlug": selected_env_group_slug_for_runner,
-            "specs": runtime_specs_for_runner,
-            "envGroups": runtime_env_groups_for_runner
-        });
+        let (request_body, endpoint_path) =
+            if let Some(start_step_id) = start_step_id_for_runner.clone() {
+                (
+                    json!({
+                        "pipeline": pipeline_for_runner,
+                        "startStepId": start_step_id,
+                        "priorResults": prior_results_for_runner,
+                        "selectedEnvGroupSlug": selected_env_group_slug_for_runner,
+                        "specs": runtime_specs_for_runner,
+                        "envGroups": runtime_env_groups_for_runner
+                    }),
+                    "/api/v1/tests/e2e/rerun-from-step",
+                )
+            } else {
+                (
+                    json!({
+                        "pipeline": pipeline_for_runner,
+                        "selectedBaseUrlKey": selected_base_url_key_for_runner,
+                        "selectedEnvGroupSlug": selected_env_group_slug_for_runner,
+                        "specs": runtime_specs_for_runner,
+                        "envGroups": runtime_env_groups_for_runner
+                    }),
+                    "/api/v1/tests/e2e",
+                )
+            };
 
         forward_runner_stream(
             &state_clone.client,
@@ -334,7 +374,7 @@ pub async fn start_e2e_execution(
             sse_tx,
             exec_ctx.cancel.clone(),
             plan,
-            "/api/v1/tests/e2e",
+            endpoint_path,
             transaction_id_for_runner,
             state_clone.runner_auth_key.as_deref(),
             Some((
@@ -347,7 +387,10 @@ pub async fn start_e2e_execution(
 
         let finished_at_ms = now_ms() as i64;
         let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
-        let snapshot = history_accumulator.lock().await.clone();
+        let mut snapshot = history_accumulator.lock().await.clone();
+        if start_step_id_for_runner.is_some() {
+            snapshot.summary = Some(combined_e2e_summary(&snapshot));
+        }
         let status = determine_e2e_history_status(exec_ctx.cancel.is_cancelled(), &snapshot);
         exec_ctx
             .snapshot_payload
@@ -405,6 +448,27 @@ pub fn sse_response_for_started_execution(
     let (tx, rx) = mpsc::unbounded_channel();
     spawn_broadcast_bridge(started.subscriber, tx, false);
     crate::server::execution::sse_response_from_rx(rx)
+}
+
+fn combined_e2e_summary(snapshot: &E2eHistoryAccumulator) -> serde_json::Value {
+    let total_steps = snapshot.steps.len();
+    let failed = snapshot
+        .steps
+        .iter()
+        .filter(|step| step.get("status").and_then(serde_json::Value::as_str) == Some("error"))
+        .count();
+    let total_duration = snapshot
+        .steps
+        .iter()
+        .filter_map(|step| step.get("duration").and_then(serde_json::Value::as_u64))
+        .sum::<u64>();
+
+    json!({
+        "totalSteps": total_steps,
+        "passed": total_steps.saturating_sub(failed),
+        "failed": failed,
+        "totalDuration": total_duration,
+    })
 }
 
 fn queued_payload(
@@ -507,6 +571,8 @@ mod tests {
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
+                start_step_id: None,
+                prior_results: HashMap::new(),
                 specs: Vec::new(),
                 env_groups: Vec::new(),
             },
@@ -522,6 +588,8 @@ mod tests {
                 selected_env_group_slug: None,
                 project_id: Some("project-1".to_owned()),
                 pipeline_index: Some(0),
+                start_step_id: None,
+                prior_results: HashMap::new(),
                 specs: Vec::new(),
                 env_groups: Vec::new(),
             },

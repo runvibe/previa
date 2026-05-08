@@ -4,7 +4,7 @@ use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::server::handlers::e2e::run_e2e_test;
+use crate::server::handlers::e2e::{rerun_e2e_from_step, run_e2e_test};
 use crate::server::handlers::load::run_load_test;
 use crate::server::handlers::system::{health, info_runtime, openapi_json};
 use crate::server::middleware::auth::require_runner_authorization;
@@ -34,6 +34,7 @@ pub mod wave_sender;
 pub fn build_app(state: AppState) -> Router {
     let api_v1 = Router::new()
         .route("/tests/e2e", post(run_e2e_test))
+        .route("/tests/e2e/rerun-from-step", post(rerun_e2e_from_step))
         .route("/tests/load", post(run_load_test));
     let protected = Router::new()
         .nest("/api/v1", api_v1)

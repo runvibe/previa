@@ -6,7 +6,7 @@ import {
   importRuns as persistImportRuns,
   type ExecutionRun,
 } from "@/lib/execution-store";
-import { runRemoteIntegrationTest, reconnectToE2eExecution, type RemoteExecutionController } from "@/lib/remote-executor";
+import { runRemoteIntegrationFromStep, runRemoteIntegrationTest, reconnectToE2eExecution, type RemoteExecutionController } from "@/lib/remote-executor";
 import * as apiClient from "@/lib/api-client";
 import type { Pipeline, StepExecutionResult } from "@/types/pipeline";
 import { toast } from "sonner";
@@ -41,6 +41,16 @@ interface ExecutionHistoryState {
     pipeline: Pipeline,
     pipelineIndex: number,
     projectId: string,
+    executionBackendUrl?: string,
+    specs?: import("@/types/project").ProjectSpec[],
+    envGroups?: import("@/types/project").ProjectEnvGroup[],
+    selectedEnvGroupSlug?: string | null
+  ) => Promise<"success" | "error">;
+  rerunFromStep: (
+    pipeline: Pipeline,
+    pipelineIndex: number,
+    projectId: string,
+    startStepId: string,
     executionBackendUrl?: string,
     specs?: import("@/types/project").ProjectSpec[],
     envGroups?: import("@/types/project").ProjectEnvGroup[],
@@ -267,6 +277,136 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
       clearExecutionHint(projectId, pipeline.id);
     }
     _controller = null;
+    return status;
+  },
+
+  rerunFromStep: async (pipeline, pipelineIndex, projectId, startStepId, executionBackendUrl?, specs?, envGroups?, selectedEnvGroupSlug?) => {
+    const startIndex = pipeline.steps.findIndex((step) => step.id === startStepId);
+    if (startIndex < 0) {
+      toast.error("Step not found");
+      return "error";
+    }
+    if (!executionBackendUrl) {
+      toast.error(i18n.t("store.configureServerUrl"));
+      return "error";
+    }
+
+    const currentResults = get().results;
+    const priorEntries: Array<[string, StepExecutionResult]> = [];
+    for (const step of pipeline.steps.slice(0, startIndex)) {
+      const result = currentResults[step.id];
+      if (!result || result.status === "pending" || result.status === "running") {
+        toast.error("Run the previous steps before rerunning from here");
+        return "error";
+      }
+      priorEntries.push([step.id, result]);
+    }
+    const priorResults = Object.fromEntries(priorEntries);
+
+    const initial: Record<string, StepExecutionResult> = {};
+    for (const step of pipeline.steps) {
+      if (pipeline.steps.findIndex((item) => item.id === step.id) < startIndex) {
+        initial[step.id] = currentResults[step.id];
+      } else {
+        initial[step.id] = { stepId: step.id, status: "pending" };
+      }
+    }
+
+    set({ running: true, executionNode: null, activeRunId: null, results: initial });
+    set((state) => ({
+      latestStatuses: { ...state.latestStatuses, [pipelineIndex]: "running" as const },
+    }));
+
+    const runtimeSpecs = specs?.map(s => ({ slug: s.slug, servers: s.servers }));
+    const runtimeEnvGroups = envGroups?.map((group) => ({
+      slug: group.slug,
+      urls: Object.fromEntries(group.entries.map((entry) => [entry.name, entry.url])),
+    }));
+    let finalResults: Record<string, StepExecutionResult> = { ...initial };
+    let activeExecutionId: string | null = null;
+
+    await new Promise<void>((resolve) => {
+      const controller = runRemoteIntegrationFromStep(
+        executionBackendUrl,
+        pipeline,
+        startStepId,
+        priorResults,
+        {
+          onExecutionInit: (executionId) => {
+            if (!executionId || !pipeline.id) return;
+            activeExecutionId = executionId;
+            _lastLoadedExecutionId = executionId;
+            saveExecutionHint(projectId, pipeline.id, executionId);
+          },
+          onStepStart: (stepId, meta) => {
+            const prev = finalResults[stepId];
+            const attempt = meta?.attempt ?? ((prev?.attempts ?? 0) + 1);
+            finalResults = { ...finalResults, [stepId]: {
+              ...prev,
+              stepId,
+              status: "running",
+              attempts: attempt,
+              maxAttempts: meta?.maxAttempts ?? prev?.maxAttempts,
+              startedAt: meta?.startedAt ?? Date.now(),
+            } };
+            set({ results: { ...finalResults } });
+          },
+          onStepResult: (stepId, result) => {
+            const prev = finalResults[stepId];
+            finalResults = { ...finalResults, [stepId]: {
+              ...result,
+              attempts: result.attempts ?? prev?.attempts,
+              maxAttempts: result.maxAttempts ?? prev?.maxAttempts,
+            } };
+            set({ results: { ...finalResults } });
+          },
+          onComplete: () => resolve(),
+          onError: (err) => {
+            console.error("Remote e2e rerun error:", err);
+            toast.error(err || i18n.t("store.remoteExecutionError"));
+            resolve();
+          },
+          onNodeInfo: (node) => set({ executionNode: node }),
+        },
+        projectId,
+        undefined,
+        pipelineIndex,
+        runtimeSpecs,
+        runtimeEnvGroups,
+        selectedEnvGroupSlug,
+      );
+      _controller = controller;
+    });
+
+    const hasError = Object.values(finalResults).some(r => r.status === "error");
+    const status: "success" | "error" = hasError ? "error" : "success";
+    set((state) => ({
+      running: false,
+      results: finalResults,
+      resultsGeneration: state.resultsGeneration + 1,
+      lastRunFinishedAt: Date.now(),
+      latestStatuses: { ...state.latestStatuses, [pipelineIndex]: status },
+    }));
+    if (pipeline.id) {
+      clearExecutionHint(projectId, pipeline.id);
+    }
+    _controller = null;
+
+    try {
+      const records = await apiClient.listIntegrationHistory(executionBackendUrl, projectId, {
+        pipelineIndex,
+        limit: 50,
+      });
+      const mapped = records.map(apiClient.integrationRecordToRun);
+      set({
+        runs: mapped,
+        activeRunId: mapped.length > 0 ? (mapped[0].id ?? null) : activeExecutionId,
+      });
+    } catch (e) {
+      console.error("Failed to reload rerun history:", e);
+      toast.error(i18n.t("store.saveHistoryError"));
+    }
+
     return status;
   },
 

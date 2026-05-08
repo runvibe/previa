@@ -60,6 +60,8 @@ interface StepResultCardProps {
   shouldCountdown?: boolean;
   onAnalyzeWithAI?: (step: PipelineStep, result: StepExecutionResult) => void;
   onGoToCode?: (stepId: string) => void;
+  onRerunFromStep?: (stepId: string) => void;
+  canRerunFromStep?: boolean;
   variant?: "list" | "grid";
 }
 
@@ -216,6 +218,42 @@ function CurlButton({ step, request }: { step: PipelineStep; request: StepExecut
   );
 }
 
+function RerunFromStepButton({
+  stepId,
+  disabled,
+  onRerunFromStep,
+}: {
+  stepId: string;
+  disabled?: boolean;
+  onRerunFromStep?: (stepId: string) => void;
+}) {
+  if (!onRerunFromStep) return null;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={disabled}
+            aria-label="Rerun from here"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onRerunFromStep(stepId);
+            }}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">Rerun from here</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function DetailContent({ step, result, assertResults, t }: {
   step: PipelineStep; result?: StepExecutionResult; assertResults: any[]; t: any;
 }) {
@@ -324,10 +362,12 @@ function DetailContent({ step, result, assertResults, t }: {
 }
 
 /* ── Grid variant ── */
-function GridCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, status, assertResults, currentAttempt, totalAttempts, t }: {
+function GridCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, onRerunFromStep, canRerunFromStep, status, assertResults, currentAttempt, totalAttempts, t }: {
   step: PipelineStep; result?: StepExecutionResult; shouldCountdown?: boolean;
   onAnalyzeWithAI?: (step: PipelineStep, result: StepExecutionResult) => void;
   onGoToCode?: (stepId: string) => void;
+  onRerunFromStep?: (stepId: string) => void;
+  canRerunFromStep?: boolean;
   status: string; assertResults: any[]; currentAttempt?: number; totalAttempts: number; t: any;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
@@ -355,6 +395,11 @@ function GridCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, 
                 </Tooltip>
               </TooltipProvider>
             )}
+            <RerunFromStepButton
+              stepId={step.id}
+              disabled={canRerunFromStep === false}
+              onRerunFromStep={onRerunFromStep}
+            />
             {result && result.status !== "pending" && result.status !== "running" && onAnalyzeWithAI && (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
@@ -431,15 +476,26 @@ function GridCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, 
 }
 
 /* ── List variant (original collapsible) ── */
-function ListCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, status, assertResults, currentAttempt, totalAttempts, t }: {
+function ListCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, onRerunFromStep, canRerunFromStep, status, assertResults, currentAttempt, totalAttempts, t }: {
   step: PipelineStep; result?: StepExecutionResult; shouldCountdown?: boolean;
   onAnalyzeWithAI?: (step: PipelineStep, result: StepExecutionResult) => void;
   onGoToCode?: (stepId: string) => void;
+  onRerunFromStep?: (stepId: string) => void;
+  canRerunFromStep?: boolean;
   status: string; assertResults: any[]; currentAttempt?: number; totalAttempts: number; t: any;
 }) {
   return (
     <Collapsible className="h-full">
-      <Card className={`h-full flex flex-col border-l-4 ${STATUS_BORDER[status]} hover:shadow-md transition-all duration-200`} style={getStatusBgStyle(status, status === "pending" && shouldCountdown && (step.delay ?? 0) > 0)}>
+      <Card className={`relative h-full flex flex-col border-l-4 ${STATUS_BORDER[status]} hover:shadow-md transition-all duration-200`} style={getStatusBgStyle(status, status === "pending" && shouldCountdown && (step.delay ?? 0) > 0)}>
+        {onRerunFromStep && (
+          <div className="absolute right-8 top-2 z-10">
+            <RerunFromStepButton
+              stepId={step.id}
+              disabled={canRerunFromStep === false}
+              onRerunFromStep={onRerunFromStep}
+            />
+          </div>
+        )}
         <CollapsibleTrigger className="w-full text-left">
           <CardHeader className="p-3 pb-2 space-y-1">
             <div className="flex items-center gap-2">
@@ -500,7 +556,7 @@ function ListCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, 
 }
 
 /* ── Main export ── */
-export function StepResultCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, variant = "list" }: StepResultCardProps) {
+export function StepResultCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, onRerunFromStep, canRerunFromStep, variant = "list" }: StepResultCardProps) {
   const { t } = useTranslation();
   const status = result?.status || "pending";
   const configuredTotalAttempts = (step.retry ?? 0) + 1;
@@ -510,7 +566,7 @@ export function StepResultCard({ step, result, shouldCountdown, onAnalyzeWithAI,
     ? result.assertResults.filter((item) => !!item && typeof item === "object")
     : [];
 
-  const common = { step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, status, assertResults, currentAttempt, totalAttempts, t };
+  const common = { step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, onRerunFromStep, canRerunFromStep, status, assertResults, currentAttempt, totalAttempts, t };
 
   if (variant === "grid") {
     return <GridCard {...common} />;

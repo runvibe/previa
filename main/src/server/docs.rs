@@ -8,13 +8,13 @@ use crate::server::models::{
     OpenApiValidationSeverity, OpenApiValidationStatus, OrchestratorInfoResponse,
     OrchestratorSseEventData, PipelineExecutionKind, PipelineExecutionRef, PipelineImportRequest,
     PipelineImportResponse, PipelineInput, PipelineQueueRef, PipelineRuntimeState,
-    PipelineRuntimeStatus, ProjectE2eQueueRequest, ProjectE2eTestRequest, ProjectEnvGroupRecord,
-    ProjectEnvGroupUpsertRequest, ProjectExportEnvelope, ProjectExportProject,
-    ProjectHistoryExport, ProjectImportResponse, ProjectListQuery, ProjectLoadTestRequest,
-    ProjectMetadataUpsertRequest, ProjectPipelineRecord, ProjectRecord, ProjectSpecRecord,
-    ProjectSpecUpsertRequest, ProjectSqliteExportRequest, ProjectTransferQuery,
-    ProjectUpsertRequest, ProxyRequest, RunnerInfo, RunnerLoadLine, RunnerRecord,
-    RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
+    PipelineRuntimeStatus, ProjectE2eQueueRequest, ProjectE2eRerunFromStepRequest,
+    ProjectE2eTestRequest, ProjectEnvGroupRecord, ProjectEnvGroupUpsertRequest,
+    ProjectExportEnvelope, ProjectExportProject, ProjectHistoryExport, ProjectImportResponse,
+    ProjectListQuery, ProjectLoadTestRequest, ProjectMetadataUpsertRequest, ProjectPipelineRecord,
+    ProjectRecord, ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectSqliteExportRequest,
+    ProjectTransferQuery, ProjectUpsertRequest, ProxyRequest, RunnerInfo, RunnerLoadLine,
+    RunnerRecord, RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
 };
 
 const API_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -65,6 +65,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         crate::server::handlers::history_load::get_load_test_by_id,
         crate::server::handlers::history_load::delete_load_test_by_id,
         crate::server::handlers::tests_e2e::run_e2e_test_for_project,
+        crate::server::handlers::tests_e2e::run_e2e_rerun_from_step_for_project,
         crate::server::handlers::tests_e2e_queue::get_current_e2e_queue_for_project,
         crate::server::handlers::tests_e2e_queue::create_e2e_queue_for_project,
         crate::server::handlers::tests_e2e_queue::get_e2e_queue_for_project,
@@ -79,6 +80,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
     ),
     components(schemas(
         ProjectE2eTestRequest,
+        ProjectE2eRerunFromStepRequest,
         ProjectE2eQueueRequest,
         ProjectLoadTestRequest,
         previa_runner::RuntimeSpec,

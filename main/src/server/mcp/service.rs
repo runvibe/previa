@@ -2309,6 +2309,8 @@ async fn resolve_project_e2e_request(
         selected_env_group_slug: args.selected_env_group_slug,
         project_id: Some(args.project_id),
         pipeline_index,
+        start_step_id: None,
+        prior_results: Default::default(),
         specs: args.specs,
         env_groups: args.env_groups,
     })

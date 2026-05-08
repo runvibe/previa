@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -31,6 +31,9 @@ pub struct E2eTestRequest {
     pub selected_env_group_slug: Option<String>,
     pub project_id: Option<String>,
     pub pipeline_index: Option<i64>,
+    pub start_step_id: Option<String>,
+    #[serde(default)]
+    pub prior_results: HashMap<String, StepExecutionResult>,
     #[serde(default)]
     pub specs: Vec<RuntimeSpec>,
     #[serde(default)]
@@ -42,6 +45,23 @@ pub struct E2eTestRequest {
 pub struct ProjectE2eTestRequest {
     pub pipeline_id: Option<String>,
     pub pipeline: Option<Pipeline>,
+    pub selected_base_url_key: Option<String>,
+    pub selected_env_group_slug: Option<String>,
+    pub pipeline_index: Option<i64>,
+    #[serde(default)]
+    pub specs: Vec<RuntimeSpec>,
+    #[serde(default)]
+    pub env_groups: Vec<RuntimeEnvGroup>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectE2eRerunFromStepRequest {
+    pub pipeline_id: Option<String>,
+    pub pipeline: Option<Pipeline>,
+    pub start_step_id: String,
+    #[serde(default)]
+    pub prior_results: HashMap<String, StepExecutionResult>,
     pub selected_base_url_key: Option<String>,
     pub selected_env_group_slug: Option<String>,
     pub pipeline_index: Option<i64>,

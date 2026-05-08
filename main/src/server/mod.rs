@@ -33,7 +33,9 @@ use crate::server::handlers::specs::{
     create_project_spec, delete_project_spec, get_project_spec, list_project_specs,
     upsert_project_spec, validate_openapi_spec,
 };
-use crate::server::handlers::tests_e2e::run_e2e_test_for_project;
+use crate::server::handlers::tests_e2e::{
+    run_e2e_rerun_from_step_for_project, run_e2e_test_for_project,
+};
 use crate::server::handlers::tests_e2e_queue::{
     create_e2e_queue_for_project, delete_e2e_queue_for_project, get_current_e2e_queue_for_project,
     get_e2e_queue_for_project,
@@ -153,6 +155,10 @@ pub fn build_app_with_config(
             get(list_e2e_history)
                 .post(run_e2e_test_for_project)
                 .delete(delete_e2e_history),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/tests/e2e/rerun-from-step",
+            post(run_e2e_rerun_from_step_for_project),
         )
         .route(
             "/api/v1/projects/{projectId}/tests/e2e/{test_id}",
