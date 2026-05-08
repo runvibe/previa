@@ -236,7 +236,7 @@ function RerunFromStepButton({
             type="button"
             variant="outline"
             size="icon"
-            className="h-7 w-7 shrink-0 border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+            className="h-7 w-7 shrink-0 border-primary bg-primary text-white hover:bg-primary/90 hover:text-white"
             disabled={disabled}
             aria-label="Rerun from here"
             onClick={(e) => {
@@ -245,7 +245,7 @@ function RerunFromStepButton({
               onRerunFromStep(stepId);
             }}
           >
-            <Play className="h-3.5 w-3.5 fill-current" />
+            <Play className="h-3 w-3 fill-current" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">Rerun from here</TooltipContent>
