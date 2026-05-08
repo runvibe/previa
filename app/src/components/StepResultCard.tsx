@@ -487,64 +487,62 @@ function ListCard({ step, result, shouldCountdown, onAnalyzeWithAI, onGoToCode, 
   return (
     <Collapsible className="h-full">
       <Card className={`relative h-full flex flex-col border-l-4 ${STATUS_BORDER[status]} hover:shadow-md transition-all duration-200`} style={getStatusBgStyle(status, status === "pending" && shouldCountdown && (step.delay ?? 0) > 0)}>
-        {onRerunFromStep && (
-          <div className="absolute right-8 top-2 z-10">
-            <RerunFromStepButton
-              stepId={step.id}
-              disabled={canRerunFromStep === false}
-              onRerunFromStep={onRerunFromStep}
-            />
+        <CollapsibleTrigger asChild>
+          <div className="w-full cursor-pointer text-left">
+            <CardHeader className="p-3 pb-2 space-y-1">
+              <div className="flex items-center gap-2">
+                {STATUS_ICON[status]}
+                <MethodBadge method={step.method} />
+                <span className="flex-1" />
+                {onGoToCode && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 shrink-0 text-[10px]" onClick={(e) => { e.stopPropagation(); e.preventDefault(); onGoToCode(step.id); }}>
+                          Code
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Go to code</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                {result && result.status !== "pending" && result.status !== "running" && onAnalyzeWithAI && (
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon" variant="ghost"
+                          className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); onAnalyzeWithAI(step, result); }}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">{t("stepResult.analyzeWithAI", "Analyze with AI")}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <RerunFromStepButton
+                  stepId={step.id}
+                  disabled={canRerunFromStep === false}
+                  onRerunFromStep={onRerunFromStep}
+                />
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform shrink-0" />
+              </div>
+              <CardTitle className="text-sm truncate pl-6">{step.name}</CardTitle>
+              <div className="flex items-center gap-2 flex-wrap pl-6">
+                <AssertSummaryBadge assertResults={assertResults} />
+                <TimingInfo step={step} result={result} status={status} shouldCountdown={shouldCountdown} currentAttempt={currentAttempt} totalAttempts={totalAttempts} t={t} />
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 pt-0">
+              <p className="text-xs text-muted-foreground">{step.description}</p>
+              <p className="mt-1 font-mono text-xs text-muted-foreground">{step.url}</p>
+              {result?.error && (
+                <p className="mt-1 text-xs text-destructive">{result.error}</p>
+              )}
+            </CardContent>
           </div>
-        )}
-        <CollapsibleTrigger className="w-full text-left">
-          <CardHeader className="p-3 pb-2 space-y-1">
-            <div className="flex items-center gap-2">
-              {STATUS_ICON[status]}
-              <MethodBadge method={step.method} />
-              <span className="flex-1" />
-              {onGoToCode && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 px-2 shrink-0 text-[10px]" onClick={(e) => { e.stopPropagation(); e.preventDefault(); onGoToCode(step.id); }}>
-                        Code
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">Go to code</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              {result && result.status !== "pending" && result.status !== "running" && onAnalyzeWithAI && (
-                <TooltipProvider delayDuration={300}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="icon" variant="ghost"
-                        className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); onAnalyzeWithAI(step, result); }}
-                      >
-                        <Sparkles className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">{t("stepResult.analyzeWithAI", "Analyze with AI")}</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform shrink-0" />
-            </div>
-            <CardTitle className="text-sm truncate pl-6">{step.name}</CardTitle>
-            <div className="flex items-center gap-2 flex-wrap pl-6">
-              <AssertSummaryBadge assertResults={assertResults} />
-              <TimingInfo step={step} result={result} status={status} shouldCountdown={shouldCountdown} currentAttempt={currentAttempt} totalAttempts={totalAttempts} t={t} />
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-3 pt-0">
-            <p className="text-xs text-muted-foreground">{step.description}</p>
-            <p className="mt-1 font-mono text-xs text-muted-foreground">{step.url}</p>
-            {result?.error && (
-              <p className="mt-1 text-xs text-destructive">{result.error}</p>
-            )}
-          </CardContent>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
