@@ -32,7 +32,7 @@ describe("StepResultCard", () => {
       />,
     );
 
-    expect(screen.getByText("Run here")).toBeInTheDocument();
+    expect(screen.queryByText("Run here")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Rerun from here" }));
 

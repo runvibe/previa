@@ -5,7 +5,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from "@/components/ui/badge";
 import { MethodBadge } from "@/components/MethodBadge";
 import { STATUS_BORDER } from "@/lib/constants";
-import { ChevronDown, Clock, CheckCircle2, XCircle, Circle as CircleIcon, ShieldCheck, ShieldX, RotateCcw, Timer, Sparkles, Copy, Eye, GripVertical } from "lucide-react";
+import { ChevronDown, Clock, CheckCircle2, XCircle, Circle as CircleIcon, ShieldCheck, ShieldX, RotateCcw, Timer, Sparkles, Copy, Eye, GripVertical, Play } from "lucide-react";
 import { DotsLoader } from "@/components/DotsLoader";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
@@ -235,8 +235,8 @@ function RerunFromStepButton({
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="h-6 shrink-0 gap-1.5 border-primary/30 bg-primary/10 px-2 text-[10px] font-medium text-primary hover:bg-primary/15 hover:text-primary"
+            size="icon"
+            className="h-7 w-7 shrink-0 border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
             disabled={disabled}
             aria-label="Rerun from here"
             onClick={(e) => {
@@ -245,8 +245,7 @@ function RerunFromStepButton({
               onRerunFromStep(stepId);
             }}
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span>Run here</span>
+            <Play className="h-3.5 w-3.5 fill-current" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">Rerun from here</TooltipContent>
