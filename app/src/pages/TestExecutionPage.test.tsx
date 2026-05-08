@@ -112,6 +112,7 @@ const renderPage = () =>
 describe("TestExecutionPage", () => {
   beforeEach(() => {
     isMobile = false;
+    localStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -126,5 +127,22 @@ describe("TestExecutionPage", () => {
     expect(screen.getByRole("tab", { name: "End-to-End Test" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Load Test" })).toBeInTheDocument();
     expect(screen.queryByTitle("Open navbar")).not.toBeInTheDocument();
+  });
+
+  it("restores and persists the desktop test mode sidebar collapsed state", async () => {
+    localStorage.setItem("api-pipeline-studio:test-mode-sidebar-collapsed", "true");
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Test modes")).toHaveClass("w-14");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand test mode sidebar" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Test modes")).toHaveClass("w-[184px]");
+    });
+    expect(localStorage.getItem("api-pipeline-studio:test-mode-sidebar-collapsed")).toBe("false");
   });
 });

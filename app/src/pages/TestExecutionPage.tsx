@@ -14,7 +14,7 @@ import { Play, Plus, Workflow, FileCode2, FileText, PlayCircle, Menu, Zap, Rotat
 import { useStepAutoScroll, useStepVisibility } from "@/hooks/useStepAutoScroll";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPipelineOrder, savePipelineOrder, applyOrder } from "@/lib/pipeline-order";
-import { getTestHistoryCollapsed, setTestHistoryCollapsed } from "@/lib/ui-preferences";
+import { getTestHistoryCollapsed, getTestModeSidebarCollapsed, setTestHistoryCollapsed, setTestModeSidebarCollapsed as saveTestModeSidebarCollapsed } from "@/lib/ui-preferences";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import { DotsLoader } from "@/components/DotsLoader";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -271,7 +271,11 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
     setTestHistoryCollapsed("integration", collapsed);
     setHistoryCollapsedState(collapsed);
   }, []);
-  const [testModeSidebarCollapsed, setTestModeSidebarCollapsed] = useState(false);
+  const [testModeSidebarCollapsed, setTestModeSidebarCollapsedState] = useState(() => getTestModeSidebarCollapsed());
+  const setTestModeSidebarCollapsed = useCallback((collapsed: boolean) => {
+    saveTestModeSidebarCollapsed(collapsed);
+    setTestModeSidebarCollapsedState(collapsed);
+  }, []);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(
     initialSelectedIndex ?? (pipelines.length > 0 ? 0 : null)
   );
