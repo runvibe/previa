@@ -236,7 +236,7 @@ function RerunFromStepButton({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-[18px] w-[18px] shrink-0 bg-transparent p-0 text-white shadow-none hover:bg-transparent hover:text-white"
+            className="h-[16px] w-[16px] shrink-0 bg-transparent p-0 text-white shadow-none hover:bg-transparent hover:text-white"
             disabled={disabled}
             aria-label="Rerun from here"
             onClick={(e) => {
