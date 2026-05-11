@@ -30,16 +30,18 @@ use crate::server::execution::{
     start_e2e_execution, start_load_execution,
 };
 use crate::server::mcp::models::{
-    CreateProjectArgs, CreateProjectE2eQueueArgs, CreateProjectPipelineArgs, CreateProjectSpecArgs,
-    ExecutionByIdArgs, ExecutionCancelArgs, ExportProjectArgs, ImportProjectArgs, InitializeParams,
-    ListProjectsToolArgs, McpPeerInfo, McpRequest, McpResponse, McpSession, ProjectByIdArgs,
-    ProjectHistoryToolArgs, ProjectPipelineByIdArgs, ProjectQueueByIdArgs, ProjectSpecByIdArgs,
-    ProjectTestByIdArgs, PromptDefinition, PromptGetParams, PromptGetResult, PromptMessage,
-    PromptTextContent, PromptsListParams, ProxyToolArgs, ResourceContents, ResourceDefinition,
-    ResourceReadParams, ResourcesListParams, RunProjectE2eTestArgs, RunProjectLoadTestArgs,
-    SUPPORTED_PROTOCOL_VERSIONS, ToolCallParams, ToolCallResult, ToolDefinition, ToolTextContent,
-    ToolsListParams, UpdateProjectArgs, UpdateProjectPipelineArgs, UpdateProjectSpecArgs,
-    ValidateOpenApiToolArgs,
+    CompletionCompleteParams, CompletionContext, CompletionReference, CompletionResult,
+    CompletionValues, CreateProjectArgs, CreateProjectE2eQueueArgs, CreateProjectPipelineArgs,
+    CreateProjectSpecArgs, ExecutionByIdArgs, ExecutionCancelArgs, ExportProjectArgs,
+    ImportProjectArgs, InitializeParams, ListProjectsToolArgs, LoggingSetLevelParams, McpPeerInfo,
+    McpRequest, McpResponse, McpSession, ProjectByIdArgs, ProjectHistoryToolArgs,
+    ProjectPipelineByIdArgs, ProjectQueueByIdArgs, ProjectSpecByIdArgs, ProjectTestByIdArgs,
+    PromptDefinition, PromptGetParams, PromptGetResult, PromptMessage, PromptTextContent,
+    PromptsListParams, ProxyToolArgs, ResourceContents, ResourceDefinition, ResourceReadParams,
+    ResourceTemplateDefinition, ResourceTemplatesListParams, ResourcesListParams,
+    RunProjectE2eTestArgs, RunProjectLoadTestArgs, SUPPORTED_PROTOCOL_VERSIONS, ToolCallParams,
+    ToolCallResult, ToolDefinition, ToolTextContent, ToolsListParams, UpdateProjectArgs,
+    UpdateProjectPipelineArgs, UpdateProjectSpecArgs, ValidateOpenApiToolArgs,
 };
 use crate::server::models::{
     E2eTestRequest, HistoryOrder, HistoryQuery, LoadTestRequest, OrchestratorInfoResponse,
@@ -134,8 +136,9 @@ pub async fn process_request(
                 };
             }
 
+            let tools = filter_tools_by_toolset(tool_definitions(), &params.toolsets);
             McpHttpOutcome::Response {
-                response: McpResponse::success(request_id, json!({ "tools": tool_definitions() })),
+                response: McpResponse::success(request_id, json!({ "tools": tools })),
                 session_id: session_id.map(str::to_owned),
                 protocol_version: Some(session.protocol_version),
             }
@@ -230,6 +233,50 @@ pub async fn process_request(
                 },
             }
         }
+        "resources/templates/list" => {
+            let session = match require_session(state, session_id, protocol_version_header).await {
+                Ok(session) => session,
+                Err(response) => {
+                    return McpHttpOutcome::Response {
+                        response,
+                        session_id: None,
+                        protocol_version: None,
+                    };
+                }
+            };
+            let params = match parse_optional_params::<ResourceTemplatesListParams>(request.params)
+            {
+                Ok(params) => params,
+                Err(response) => {
+                    return McpHttpOutcome::Response {
+                        response: McpResponse::error(Some(request_id), INVALID_PARAMS, response),
+                        session_id: session_id.map(str::to_owned),
+                        protocol_version: Some(session.protocol_version),
+                    };
+                }
+            };
+            let _ = params.meta.as_ref();
+            if params.cursor.is_some() {
+                return McpHttpOutcome::Response {
+                    response: McpResponse::error(
+                        Some(request_id),
+                        INVALID_PARAMS,
+                        "cursor pagination is not supported",
+                    ),
+                    session_id: session_id.map(str::to_owned),
+                    protocol_version: Some(session.protocol_version),
+                };
+            }
+
+            McpHttpOutcome::Response {
+                response: McpResponse::success(
+                    request_id,
+                    json!({ "resourceTemplates": resource_template_definitions() }),
+                ),
+                session_id: session_id.map(str::to_owned),
+                protocol_version: Some(session.protocol_version),
+            }
+        }
         "resources/read" => {
             let session = match require_session(state, session_id, protocol_version_header).await {
                 Ok(session) => session,
@@ -315,6 +362,84 @@ pub async fn process_request(
                 },
             }
         }
+        "completion/complete" => {
+            let session = match require_session(state, session_id, protocol_version_header).await {
+                Ok(session) => session,
+                Err(response) => {
+                    return McpHttpOutcome::Response {
+                        response,
+                        session_id: None,
+                        protocol_version: None,
+                    };
+                }
+            };
+            let params = match parse_params::<CompletionCompleteParams>(request.params) {
+                Ok(params) => params,
+                Err(message) => {
+                    return McpHttpOutcome::Response {
+                        response: McpResponse::error(Some(request_id), INVALID_PARAMS, message),
+                        session_id: session_id.map(str::to_owned),
+                        protocol_version: Some(session.protocol_version),
+                    };
+                }
+            };
+
+            match complete_mcp_argument(state, params).await {
+                Ok(result) => McpHttpOutcome::Response {
+                    response: McpResponse::success(
+                        request_id,
+                        serde_json::to_value(result).unwrap(),
+                    ),
+                    session_id: session_id.map(str::to_owned),
+                    protocol_version: Some(session.protocol_version),
+                },
+                Err(message) => McpHttpOutcome::Response {
+                    response: McpResponse::error(Some(request_id), INVALID_PARAMS, message),
+                    session_id: session_id.map(str::to_owned),
+                    protocol_version: Some(session.protocol_version),
+                },
+            }
+        }
+        "logging/setLevel" => {
+            let session = match require_session(state, session_id, protocol_version_header).await {
+                Ok(session) => session,
+                Err(response) => {
+                    return McpHttpOutcome::Response {
+                        response,
+                        session_id: None,
+                        protocol_version: None,
+                    };
+                }
+            };
+            let params = match parse_params::<LoggingSetLevelParams>(request.params) {
+                Ok(params) => params,
+                Err(message) => {
+                    return McpHttpOutcome::Response {
+                        response: McpResponse::error(Some(request_id), INVALID_PARAMS, message),
+                        session_id: session_id.map(str::to_owned),
+                        protocol_version: Some(session.protocol_version),
+                    };
+                }
+            };
+            let _ = params.meta.as_ref();
+            if !is_supported_mcp_log_level(&params.level) {
+                return McpHttpOutcome::Response {
+                    response: McpResponse::error(
+                        Some(request_id),
+                        INVALID_PARAMS,
+                        "unsupported log level",
+                    ),
+                    session_id: session_id.map(str::to_owned),
+                    protocol_version: Some(session.protocol_version),
+                };
+            }
+
+            McpHttpOutcome::Response {
+                response: McpResponse::success(request_id, json!({})),
+                session_id: session_id.map(str::to_owned),
+                protocol_version: Some(session.protocol_version),
+            }
+        }
         "tools/call" => {
             let session = match require_session(state, session_id, protocol_version_header).await {
                 Ok(session) => session,
@@ -326,7 +451,7 @@ pub async fn process_request(
                     };
                 }
             };
-            let params = match parse_params::<ToolCallParams>(request.params) {
+            let mut params = match parse_params::<ToolCallParams>(request.params) {
                 Ok(params) => params,
                 Err(message) => {
                     return McpHttpOutcome::Response {
@@ -337,13 +462,37 @@ pub async fn process_request(
                 }
             };
             let _ = params.meta.as_ref();
+            if let Some(reason) = high_risk_tool_reason(&params.name, &params.arguments) {
+                let expected = expected_confirmation_token(&params.name, &reason);
+                if confirmation_token_from_arguments(&params.arguments) != Some(expected.as_str()) {
+                    return McpHttpOutcome::Response {
+                        response: McpResponse::error(
+                            Some(request_id),
+                            INVALID_PARAMS,
+                            format!(
+                                "confirmation required: {reason}. Retry with confirmationToken '{expected}'"
+                            ),
+                        ),
+                        session_id: session_id.map(str::to_owned),
+                        protocol_version: Some(session.protocol_version),
+                    };
+                }
+                remove_confirmation_token(&mut params.arguments);
+            }
+
+            let tool_name = params.name.clone();
+            info!(
+                tool_name = %tool_name,
+                session_id = session_id.unwrap_or_default(),
+                "mcp tool call started"
+            );
 
             match execute_tool(state, params).await {
                 Ok(result) => McpHttpOutcome::Response {
-                    response: McpResponse::success(
-                        request_id,
-                        serde_json::to_value(result).unwrap(),
-                    ),
+                    response: {
+                        info!(tool_name = %tool_name, "mcp tool call completed");
+                        McpResponse::success(request_id, serde_json::to_value(result).unwrap())
+                    },
                     session_id: session_id.map(str::to_owned),
                     protocol_version: Some(session.protocol_version),
                 },
@@ -440,6 +589,8 @@ async fn handle_initialize(
                         "listChanged": false,
                         "subscribe": false
                     },
+                    "completions": {},
+                    "logging": {},
                     "tools": {
                         "listChanged": false
                     }
@@ -463,6 +614,46 @@ enum ResourceReadError {
     Internal(String),
 }
 
+fn resource_template_definitions() -> Vec<ResourceTemplateDefinition> {
+    vec![
+        ResourceTemplateDefinition {
+            uri_template: "previa://projects/{projectId}".to_owned(),
+            name: "project".to_owned(),
+            title: Some("Project".to_owned()),
+            description: Some("Project metadata by id.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceTemplateDefinition {
+            uri_template: "previa://projects/{projectId}/pipelines/{pipelineRef}".to_owned(),
+            name: "project-pipeline".to_owned(),
+            title: Some("Project Pipeline".to_owned()),
+            description: Some("Pipeline by id:{pipelineId} or index:{pipelineIndex}.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceTemplateDefinition {
+            uri_template: "previa://projects/{projectId}/specs/{specId}".to_owned(),
+            name: "project-spec".to_owned(),
+            title: Some("Project Spec".to_owned()),
+            description: Some("Saved OpenAPI spec record by id.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceTemplateDefinition {
+            uri_template: "previa://projects/{projectId}/history/e2e/{testId}".to_owned(),
+            name: "project-e2e-test".to_owned(),
+            title: Some("E2E Test History Record".to_owned()),
+            description: Some("Stored E2E execution result by test id.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceTemplateDefinition {
+            uri_template: "previa://projects/{projectId}/history/load/{testId}".to_owned(),
+            name: "project-load-test".to_owned(),
+            title: Some("Load Test History Record".to_owned()),
+            description: Some("Stored load execution result by test id.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+    ]
+}
+
 async fn list_resources(state: &AppState) -> Result<Vec<ResourceDefinition>, String> {
     let projects = list_project_records(
         &state.db,
@@ -475,13 +666,29 @@ async fn list_resources(state: &AppState) -> Result<Vec<ResourceDefinition>, Str
     .await
     .map_err(|err| format!("failed to list projects for resources: {err}"))?;
 
-    let mut resources = vec![ResourceDefinition {
-        uri: "previa://openapi".to_owned(),
-        name: "openapi".to_owned(),
-        title: Some("OpenAPI Document".to_owned()),
-        description: Some("Current orchestrator OpenAPI document.".to_owned()),
-        mime_type: Some("application/json".to_owned()),
-    }];
+    let mut resources = vec![
+        ResourceDefinition {
+            uri: "previa://openapi".to_owned(),
+            name: "openapi".to_owned(),
+            title: Some("OpenAPI Document".to_owned()),
+            description: Some("Current orchestrator OpenAPI document.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceDefinition {
+            uri: orchestrator_info_resource_uri().to_owned(),
+            name: "orchestrator-info".to_owned(),
+            title: Some("Orchestrator Info".to_owned()),
+            description: Some("Current orchestrator and runner health.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+        ResourceDefinition {
+            uri: runners_resource_uri().to_owned(),
+            name: "runners".to_owned(),
+            title: Some("Runners".to_owned()),
+            description: Some("Registered and active runner state.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        },
+    ];
 
     for project in projects {
         resources.push(ResourceDefinition {
@@ -517,6 +724,13 @@ async fn list_resources(state: &AppState) -> Result<Vec<ResourceDefinition>, Str
             name: format!("project-{}-load-history", project.id),
             title: Some(format!("{} Load History", project.name)),
             description: Some("Recent load-test executions for the project.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        });
+        resources.push(ResourceDefinition {
+            uri: project_current_e2e_queue_resource_uri(&project.id),
+            name: format!("project-{}-current-e2e-queue", project.id),
+            title: Some(format!("{} Current E2E Queue", project.name)),
+            description: Some("Current E2E queue snapshot when one is active.".to_owned()),
             mime_type: Some("application/json".to_owned()),
         });
 
@@ -563,6 +777,22 @@ async fn read_resource(state: &AppState, uri: &str) -> Result<ResourceContents, 
     if uri == "previa://openapi" {
         let document = build_openapi_document();
         return json_resource(uri, &document).map_err(|err| {
+            ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+        });
+    }
+    if uri == orchestrator_info_resource_uri() {
+        let info = build_orchestrator_info(state)
+            .await
+            .map_err(ResourceReadError::Internal)?;
+        return json_resource(uri, &info).map_err(|err| {
+            ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+        });
+    }
+    if uri == runners_resource_uri() {
+        let info = build_orchestrator_info(state)
+            .await
+            .map_err(ResourceReadError::Internal)?;
+        return json_resource(uri, &info.runners).map_err(|err| {
             ResourceReadError::Internal(format!("failed to encode resource: {err}"))
         });
     }
@@ -714,10 +944,43 @@ async fn read_resource(state: &AppState, uri: &str) -> Result<ResourceContents, 
                 ResourceReadError::Internal(format!("failed to encode resource: {err}"))
             })
         }
+        ["projects", project_id, "queues", "e2e", "current"] => {
+            ensure_project_resource_exists(&state.db, project_id, uri).await?;
+            let snapshot = get_current_e2e_queue_snapshot(state, project_id)
+                .await
+                .map_err(|err| match err {
+                    QueueError::NotFound(message) => ResourceReadError::NotFound(format!(
+                        "project queue resource '{uri}' was not found: {message}"
+                    )),
+                    err => ResourceReadError::Internal(format!(
+                        "failed to load queue resource: {err:?}"
+                    )),
+                })?;
+            json_resource(uri, &snapshot).map_err(|err| {
+                ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+            })
+        }
         _ => Err(ResourceReadError::NotFound(format!(
             "resource '{uri}' is not available"
         ))),
     }
+}
+
+async fn build_orchestrator_info(state: &AppState) -> Result<OrchestratorInfoResponse, String> {
+    let runners = crate::server::services::runner_registry::collect_registered_runner_statuses(
+        &state.db,
+        &state.client,
+        state.runner_auth_key.as_deref(),
+    )
+    .await
+    .map_err(|err| format!("failed to load runner registry: {err}"))?;
+
+    Ok(OrchestratorInfoResponse {
+        context: state.context_name.clone(),
+        total_runners: runners.len(),
+        active_runners: runners.iter().filter(|runner| runner.active).count(),
+        runners,
+    })
 }
 
 async fn ensure_project_resource_exists(
@@ -808,6 +1071,14 @@ fn json_resource(
     })
 }
 
+fn orchestrator_info_resource_uri() -> &'static str {
+    "previa://orchestrator/info"
+}
+
+fn runners_resource_uri() -> &'static str {
+    "previa://runners"
+}
+
 fn project_resource_uri(project_id: &str) -> String {
     format!("previa://projects/{project_id}")
 }
@@ -828,6 +1099,10 @@ fn project_load_history_resource_uri(project_id: &str) -> String {
     format!("{}/history/load", project_resource_uri(project_id))
 }
 
+fn project_current_e2e_queue_resource_uri(project_id: &str) -> String {
+    format!("{}/queues/e2e/current", project_resource_uri(project_id))
+}
+
 fn pipeline_resource_segment(pipeline: &Pipeline, index: usize) -> String {
     pipeline
         .id
@@ -836,6 +1111,152 @@ fn pipeline_resource_segment(pipeline: &Pipeline, index: usize) -> String {
         .filter(|id| !id.is_empty())
         .map(|id| format!("id:{id}"))
         .unwrap_or_else(|| format!("index:{index}"))
+}
+
+async fn complete_mcp_argument(
+    state: &AppState,
+    params: CompletionCompleteParams,
+) -> Result<CompletionResult, String> {
+    let _ = params.meta.as_ref();
+    let values = match params.reference {
+        CompletionReference::Resource { uri } => {
+            complete_resource_argument(
+                state,
+                &uri,
+                &params.argument.name,
+                &params.argument.value,
+                &params.context,
+            )
+            .await?
+        }
+        CompletionReference::Prompt { name } => {
+            complete_prompt_argument(&name, &params.argument.name, &params.argument.value)
+        }
+    };
+    let total = values.len();
+    Ok(CompletionResult {
+        completion: CompletionValues {
+            values,
+            total: Some(total),
+            has_more: false,
+        },
+    })
+}
+
+async fn complete_resource_argument(
+    state: &AppState,
+    uri_template: &str,
+    argument_name: &str,
+    partial: &str,
+    context: &CompletionContext,
+) -> Result<Vec<String>, String> {
+    match argument_name {
+        "projectId" => {
+            let projects = list_project_records(
+                &state.db,
+                ProjectListQuery {
+                    limit: Some(100),
+                    offset: Some(0),
+                    order: Some(HistoryOrder::Desc),
+                },
+            )
+            .await
+            .map_err(|err| format!("failed to complete projects: {err}"))?;
+            Ok(filter_completion_values(
+                projects.into_iter().map(|project| project.id),
+                partial,
+            ))
+        }
+        "pipelineRef" => {
+            let project_id = completion_context_string(context, "projectId").ok_or_else(|| {
+                "projectId context is required to complete pipelineRef".to_owned()
+            })?;
+            let pipelines = load_pipelines_for_project(&state.db, &project_id)
+                .await
+                .map_err(|err| format!("failed to complete pipelines: {err}"))?;
+            Ok(filter_completion_values(
+                pipelines
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, pipeline)| pipeline_resource_segment(&pipeline, index)),
+                partial,
+            ))
+        }
+        "specId" => {
+            let project_id = completion_context_string(context, "projectId")
+                .ok_or_else(|| "projectId context is required to complete specId".to_owned())?;
+            let specs = list_project_spec_records(&state.db, &project_id)
+                .await
+                .map_err(|err| format!("failed to complete specs: {err}"))?;
+            Ok(filter_completion_values(
+                specs.into_iter().map(|spec| spec.id),
+                partial,
+            ))
+        }
+        "testId" if uri_template.contains("/history/e2e/") => {
+            complete_history_test_ids(state, partial, true, context).await
+        }
+        "testId" if uri_template.contains("/history/load/") => {
+            complete_history_test_ids(state, partial, false, context).await
+        }
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn complete_prompt_argument(_name: &str, _argument_name: &str, _partial: &str) -> Vec<String> {
+    Vec::new()
+}
+
+fn completion_context_string(context: &CompletionContext, name: &str) -> Option<String> {
+    context
+        .arguments
+        .get(name)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn filter_completion_values(
+    values: impl IntoIterator<Item = String>,
+    partial: &str,
+) -> Vec<String> {
+    values
+        .into_iter()
+        .filter(|value| value.starts_with(partial))
+        .take(100)
+        .collect()
+}
+
+async fn complete_history_test_ids(
+    state: &AppState,
+    partial: &str,
+    is_e2e: bool,
+    context: &CompletionContext,
+) -> Result<Vec<String>, String> {
+    let project_id = completion_context_string(context, "projectId")
+        .ok_or_else(|| "projectId context is required to complete testId".to_owned())?;
+    let query = HistoryQuery {
+        pipeline_index: None,
+        limit: Some(100),
+        offset: Some(0),
+        order: Some(HistoryOrder::Desc),
+    };
+    if is_e2e {
+        let records = list_e2e_history_records(&state.db, &project_id, query)
+            .await
+            .map_err(|err| format!("failed to complete e2e tests: {err}"))?;
+        Ok(filter_completion_values(
+            records.into_iter().map(|record| record.id),
+            partial,
+        ))
+    } else {
+        let records = list_load_history_records(&state.db, &project_id, query)
+            .await
+            .map_err(|err| format!("failed to complete load tests: {err}"))?;
+        Ok(filter_completion_values(
+            records.into_iter().map(|record| record.id),
+            partial,
+        ))
+    }
 }
 
 async fn require_session(
@@ -879,20 +1300,7 @@ async fn execute_tool(state: &AppState, params: ToolCallParams) -> Result<ToolCa
     match params.name.as_str() {
         "health" => Ok(tool_success(json!({ "status": "ok" }))),
         "get_info" => {
-            let runners =
-                crate::server::services::runner_registry::collect_registered_runner_statuses(
-                    &state.db,
-                    &state.client,
-                    state.runner_auth_key.as_deref(),
-                )
-                .await
-                .map_err(|err| format!("failed to load runner registry: {err}"))?;
-            let payload = OrchestratorInfoResponse {
-                context: state.context_name.clone(),
-                total_runners: runners.len(),
-                active_runners: runners.iter().filter(|runner| runner.active).count(),
-                runners,
-            };
+            let payload = build_orchestrator_info(state).await?;
             Ok(tool_success(serde_json::to_value(payload).unwrap()))
         }
         "get_openapi_document" => Ok(tool_success(
@@ -1594,7 +2002,7 @@ where
 }
 
 fn tool_definitions() -> Vec<ToolDefinition> {
-    vec![
+    let mut tools = vec![
         ToolDefinition {
             name: "health".to_owned(),
             title: Some("Health".to_owned()),
@@ -1603,6 +2011,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {}
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_info".to_owned(),
@@ -1612,6 +2022,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {}
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_openapi_document".to_owned(),
@@ -1621,6 +2033,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {}
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_pipeline_creation_guide".to_owned(),
@@ -1632,6 +2046,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {}
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "list_projects".to_owned(),
@@ -1645,6 +2061,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "order": { "type": "string", "enum": ["asc", "desc"] }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_project".to_owned(),
@@ -1657,6 +2075,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "projectId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "create_project".to_owned(),
@@ -1669,6 +2089,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "project": { "type": "object" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "update_project".to_owned(),
@@ -1682,6 +2104,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "project": { "type": "object" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_project".to_owned(),
@@ -1694,6 +2118,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "projectId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "export_project".to_owned(),
@@ -1707,6 +2133,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "includeHistory": { "type": "boolean" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "import_project".to_owned(),
@@ -1720,6 +2148,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "includeHistory": { "type": "boolean" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "list_project_pipelines".to_owned(),
@@ -1732,6 +2162,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "projectId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "list_e2e_history".to_owned(),
@@ -1748,6 +2180,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "order": { "type": "string", "enum": ["asc", "desc"] }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_e2e_test".to_owned(),
@@ -1762,6 +2196,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "testId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_e2e_history".to_owned(),
@@ -1775,6 +2211,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipelineIndex": { "type": "integer" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_e2e_test".to_owned(),
@@ -1788,6 +2226,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "testId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "list_load_history".to_owned(),
@@ -1804,6 +2244,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "order": { "type": "string", "enum": ["asc", "desc"] }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_load_test".to_owned(),
@@ -1818,6 +2260,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "testId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_load_history".to_owned(),
@@ -1831,6 +2275,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipelineIndex": { "type": "integer" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_load_test".to_owned(),
@@ -1844,6 +2290,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "testId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_project_pipeline".to_owned(),
@@ -1857,6 +2305,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipelineId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "create_project_pipeline".to_owned(),
@@ -1870,6 +2320,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipeline": pipeline_schema()
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "update_project_pipeline".to_owned(),
@@ -1884,6 +2336,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipeline": pipeline_schema()
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_project_pipeline".to_owned(),
@@ -1897,6 +2351,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "pipelineId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "list_project_specs".to_owned(),
@@ -1909,6 +2365,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "projectId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_project_spec".to_owned(),
@@ -1922,6 +2380,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "specId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "create_project_spec".to_owned(),
@@ -1935,6 +2395,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "spec": { "type": "object" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "update_project_spec".to_owned(),
@@ -1949,6 +2411,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "spec": { "type": "object" }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "delete_project_spec".to_owned(),
@@ -1962,6 +2426,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "specId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "create_project_e2e_queue".to_owned(),
@@ -1984,6 +2450,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_current_project_e2e_queue".to_owned(),
@@ -1996,6 +2464,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "projectId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_project_e2e_queue".to_owned(),
@@ -2009,6 +2479,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "queueId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "cancel_project_e2e_queue".to_owned(),
@@ -2022,6 +2494,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "queueId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "run_project_e2e_test".to_owned(),
@@ -2040,6 +2514,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "transactionId": { "type": ["string", "null"] }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "run_project_load_test".to_owned(),
@@ -2097,6 +2573,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "transactionId": { "type": ["string", "null"] }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "get_execution".to_owned(),
@@ -2110,6 +2588,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "executionId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "cancel_execution".to_owned(),
@@ -2122,6 +2602,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "executionId": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "proxy_request".to_owned(),
@@ -2136,6 +2618,8 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "timeoutMs": { "type": "integer", "minimum": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
         ToolDefinition {
             name: "validate_openapi".to_owned(),
@@ -2148,8 +2632,221 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                     "source": { "type": "string", "minLength": 1 }
                 }
             }),
+            output_schema: None,
+            meta: None,
         },
-    ]
+    ];
+    enrich_tool_definitions(&mut tools);
+    tools
+}
+
+#[cfg(test)]
+fn tool_definition(
+    name: &str,
+    title: &str,
+    description: &str,
+    input_schema: Value,
+    output_schema: Option<Value>,
+    toolset: &str,
+) -> ToolDefinition {
+    ToolDefinition {
+        name: name.to_owned(),
+        title: Some(title.to_owned()),
+        description: description.to_owned(),
+        input_schema,
+        output_schema,
+        meta: Some(json!({ "previaToolset": toolset })),
+    }
+}
+
+fn enrich_tool_definitions(tools: &mut [ToolDefinition]) {
+    for tool in tools {
+        let toolset = tool_toolset(&tool.name);
+        tool.meta = Some(json!({ "previaToolset": toolset }));
+        tool.output_schema = output_schema_for_tool(&tool.name);
+        if high_risk_tool_name(&tool.name) {
+            add_confirmation_token_property(&mut tool.input_schema);
+        }
+    }
+}
+
+fn tool_toolset(tool_name: &str) -> &'static str {
+    match tool_name {
+        "health"
+        | "get_info"
+        | "get_openapi_document"
+        | "get_pipeline_creation_guide"
+        | "get_execution"
+        | "cancel_execution" => "core",
+        "list_projects" | "get_project" | "create_project" | "update_project"
+        | "delete_project" | "export_project" | "import_project" => "projects",
+        "list_project_pipelines"
+        | "get_project_pipeline"
+        | "create_project_pipeline"
+        | "update_project_pipeline"
+        | "delete_project_pipeline" => "pipelines",
+        "list_project_specs"
+        | "get_project_spec"
+        | "create_project_spec"
+        | "update_project_spec"
+        | "delete_project_spec"
+        | "validate_openapi" => "specs",
+        "list_e2e_history"
+        | "get_e2e_test"
+        | "delete_e2e_history"
+        | "delete_e2e_test"
+        | "create_project_e2e_queue"
+        | "get_current_project_e2e_queue"
+        | "get_project_e2e_queue"
+        | "cancel_project_e2e_queue"
+        | "run_project_e2e_test" => "e2e",
+        "list_load_history"
+        | "get_load_test"
+        | "delete_load_history"
+        | "delete_load_test"
+        | "run_project_load_test" => "load",
+        "proxy_request" => "http",
+        _ => "core",
+    }
+}
+
+fn filter_tools_by_toolset(
+    tools: Vec<ToolDefinition>,
+    requested: &[String],
+) -> Vec<ToolDefinition> {
+    if requested.is_empty() {
+        return tools;
+    }
+
+    tools
+        .into_iter()
+        .filter(|tool| {
+            tool.meta
+                .as_ref()
+                .and_then(|meta| meta.get("previaToolset"))
+                .and_then(Value::as_str)
+                .map(|toolset| requested.iter().any(|requested| requested == toolset))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn output_schema_for_tool(tool_name: &str) -> Option<Value> {
+    match tool_name {
+        "run_project_e2e_test" | "run_project_load_test" => Some(execution_start_output_schema()),
+        "create_project_e2e_queue" => Some(json!({
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+                "id": { "type": "string" },
+                "status": { "type": "string" },
+                "projectId": { "type": ["string", "null"] }
+            }
+        })),
+        "list_e2e_history" | "list_load_history" => Some(history_list_output_schema()),
+        "get_info" => Some(orchestrator_info_output_schema()),
+        _ => None,
+    }
+}
+
+fn execution_start_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["executionId"],
+        "properties": {
+            "executionId": { "type": "string" },
+            "status": { "type": ["string", "null"] },
+            "projectId": { "type": ["string", "null"] }
+        }
+    })
+}
+
+fn history_list_output_schema() -> Value {
+    json!({
+        "type": "array",
+        "items": { "type": "object" }
+    })
+}
+
+fn orchestrator_info_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "required": ["context", "totalRunners", "activeRunners", "runners"],
+        "properties": {
+            "context": { "type": "string" },
+            "totalRunners": { "type": "integer" },
+            "activeRunners": { "type": "integer" },
+            "runners": { "type": "array", "items": { "type": "object" } }
+        }
+    })
+}
+
+fn high_risk_tool_name(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "delete_project_pipeline"
+            | "delete_project_spec"
+            | "import_project"
+            | "run_project_load_test"
+    )
+}
+
+fn add_confirmation_token_property(schema: &mut Value) {
+    let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) else {
+        return;
+    };
+    properties.insert(
+        "confirmationToken".to_owned(),
+        json!({
+            "type": ["string", "null"],
+            "description": "Required for high-risk calls after the server returns the exact confirmation token."
+        }),
+    );
+}
+
+fn high_risk_tool_reason(tool_name: &str, arguments: &Value) -> Option<String> {
+    match tool_name {
+        "delete_project_pipeline" => Some("deletes a saved pipeline".to_owned()),
+        "delete_project_spec" => Some("deletes a saved API spec".to_owned()),
+        "import_project" => Some("imports project data and may create many records".to_owned()),
+        "run_project_load_test" => {
+            let runner_max_rps = arguments
+                .pointer("/load/runnerMaxRps")
+                .and_then(Value::as_f64)
+                .unwrap_or(600.0);
+            let max_intensity = arguments
+                .pointer("/load/points")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|point| point.get("intensity").and_then(Value::as_f64))
+                .fold(0.0_f64, f64::max);
+            if runner_max_rps >= 900.0 || max_intensity >= 90.0 {
+                Some("starts a high-intensity load test".to_owned())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn expected_confirmation_token(tool_name: &str, reason: &str) -> String {
+    format!("confirm:{tool_name}:{reason}")
+}
+
+fn confirmation_token_from_arguments(arguments: &Value) -> Option<&str> {
+    arguments.get("confirmationToken").and_then(Value::as_str)
+}
+
+fn remove_confirmation_token(arguments: &mut Value) {
+    if let Some(object) = arguments.as_object_mut() {
+        object.remove("confirmationToken");
+    }
+}
+
+fn is_supported_mcp_log_level(level: &str) -> bool {
+    matches!(level, "debug" | "info" | "notice" | "warning" | "error")
 }
 
 fn prompt_definitions() -> Vec<PromptDefinition> {
@@ -3256,10 +3953,14 @@ mod tests {
     use tokio::sync::RwLock;
 
     use super::{
-        execute_tool, load_test_designer_prompt, local_pipeline_guide_prompt, parse_tool_arguments,
-        pipeline_creation_guide, pipeline_test_assistant_prompt, previa_pipeline_author_prompt,
-        project_e2e_history_resource_uri, project_load_history_resource_uri, prompt_definitions,
-        prompt_result, tool_definitions, validate_pipeline_input,
+        execute_tool, filter_completion_values, filter_tools_by_toolset, high_risk_tool_reason,
+        is_supported_mcp_log_level, load_test_designer_prompt, local_pipeline_guide_prompt,
+        orchestrator_info_resource_uri, parse_tool_arguments, pipeline_creation_guide,
+        pipeline_test_assistant_prompt, previa_pipeline_author_prompt,
+        project_current_e2e_queue_resource_uri, project_e2e_history_resource_uri,
+        project_load_history_resource_uri, prompt_definitions, prompt_result,
+        resource_template_definitions, runners_resource_uri, tool_definition, tool_definitions,
+        validate_pipeline_input,
     };
     use crate::server::db::{
         insert_project_pipeline, load_e2e_queue_record, upsert_project_metadata,
@@ -3628,6 +4329,56 @@ mod tests {
     }
 
     #[test]
+    fn operational_resource_uris_are_stable() {
+        assert_eq!(
+            orchestrator_info_resource_uri(),
+            "previa://orchestrator/info"
+        );
+        assert_eq!(runners_resource_uri(), "previa://runners");
+        assert_eq!(
+            project_current_e2e_queue_resource_uri("project-1"),
+            "previa://projects/project-1/queues/e2e/current"
+        );
+    }
+
+    #[test]
+    fn resource_templates_include_dynamic_project_paths() {
+        let templates = resource_template_definitions();
+        let uris = templates
+            .iter()
+            .map(|template| template.uri_template.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(uris.contains(&"previa://projects/{projectId}"));
+        assert!(uris.contains(&"previa://projects/{projectId}/pipelines/{pipelineRef}"));
+        assert!(uris.contains(&"previa://projects/{projectId}/history/load/{testId}"));
+    }
+
+    #[test]
+    fn completion_filter_matches_prefix_and_limits_results() {
+        let values = (0..120).map(|index| format!("project-{index:03}"));
+
+        let filtered = filter_completion_values(values, "project-0");
+
+        assert_eq!(filtered.len(), 100);
+        assert_eq!(filtered[0], "project-000");
+        assert_eq!(filtered[99], "project-099");
+    }
+
+    #[test]
+    fn toolset_filter_returns_only_requested_group() {
+        let tools = vec![
+            tool_definition("a", "A", "A tool", json!({}), None, "core"),
+            tool_definition("b", "B", "B tool", json!({}), None, "load"),
+        ];
+
+        let filtered = filter_tools_by_toolset(tools, &[String::from("load")]);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "b");
+    }
+
+    #[test]
     fn load_test_tool_schema_exposes_runner_max_rps() {
         let tool = tool_definitions()
             .into_iter()
@@ -3637,6 +4388,64 @@ mod tests {
         let runner_max_rps = &tool.input_schema["properties"]["load"]["properties"]["runnerMaxRps"];
         assert_eq!(runner_max_rps["minimum"], json!(1));
         assert_eq!(runner_max_rps["maximum"], json!(1000));
+    }
+
+    #[test]
+    fn execution_tools_have_output_schemas() {
+        let tools = tool_definitions();
+        for name in ["run_project_e2e_test", "run_project_load_test"] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name == name)
+                .expect("execution tool");
+            assert!(
+                tool.output_schema.is_some(),
+                "{name} should expose outputSchema"
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_log_level_validation_is_strict() {
+        assert!(is_supported_mcp_log_level("info"));
+        assert!(is_supported_mcp_log_level("warning"));
+        assert!(!is_supported_mcp_log_level("verbose"));
+    }
+
+    #[test]
+    fn high_risk_load_test_requires_confirmation_at_high_intensity() {
+        let reason = high_risk_tool_reason(
+            "run_project_load_test",
+            &json!({
+                "load": {
+                    "runnerMaxRps": 950,
+                    "points": [
+                        { "atMs": 0, "intensity": 0 },
+                        { "atMs": 60000, "intensity": 100 }
+                    ]
+                }
+            }),
+        );
+
+        assert_eq!(reason, Some("starts a high-intensity load test".to_owned()));
+    }
+
+    #[test]
+    fn normal_load_test_does_not_require_confirmation() {
+        let reason = high_risk_tool_reason(
+            "run_project_load_test",
+            &json!({
+                "load": {
+                    "runnerMaxRps": 600,
+                    "points": [
+                        { "atMs": 0, "intensity": 0 },
+                        { "atMs": 60000, "intensity": 60 }
+                    ]
+                }
+            }),
+        );
+
+        assert_eq!(reason, None);
     }
 
     #[test]
