@@ -502,6 +502,9 @@ function WaveEditor({
               })}
             </div>
           </div>
+          <div className="mt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {t("loadTest.pointMaxRequests")}
+          </div>
           <div data-testid="wave-point-value-strip" className="relative mt-1 h-5 text-[10px] font-mono text-muted-foreground">
             {pointMarkers.map((marker, index) => {
               const percent = clamp((marker.x / Math.max(plotWidth, 1)) * 100, 0, 100);

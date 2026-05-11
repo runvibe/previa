@@ -227,6 +227,7 @@
   "loadTest.wavePreview": "Prévia da onda",
   "loadTest.previewIntensityAxis": "Intensidade (%)",
   "loadTest.previewTimeAxis": "Tempo (ms)",
+  "loadTest.pointMaxRequests": "Máx. requests por ponto",
 
   "loadTestResults.sent": "Enviadas",
   "loadTestResults.success": "Sucesso",

@@ -29,6 +29,7 @@ vi.mock("react-i18next", () => ({
         "loadTest.wavePreview": "Wave editor",
         "loadTest.previewIntensityAxis": "Intensity (%)",
         "loadTest.previewTimeAxis": "Time (ms)",
+        "loadTest.pointMaxRequests": "Max. requests per point",
         "loadTest.selectedPoint": "Selected point",
         "loadTest.configureManually": "Configure manually",
         "loadTest.estimatedTime": "Estimated time",
@@ -155,6 +156,7 @@ describe("LoadTestConfigPanel", () => {
     }, 3);
 
     expect(screen.getAllByText("900")).toHaveLength(2);
+    expect(screen.getByText("Max. requests per point")).toBeInTheDocument();
     expect(screen.getByTestId("wave-point-value-strip")).toHaveTextContent("900");
     expect(screen.getByTestId("wave-point-marker-value-0")).toHaveClass("translate-x-0");
     expect(screen.getByTestId("wave-point-marker-value-1")).toHaveClass("-translate-x-full");

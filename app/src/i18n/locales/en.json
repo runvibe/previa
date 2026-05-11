@@ -227,6 +227,7 @@
   "loadTest.wavePreview": "Wave preview",
   "loadTest.previewIntensityAxis": "Intensity (%)",
   "loadTest.previewTimeAxis": "Time (ms)",
+  "loadTest.pointMaxRequests": "Max. requests per point",
 
   "loadTestResults.sent": "Sent",
   "loadTestResults.success": "Success",
