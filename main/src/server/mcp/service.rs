@@ -505,6 +505,20 @@ async fn list_resources(state: &AppState) -> Result<Vec<ResourceDefinition>, Str
             description: Some("Saved OpenAPI specs for the project.".to_owned()),
             mime_type: Some("application/json".to_owned()),
         });
+        resources.push(ResourceDefinition {
+            uri: project_e2e_history_resource_uri(&project.id),
+            name: format!("project-{}-e2e-history", project.id),
+            title: Some(format!("{} E2E History", project.name)),
+            description: Some("Recent E2E executions for the project.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        });
+        resources.push(ResourceDefinition {
+            uri: project_load_history_resource_uri(&project.id),
+            name: format!("project-{}-load-history", project.id),
+            title: Some(format!("{} Load History", project.name)),
+            description: Some("Recent load-test executions for the project.".to_owned()),
+            mime_type: Some("application/json".to_owned()),
+        });
 
         let pipelines = load_pipelines_for_project(&state.db, &project.id)
             .await
@@ -634,10 +648,92 @@ async fn read_resource(state: &AppState, uri: &str) -> Result<ResourceContents, 
                 ResourceReadError::Internal(format!("failed to encode resource: {err}"))
             })
         }
+        ["projects", project_id, "history", "e2e"] => {
+            ensure_project_resource_exists(&state.db, project_id, uri).await?;
+            let records = list_e2e_history_records(
+                &state.db,
+                project_id,
+                HistoryQuery {
+                    pipeline_index: None,
+                    limit: Some(100),
+                    offset: Some(0),
+                    order: Some(HistoryOrder::Desc),
+                },
+            )
+            .await
+            .map_err(|err| {
+                ResourceReadError::Internal(format!("failed to load e2e history resource: {err}"))
+            })?;
+            json_resource(uri, &records).map_err(|err| {
+                ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+            })
+        }
+        ["projects", project_id, "history", "e2e", test_id] => {
+            let record = load_e2e_history_record_by_id(&state.db, project_id, test_id)
+                .await
+                .map_err(|err| {
+                    ResourceReadError::Internal(format!("failed to load e2e test resource: {err}"))
+                })?
+                .ok_or_else(|| {
+                    ResourceReadError::NotFound(format!("e2e test resource '{uri}' was not found"))
+                })?;
+            json_resource(uri, &record).map_err(|err| {
+                ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+            })
+        }
+        ["projects", project_id, "history", "load"] => {
+            ensure_project_resource_exists(&state.db, project_id, uri).await?;
+            let records = list_load_history_records(
+                &state.db,
+                project_id,
+                HistoryQuery {
+                    pipeline_index: None,
+                    limit: Some(100),
+                    offset: Some(0),
+                    order: Some(HistoryOrder::Desc),
+                },
+            )
+            .await
+            .map_err(|err| {
+                ResourceReadError::Internal(format!("failed to load load history resource: {err}"))
+            })?;
+            json_resource(uri, &records).map_err(|err| {
+                ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+            })
+        }
+        ["projects", project_id, "history", "load", test_id] => {
+            let record = load_load_history_record_by_id(&state.db, project_id, test_id)
+                .await
+                .map_err(|err| {
+                    ResourceReadError::Internal(format!("failed to load load test resource: {err}"))
+                })?
+                .ok_or_else(|| {
+                    ResourceReadError::NotFound(format!("load test resource '{uri}' was not found"))
+                })?;
+            json_resource(uri, &record).map_err(|err| {
+                ResourceReadError::Internal(format!("failed to encode resource: {err}"))
+            })
+        }
         _ => Err(ResourceReadError::NotFound(format!(
             "resource '{uri}' is not available"
         ))),
     }
+}
+
+async fn ensure_project_resource_exists(
+    db: &DbPool,
+    project_id: &str,
+    uri: &str,
+) -> Result<(), ResourceReadError> {
+    if project_exists(db, project_id).await.map_err(|err| {
+        ResourceReadError::Internal(format!("failed to verify project resource: {err}"))
+    })? {
+        return Ok(());
+    }
+
+    Err(ResourceReadError::NotFound(format!(
+        "project resource '{uri}' was not found"
+    )))
 }
 
 async fn load_pipeline_resource(
@@ -722,6 +818,14 @@ fn project_pipelines_resource_uri(project_id: &str) -> String {
 
 fn project_specs_resource_uri(project_id: &str) -> String {
     format!("{}/specs", project_resource_uri(project_id))
+}
+
+fn project_e2e_history_resource_uri(project_id: &str) -> String {
+    format!("{}/history/e2e", project_resource_uri(project_id))
+}
+
+fn project_load_history_resource_uri(project_id: &str) -> String {
+    format!("{}/history/load", project_resource_uri(project_id))
 }
 
 fn pipeline_resource_segment(pipeline: &Pipeline, index: usize) -> String {
@@ -1978,6 +2082,12 @@ fn tool_definitions() -> Vec<ToolDefinition> {
                                 }
                             },
                             "interpolation": { "type": "string", "enum": ["smooth", "linear", "step"] },
+                            "runnerMaxRps": {
+                                "type": "number",
+                                "minimum": 1,
+                                "maximum": 1000,
+                                "description": "Maximum requests per second allowed per runner. Defaults to 600 when omitted."
+                            },
                             "gracePeriodMs": { "type": "integer", "minimum": 0 }
                         }
                     },
@@ -3037,9 +3147,13 @@ fn load_test_designer_prompt() -> String {
         "Required workflow:",
         "1. Confirm the target project and pipeline with get_project, list_project_pipelines, or get_project_pipeline.",
         "2. If needed, inspect prior load results with list_load_history and get_load_test.",
-        "3. Prefer a wave load payload with points as { atMs, intensity }, where intensity is 0-100 percent of each runner's configured safe RPS capacity.",
-        "4. Use smooth interpolation by default. Use step only for explicit spike/degradation tests.",
-        "5. Highlight operational risks such as overly high intensity, missing assertions, unstable environments, or slow responses creating a large pending-response backlog.",
+        "3. Prefer a wave load payload with points as { atMs, intensity }, where intensity is 0-100 percent of runnerMaxRps for each active runner.",
+        "4. Use duration presets when they fit: 1m (60000ms), 10m (600000ms), 30m (1800000ms), or custom atMs values for specific experiments.",
+        "5. Set load.runnerMaxRps between 1 and 1000 when the test needs an explicit per-runner cap; omit it to use the default of 600.",
+        "6. Use smooth interpolation by default. Use step only for explicit spike/degradation tests.",
+        "7. Treat the request count shown at each wave point as the maximum scheduled request rate at that point: active runners * runnerMaxRps * intensity / 100.",
+        "8. Explain gracePeriodMs as extra time to observe pending responses after scheduling stops; the run can finish sooner when all responses have been observed.",
+        "9. Highlight operational risks such as overly high intensity, missing assertions, unstable environments, or slow responses creating a large pending-response backlog.",
         "Output requirements:",
         "- Present a runnable payload for run_project_load_test when enough context exists.",
         "- Explain what the run is trying to learn.",
@@ -3142,8 +3256,9 @@ mod tests {
     use tokio::sync::RwLock;
 
     use super::{
-        execute_tool, local_pipeline_guide_prompt, parse_tool_arguments, pipeline_creation_guide,
-        pipeline_test_assistant_prompt, previa_pipeline_author_prompt, prompt_definitions,
+        execute_tool, load_test_designer_prompt, local_pipeline_guide_prompt, parse_tool_arguments,
+        pipeline_creation_guide, pipeline_test_assistant_prompt, previa_pipeline_author_prompt,
+        project_e2e_history_resource_uri, project_load_history_resource_uri, prompt_definitions,
         prompt_result, tool_definitions, validate_pipeline_input,
     };
     use crate::server::db::{
@@ -3498,6 +3613,42 @@ mod tests {
         assert_eq!(args.project_id, "project-1");
         assert_eq!(args.pipeline_index, Some(2));
         assert_eq!(args.limit, Some(50));
+    }
+
+    #[test]
+    fn project_history_resource_uris_are_stable() {
+        assert_eq!(
+            project_e2e_history_resource_uri("project-1"),
+            "previa://projects/project-1/history/e2e"
+        );
+        assert_eq!(
+            project_load_history_resource_uri("project-1"),
+            "previa://projects/project-1/history/load"
+        );
+    }
+
+    #[test]
+    fn load_test_tool_schema_exposes_runner_max_rps() {
+        let tool = tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name == "run_project_load_test")
+            .expect("run_project_load_test tool definition");
+
+        let runner_max_rps = &tool.input_schema["properties"]["load"]["properties"]["runnerMaxRps"];
+        assert_eq!(runner_max_rps["minimum"], json!(1));
+        assert_eq!(runner_max_rps["maximum"], json!(1000));
+    }
+
+    #[test]
+    fn load_test_prompt_mentions_current_load_controls() {
+        let text = load_test_designer_prompt();
+
+        assert!(text.contains("1m"));
+        assert!(text.contains("10m"));
+        assert!(text.contains("30m"));
+        assert!(text.contains("runnerMaxRps"));
+        assert!(text.contains("default of 600"));
+        assert!(text.contains("gracePeriodMs"));
     }
 
     #[tokio::test]
