@@ -27,6 +27,36 @@ use crate::server::wave_sender::{ReadyWaveRequest, WaveSender, spawn_wave_sender
 const WAVE_LIVE_METRICS_INTERVAL_MS: u64 = 1_000;
 const WAVE_LIVE_BUCKET_LAG_MS: u64 = 1_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GraceDrainDecision {
+    Continue,
+    Drained,
+    GraceTimeout,
+    Cancelled,
+}
+
+fn grace_drain_decision(
+    response_in_flight: usize,
+    ready_to_send: usize,
+    is_cancelled: bool,
+    now: tokio::time::Instant,
+    deadline: tokio::time::Instant,
+) -> GraceDrainDecision {
+    if response_in_flight == 0 && ready_to_send == 0 {
+        return GraceDrainDecision::Drained;
+    }
+
+    if is_cancelled {
+        return GraceDrainDecision::Cancelled;
+    }
+
+    if now >= deadline {
+        return GraceDrainDecision::GraceTimeout;
+    }
+
+    GraceDrainDecision::Continue
+}
+
 pub async fn run_wave_load(
     load: LoadProfile,
     pipeline: Pipeline,
@@ -168,10 +198,18 @@ pub async fn run_wave_load(
 
     let grace_deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(load.grace_period_ms);
-    while response_in_flight.load(Ordering::SeqCst) > 0 || ready_to_send.load(Ordering::SeqCst) > 0
-    {
-        if token.is_cancelled() || tokio::time::Instant::now() >= grace_deadline {
-            break;
+    loop {
+        match grace_drain_decision(
+            response_in_flight.load(Ordering::SeqCst),
+            ready_to_send.load(Ordering::SeqCst),
+            token.is_cancelled(),
+            tokio::time::Instant::now(),
+            grace_deadline,
+        ) {
+            GraceDrainDecision::Continue => {}
+            GraceDrainDecision::Drained
+            | GraceDrainDecision::GraceTimeout
+            | GraceDrainDecision::Cancelled => break,
         }
 
         let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -359,5 +397,40 @@ fn wave_snapshot(
         ready_requests,
         active_pipelines: response_in_flight.saturating_add(ready_requests),
         outstanding_requests: response_in_flight,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grace_drain_decision_finishes_when_no_work_is_pending_before_deadline() {
+        let now = tokio::time::Instant::now();
+        let deadline = now + tokio::time::Duration::from_secs(30);
+
+        assert_eq!(
+            grace_drain_decision(0, 0, false, now, deadline),
+            GraceDrainDecision::Drained,
+        );
+    }
+
+    #[test]
+    fn grace_drain_decision_continues_until_pending_work_drains_or_deadline_hits() {
+        let now = tokio::time::Instant::now();
+        let deadline = now + tokio::time::Duration::from_secs(30);
+
+        assert_eq!(
+            grace_drain_decision(1, 0, false, now, deadline),
+            GraceDrainDecision::Continue,
+        );
+        assert_eq!(
+            grace_drain_decision(0, 1, false, now, deadline),
+            GraceDrainDecision::Continue,
+        );
+        assert_eq!(
+            grace_drain_decision(1, 0, false, deadline, deadline),
+            GraceDrainDecision::GraceTimeout,
+        );
     }
 }
