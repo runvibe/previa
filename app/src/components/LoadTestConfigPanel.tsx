@@ -326,21 +326,22 @@ function WaveEditor({
   const { t } = useTranslation();
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const draggingIndexRef = useRef<number | null>(null);
+  const graphRef = useRef<SVGSVGElement | null>(null);
   const plotWidth = 100;
   const plotHeight = 48;
-  const markerRadius = 2.3;
   const graphPoints = points.map((point) => pointToGraph(point, durationMs, plotWidth, plotHeight));
   const pathData = buildWavePath(graphPoints, interpolation);
   const pointMarkers = points.map((point, index) => ({
     key: `${point.atMs}-${point.intensity}-${index}`,
     x: graphPoints[index]?.x ?? 0,
+    y: graphPoints[index]?.y ?? 0,
     plannedRequests: Math.round(runnerMaxRps * Math.max(1, runnerCount) * (point.intensity / 100)),
   }));
 
-  const pointFromEvent = (event: MouseEvent<SVGSVGElement> | PointerEvent<SVGSVGElement>): LoadPoint => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const xRatio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
-    const yRatio = clamp((event.clientY - rect.top) / Math.max(rect.height, 1), 0, 1);
+  const pointFromClient = (clientX: number, clientY: number): LoadPoint => {
+    const rect = graphRef.current?.getBoundingClientRect();
+    const xRatio = rect ? clamp((clientX - rect.left) / Math.max(rect.width, 1), 0, 1) : 0;
+    const yRatio = rect ? clamp((clientY - rect.top) / Math.max(rect.height, 1), 0, 1) : 0;
     return {
       atMs: snapMs(xRatio * durationMs),
       intensity: Math.round((1 - yRatio) * 100),
@@ -371,13 +372,13 @@ function WaveEditor({
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
     const activeIndex = draggingIndexRef.current;
     if (activeIndex === null) return;
-    updatePoint(activeIndex, pointFromEvent(event));
+    updatePoint(activeIndex, pointFromClient(event.clientX, event.clientY));
   };
 
   const handleMouseMove = (event: MouseEvent<SVGSVGElement>) => {
     const activeIndex = draggingIndexRef.current;
     if (activeIndex === null) return;
-    updatePoint(activeIndex, pointFromEvent(event));
+    updatePoint(activeIndex, pointFromClient(event.clientX, event.clientY));
   };
 
   const stopDragging = () => {
@@ -397,77 +398,110 @@ function WaveEditor({
           <span>0%</span>
         </div>
         <div className="min-w-0">
-          <svg
-            data-testid="wave-editor-graph"
-            viewBox={`0 0 ${plotWidth} ${plotHeight}`}
-            preserveAspectRatio="none"
-            className="h-40 w-full cursor-crosshair touch-none overflow-visible rounded bg-muted/20"
-            role="img"
-            aria-label={t("loadTest.wavePreview")}
-            onClick={(event) => {
-              if (event.detail > 1) return;
-              addPoint(pointFromEvent(event));
-            }}
-            onMouseMove={handleMouseMove}
-            onMouseUp={stopDragging}
-            onMouseLeave={stopDragging}
-            onPointerMove={handlePointerMove}
-            onPointerUp={stopDragging}
-            onPointerLeave={stopDragging}
-          >
-            {[0.25, 0.5, 0.75].map((line) => (
-              <line
-                key={`h-${line}`}
-                x1="0"
-                x2={plotWidth}
-                y1={plotHeight * line}
-                y2={plotHeight * line}
+          <div className="relative h-40 w-full overflow-visible">
+            <svg
+              ref={graphRef}
+              data-testid="wave-editor-graph"
+              viewBox={`0 0 ${plotWidth} ${plotHeight}`}
+              preserveAspectRatio="none"
+              className="h-full w-full cursor-crosshair touch-none overflow-visible rounded bg-muted/20"
+              role="img"
+              aria-label={t("loadTest.wavePreview")}
+              onClick={(event) => {
+                if (event.detail > 1) return;
+                addPoint(pointFromClient(event.clientX, event.clientY));
+              }}
+              onMouseMove={handleMouseMove}
+              onMouseUp={stopDragging}
+              onMouseLeave={stopDragging}
+              onPointerMove={handlePointerMove}
+              onPointerUp={stopDragging}
+              onPointerLeave={stopDragging}
+            >
+              {[0.25, 0.5, 0.75].map((line) => (
+                <line
+                  key={`h-${line}`}
+                  x1="0"
+                  x2={plotWidth}
+                  y1={plotHeight * line}
+                  y2={plotHeight * line}
+                  stroke="currentColor"
+                  strokeOpacity="0.08"
+                  strokeWidth="0.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+              {[0.25, 0.5, 0.75].map((line) => (
+                <line
+                  key={`v-${line}`}
+                  x1={plotWidth * line}
+                  x2={plotWidth * line}
+                  y1="0"
+                  y2={plotHeight}
+                  stroke="currentColor"
+                  strokeOpacity="0.08"
+                  strokeWidth="0.5"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+              <path
+                data-testid="wave-editor-path"
+                d={pathData}
+                fill="none"
                 stroke="currentColor"
-                strokeOpacity="0.08"
-                strokeWidth="0.5"
+                strokeWidth="1.8"
+                vectorEffect="non-scaling-stroke"
               />
-            ))}
-            {[0.25, 0.5, 0.75].map((line) => (
-              <line
-                key={`v-${line}`}
-                x1={plotWidth * line}
-                x2={plotWidth * line}
-                y1="0"
-                y2={plotHeight}
-                stroke="currentColor"
-                strokeOpacity="0.08"
-                strokeWidth="0.5"
-              />
-            ))}
-            <path data-testid="wave-editor-path" d={pathData} fill="none" stroke="currentColor" strokeWidth="1.8" />
-            {graphPoints.map((point, index) => (
-              <circle
-                key={`${points[index].atMs}-${points[index].intensity}-${index}`}
-                data-testid={`wave-point-${index}`}
-                cx={point.x}
-                cy={point.y}
-                r={index === selectedPointIndex ? markerRadius + 0.8 : markerRadius}
-                fill="currentColor"
-                stroke="hsl(var(--background))"
-                strokeWidth="0.8"
-                className="cursor-grab"
-                onPointerDown={(event) => {
-                  event.stopPropagation();
-                  draggingIndexRef.current = index;
-                  setDraggingIndex(index);
-                  onSelectedPointIndex(index);
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
-                }}
-                onMouseDown={(event) => {
-                  event.stopPropagation();
-                  draggingIndexRef.current = index;
-                  setDraggingIndex(index);
-                  onSelectedPointIndex(index);
-                }}
-                onClick={(event) => event.stopPropagation()}
-              />
-            ))}
-          </svg>
+            </svg>
+            <div className="pointer-events-none absolute inset-0">
+              {pointMarkers.map((marker, index) => {
+                const left = graphPercent(marker.x, plotWidth);
+                const top = graphPercent(marker.y, plotHeight);
+                const markerSize = index === selectedPointIndex ? 9 : 7;
+                return (
+                  <button
+                    key={marker.key}
+                    type="button"
+                    data-testid={`wave-point-${index}`}
+                    aria-label={`Wave point ${index + 1}`}
+                    className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 cursor-grab touch-none rounded-full border border-background bg-primary p-0 shadow-sm transition-[width,height]"
+                    style={{
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      width: `${markerSize}px`,
+                      height: `${markerSize}px`,
+                    }}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      draggingIndexRef.current = index;
+                      setDraggingIndex(index);
+                      onSelectedPointIndex(index);
+                      event.currentTarget.setPointerCapture?.(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                      const activeIndex = draggingIndexRef.current;
+                      if (activeIndex === null) return;
+                      updatePoint(activeIndex, pointFromClient(event.clientX, event.clientY));
+                    }}
+                    onPointerUp={stopDragging}
+                    onMouseDown={(event) => {
+                      event.stopPropagation();
+                      draggingIndexRef.current = index;
+                      setDraggingIndex(index);
+                      onSelectedPointIndex(index);
+                    }}
+                    onMouseMove={(event) => {
+                      const activeIndex = draggingIndexRef.current;
+                      if (activeIndex === null) return;
+                      updatePoint(activeIndex, pointFromClient(event.clientX, event.clientY));
+                    }}
+                    onMouseUp={stopDragging}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                );
+              })}
+            </div>
+          </div>
           <div data-testid="wave-point-value-strip" className="relative mt-1 h-5 text-[10px] font-mono text-muted-foreground">
             {pointMarkers.map((marker, index) => {
               const percent = clamp((marker.x / Math.max(plotWidth, 1)) * 100, 0, 100);
@@ -538,6 +572,10 @@ function pointToGraph(point: LoadPoint, durationMs: number, width: number, heigh
     x: (point.atMs / Math.max(durationMs, 1)) * width,
     y: height - (point.intensity / 100) * height,
   };
+}
+
+function graphPercent(value: number, total: number): number {
+  return Math.round(clamp((value / Math.max(total, 1)) * 100, 0, 100) * 1000) / 1000;
 }
 
 function buildWavePath(points: Array<{ x: number; y: number }>, interpolation: LoadInterpolation): string {

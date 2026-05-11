@@ -183,7 +183,7 @@ describe("LoadTestConfigPanel", () => {
     expect(screen.queryAllByText(/ req$/)).toHaveLength(0);
   });
 
-  it("renders first and last wave point circles on the graph limits without horizontal letterboxing", () => {
+  it("renders round first and last wave point markers on the graph limits without horizontal letterboxing", () => {
     renderPanel(vi.fn(), {
       points: [
         { atMs: 0, intensity: 10 },
@@ -195,8 +195,10 @@ describe("LoadTestConfigPanel", () => {
     });
 
     expect(screen.getByTestId("wave-editor-graph")).toHaveAttribute("preserveAspectRatio", "none");
-    expect(Number(screen.getByTestId("wave-point-0").getAttribute("cx"))).toBe(0);
-    expect(Number(screen.getByTestId("wave-point-1").getAttribute("cx"))).toBe(100);
+    expect(screen.getByTestId("wave-editor-graph").querySelectorAll("circle")).toHaveLength(0);
+    expect(screen.getByTestId("wave-point-0")).toHaveClass("rounded-full");
+    expect(screen.getByTestId("wave-point-0")).toHaveStyle({ left: "0%", top: "90%" });
+    expect(screen.getByTestId("wave-point-1")).toHaveStyle({ left: "100%", top: "20%" });
   });
 
   it("clamps runner max RPS manual values between 1 and 1000", async () => {
