@@ -400,7 +400,8 @@ function WaveEditor({
           <svg
             data-testid="wave-editor-graph"
             viewBox={`0 0 ${plotWidth} ${plotHeight}`}
-            className="h-40 w-full cursor-crosshair touch-none rounded bg-muted/20"
+            preserveAspectRatio="none"
+            className="h-40 w-full cursor-crosshair touch-none overflow-visible rounded bg-muted/20"
             role="img"
             aria-label={t("loadTest.wavePreview")}
             onClick={(event) => {
@@ -533,10 +534,8 @@ function formatDurationMs(ms: number): string {
 }
 
 function pointToGraph(point: LoadPoint, durationMs: number, width: number, height: number) {
-  const markerInset = 3.2;
-  const usableWidth = Math.max(1, width - markerInset * 2);
   return {
-    x: markerInset + (point.atMs / Math.max(durationMs, 1)) * usableWidth,
+    x: (point.atMs / Math.max(durationMs, 1)) * width,
     y: height - (point.intensity / 100) * height,
   };
 }
