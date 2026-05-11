@@ -73,7 +73,7 @@ describe("AppHeader", () => {
       if (url === "http://127.0.0.1:5798/openapi.json") {
         return {
           ok: true,
-          json: async () => ({ info: { version: "1.0.0-alpha.21" } }),
+          json: async () => ({ info: { version: "1.0.0-alpha.22" } }),
         };
       }
       throw new Error(`unexpected fetch: ${url}`);
@@ -87,7 +87,7 @@ describe("AppHeader", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("1.0.0-alpha.21")).toBeInTheDocument();
+      expect(screen.getByText("1.0.0-alpha.22")).toBeInTheDocument();
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:5798/openapi.json",

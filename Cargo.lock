@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "previa"
-version = "1.0.0-alpha.21"
+version = "1.0.0-alpha.22"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1990,7 +1990,7 @@ dependencies = [
 
 [[package]]
 name = "previa-engine"
-version = "1.0.0-alpha.21"
+version = "1.0.0-alpha.22"
 dependencies = [
  "chrono",
  "fakeit",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "previa-load-target"
-version = "1.0.0-alpha.21"
+version = "1.0.0-alpha.22"
 dependencies = [
  "axum",
  "dotenvy",
@@ -2024,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "previa-main"
-version = "1.0.0-alpha.21"
+version = "1.0.0-alpha.22"
 dependencies = [
  "async-stream",
  "axum",
@@ -2058,7 +2058,7 @@ dependencies = [
 
 [[package]]
 name = "previa-runner"
-version = "1.0.0-alpha.21"
+version = "1.0.0-alpha.22"
 dependencies = [
  "axum",
  "dotenvy",
