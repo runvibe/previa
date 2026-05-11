@@ -76,31 +76,6 @@ export function ProjectSettingsDialog() {
         </DialogHeader>
 
         <div className="space-y-6 py-2">
-          {/* ── Experimental Features ── */}
-          <section className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t("settings.experimental.label", "Experimental Features")}
-            </h3>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 px-3 py-2.5">
-              <div className="space-y-1">
-                <Label htmlFor="experimental-features" className="text-sm font-medium">
-                  {t("settings.experimental.toggle", "Enable experimental features")}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.experimental.description", "Shows API Specs, AI Assistant settings, and AI actions across the project.")}
-                </p>
-              </div>
-              <Switch
-                id="experimental-features"
-                checked={experimentalFeaturesEnabled}
-                onCheckedChange={setExperimentalFeaturesEnabled}
-              />
-            </div>
-          </section>
-
-          <hr className="border-border" />
-
           {/* ── AI Assistant ── */}
           {experimentalFeaturesEnabled && (
             <>
@@ -353,6 +328,31 @@ export function ProjectSettingsDialog() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+          </section>
+
+          <hr className="border-border" />
+
+          {/* ── Experimental Features ── */}
+          <section className="space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5" />
+              {t("settings.experimental.label", "Experimental Features")}
+            </h3>
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 px-3 py-2.5">
+              <div className="space-y-1">
+                <Label htmlFor="experimental-features" className="text-sm font-medium">
+                  {t("settings.experimental.toggle", "Enable experimental features")}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.experimental.description", "Shows API Specs, AI Assistant settings, and AI actions across the project.")}
+                </p>
+              </div>
+              <Switch
+                id="experimental-features"
+                checked={experimentalFeaturesEnabled}
+                onCheckedChange={setExperimentalFeaturesEnabled}
+              />
             </div>
           </section>
         </div>

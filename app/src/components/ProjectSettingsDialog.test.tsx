@@ -24,6 +24,19 @@ describe("ProjectSettingsDialog", () => {
     expect(screen.getByText("AI Assistant")).toBeInTheDocument();
   });
 
+  it("places experimental features at the end of the settings modal", () => {
+    render(<ProjectSettingsDialog />);
+
+    fireEvent.click(screen.getByTitle("settings.tooltip"));
+
+    const appearanceHeading = screen.getByText("Appearance");
+    const experimentalHeading = screen.getByText("Experimental Features");
+
+    expect(
+      appearanceHeading.compareDocumentPosition(experimentalHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("hides AI Assistant settings when experimental features are disabled", () => {
     localStorage.setItem("previa-experimental-features-enabled", "false");
 
