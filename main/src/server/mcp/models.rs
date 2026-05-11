@@ -125,6 +125,8 @@ pub struct McpPeerInfo {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolsListParams {
     pub cursor: Option<String>,
+    #[serde(default)]
+    pub toolsets: Vec<String>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
 }
@@ -151,6 +153,64 @@ pub struct ResourceReadParams {
     pub uri: String,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResourceTemplatesListParams {
+    pub cursor: Option<String>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum CompletionReference {
+    #[serde(rename = "ref/resource")]
+    Resource { uri: String },
+    #[serde(rename = "ref/prompt")]
+    Prompt { name: String },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompletionArgument {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompletionContext {
+    #[serde(default)]
+    pub arguments: serde_json::Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CompletionCompleteParams {
+    #[serde(rename = "ref")]
+    pub reference: CompletionReference,
+    pub argument: CompletionArgument,
+    #[serde(default)]
+    pub context: CompletionContext,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionResult {
+    pub completion: CompletionValues,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionValues {
+    pub values: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +241,10 @@ pub struct ToolDefinition {
     pub title: Option<String>,
     pub description: String,
     pub input_schema: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "_meta")]
+    pub meta: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -260,11 +324,32 @@ pub struct ResourceDefinition {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ResourceTemplateDefinition {
+    pub uri_template: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceContents {
     pub uri: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
     pub text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LoggingSetLevelParams {
+    pub level: String,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
