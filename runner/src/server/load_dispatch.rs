@@ -44,8 +44,7 @@ impl DispatchClock {
         let scheduler_lag_ms = elapsed_ms.saturating_sub(self.cursor_elapsed_ms);
         let missed_raw = target_rps.max(0.0) * scheduler_lag_ms as f64 / 1000.0;
         let missed_due_to_scheduler_lag = missed_raw.floor() as usize;
-        let raw_slots =
-            target_rps.max(0.0) * self.tick_ms as f64 / 1000.0 + self.fractional_carry;
+        let raw_slots = target_rps.max(0.0) * self.tick_ms as f64 / 1000.0 + self.fractional_carry;
         let scheduled_starts = raw_slots.floor() as usize;
         self.fractional_carry = raw_slots - scheduled_starts as f64;
         self.scheduled_total = self.scheduled_total.saturating_add(scheduled_starts);

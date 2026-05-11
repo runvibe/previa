@@ -324,9 +324,7 @@ async fn start_ready_request<C>(
             async move {
                 let elapsed_ms = started.elapsed().as_millis() as u64;
                 http_started_elapsed_ms.store(elapsed_ms, Ordering::SeqCst);
-                let _ = metric_tx.send(WaveMetricEvent::HttpStarted {
-                    elapsed_ms,
-                });
+                let _ = metric_tx.send(WaveMetricEvent::HttpStarted { elapsed_ms });
             }
         },
         move || {
@@ -336,9 +334,7 @@ async fn start_ready_request<C>(
             async move {
                 let elapsed_ms = started.elapsed().as_millis() as u64;
                 http_send_returned_elapsed_ms.store(elapsed_ms, Ordering::SeqCst);
-                let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned {
-                    elapsed_ms,
-                });
+                let _ = metric_tx.send(WaveMetricEvent::HttpSendReturned { elapsed_ms });
                 let started_elapsed_ms = http_started_elapsed_ms.load(Ordering::SeqCst);
                 if started_elapsed_ms > 0 {
                     let _ = metric_tx.send(WaveMetricEvent::HttpSendDuration {

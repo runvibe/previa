@@ -1015,34 +1015,20 @@ pub fn consolidate_load_metrics(
             sender_queue_depth = sender_queue_depth.saturating_add(value);
             sender_queue_depth_nodes += 1;
         }
-        sender_start_lag_avg_ms = max_optional_f64(
-            sender_start_lag_avg_ms,
-            metrics.sender_start_lag_avg_ms,
-        );
-        sender_start_lag_p95_ms = max_optional_u64(
-            sender_start_lag_p95_ms,
-            metrics.sender_start_lag_p95_ms,
-        );
-        sender_start_lag_p99_ms = max_optional_u64(
-            sender_start_lag_p99_ms,
-            metrics.sender_start_lag_p99_ms,
-        );
-        sender_start_lag_max_ms = max_optional_u64(
-            sender_start_lag_max_ms,
-            metrics.sender_start_lag_max_ms,
-        );
-        http_send_duration_avg_ms = max_optional_f64(
-            http_send_duration_avg_ms,
-            metrics.http_send_duration_avg_ms,
-        );
-        http_send_duration_p95_ms = max_optional_u64(
-            http_send_duration_p95_ms,
-            metrics.http_send_duration_p95_ms,
-        );
-        http_send_duration_p99_ms = max_optional_u64(
-            http_send_duration_p99_ms,
-            metrics.http_send_duration_p99_ms,
-        );
+        sender_start_lag_avg_ms =
+            max_optional_f64(sender_start_lag_avg_ms, metrics.sender_start_lag_avg_ms);
+        sender_start_lag_p95_ms =
+            max_optional_u64(sender_start_lag_p95_ms, metrics.sender_start_lag_p95_ms);
+        sender_start_lag_p99_ms =
+            max_optional_u64(sender_start_lag_p99_ms, metrics.sender_start_lag_p99_ms);
+        sender_start_lag_max_ms =
+            max_optional_u64(sender_start_lag_max_ms, metrics.sender_start_lag_max_ms);
+        http_send_duration_avg_ms =
+            max_optional_f64(http_send_duration_avg_ms, metrics.http_send_duration_avg_ms);
+        http_send_duration_p95_ms =
+            max_optional_u64(http_send_duration_p95_ms, metrics.http_send_duration_p95_ms);
+        http_send_duration_p99_ms =
+            max_optional_u64(http_send_duration_p99_ms, metrics.http_send_duration_p99_ms);
         response_observation_duration_avg_ms = max_optional_f64(
             response_observation_duration_avg_ms,
             metrics.response_observation_duration_avg_ms,
@@ -1385,14 +1371,25 @@ mod tests {
         http_send_duration: (f64, u64, u64),
         response_observation_duration: (f64, u64, u64),
     ) -> Value {
-        let object = payload.as_object_mut().expect("payload should be an object");
+        let object = payload
+            .as_object_mut()
+            .expect("payload should be an object");
         object.insert("senderStartLagAvgMs".to_owned(), json!(sender_start_lag.0));
         object.insert("senderStartLagP95Ms".to_owned(), json!(sender_start_lag.1));
         object.insert("senderStartLagP99Ms".to_owned(), json!(sender_start_lag.2));
         object.insert("senderStartLagMaxMs".to_owned(), json!(sender_start_lag.3));
-        object.insert("httpSendDurationAvgMs".to_owned(), json!(http_send_duration.0));
-        object.insert("httpSendDurationP95Ms".to_owned(), json!(http_send_duration.1));
-        object.insert("httpSendDurationP99Ms".to_owned(), json!(http_send_duration.2));
+        object.insert(
+            "httpSendDurationAvgMs".to_owned(),
+            json!(http_send_duration.0),
+        );
+        object.insert(
+            "httpSendDurationP95Ms".to_owned(),
+            json!(http_send_duration.1),
+        );
+        object.insert(
+            "httpSendDurationP99Ms".to_owned(),
+            json!(http_send_duration.2),
+        );
         object.insert(
             "responseObservationDurationAvgMs".to_owned(),
             json!(response_observation_duration.0),
@@ -1638,39 +1635,44 @@ mod tests {
                     node: "http://runner-a:3000".to_owned(),
                     runner_event: "metrics".to_owned(),
                     received_at: 1,
-                    payload: with_wave_lag_metrics(json!({
-                        "totalSent": 10,
-                        "totalSuccess": 8,
-                        "totalError": 2,
-                        "rps": 100.0,
-                        "startTime": 1_000,
-                        "elapsedMs": 2_000,
-                        "scheduledStarts": 100,
-                        "missedStarts": 5,
-                        "dispatchSubmitted": 100,
-                        "dispatchStarted": 95,
-                        "httpSendReturned": 80,
-                        "responseBodyCompleted": 70,
-                        "dependencyLimitedStarts": 1,
-                        "dispatcherLaggedStarts": 5,
-                        "runtimeLaggedStarts": 2,
-                        "senderLaggedStarts": 3,
-                        "senderQueueDepth": 11,
-                        "schedulerLagMs": 30,
-                        "schedulerLaggedStarts": 4,
-                        "slotEnqueued": 100,
-                        "requestPrepared": 99,
-                        "requestEnqueued": 98,
-                        "sendTaskSpawned": 97,
-                        "sendStarted": 96,
-                        "readyRequests": 20,
-                        "activePipelines": 50,
-                        "outstandingRequests": 30,
-                        "curveAdherence": 95.0,
-                        "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 7, "senderLagged": 2, "senderStartLagMsMax": 11, "httpSendDurationMsMax": 22, "responseObservationDurationMsMax": 33}
-                        ]
-                    }), (10.0, 20, 30, 40), (50.0, 60, 70), (80.0, 90, 100)),
+                    payload: with_wave_lag_metrics(
+                        json!({
+                            "totalSent": 10,
+                            "totalSuccess": 8,
+                            "totalError": 2,
+                            "rps": 100.0,
+                            "startTime": 1_000,
+                            "elapsedMs": 2_000,
+                            "scheduledStarts": 100,
+                            "missedStarts": 5,
+                            "dispatchSubmitted": 100,
+                            "dispatchStarted": 95,
+                            "httpSendReturned": 80,
+                            "responseBodyCompleted": 70,
+                            "dependencyLimitedStarts": 1,
+                            "dispatcherLaggedStarts": 5,
+                            "runtimeLaggedStarts": 2,
+                            "senderLaggedStarts": 3,
+                            "senderQueueDepth": 11,
+                            "schedulerLagMs": 30,
+                            "schedulerLaggedStarts": 4,
+                            "slotEnqueued": 100,
+                            "requestPrepared": 99,
+                            "requestEnqueued": 98,
+                            "sendTaskSpawned": 97,
+                            "sendStarted": 96,
+                            "readyRequests": 20,
+                            "activePipelines": 50,
+                            "outstandingRequests": 30,
+                            "curveAdherence": 95.0,
+                            "lifecycleBuckets": [
+                                {"elapsedMs": 1_000, "planned": 10, "sendStarted": 9, "httpStarted": 7, "senderLagged": 2, "senderStartLagMsMax": 11, "httpSendDurationMsMax": 22, "responseObservationDurationMsMax": 33}
+                            ]
+                        }),
+                        (10.0, 20, 30, 40),
+                        (50.0, 60, 70),
+                        (80.0, 90, 100),
+                    ),
                 },
             ),
             (
@@ -1679,39 +1681,44 @@ mod tests {
                     node: "http://runner-b:3000".to_owned(),
                     runner_event: "metrics".to_owned(),
                     received_at: 1,
-                    payload: with_wave_lag_metrics(json!({
-                        "totalSent": 20,
-                        "totalSuccess": 19,
-                        "totalError": 1,
-                        "rps": 120.0,
-                        "startTime": 900,
-                        "elapsedMs": 2_100,
-                        "scheduledStarts": 100,
-                        "missedStarts": 15,
-                        "dispatchSubmitted": 100,
-                        "dispatchStarted": 85,
-                        "httpSendReturned": 90,
-                        "responseBodyCompleted": 85,
-                        "dependencyLimitedStarts": 3,
-                        "dispatcherLaggedStarts": 7,
-                        "runtimeLaggedStarts": 4,
-                        "senderLaggedStarts": 9,
-                        "senderQueueDepth": 13,
-                        "schedulerLagMs": 50,
-                        "schedulerLaggedStarts": 6,
-                        "slotEnqueued": 100,
-                        "requestPrepared": 98,
-                        "requestEnqueued": 97,
-                        "sendTaskSpawned": 96,
-                        "sendStarted": 95,
-                        "readyRequests": 30,
-                        "activePipelines": 60,
-                        "outstandingRequests": 40,
-                        "curveAdherence": 85.0,
-                        "lifecycleBuckets": [
-                            {"elapsedMs": 1_000, "planned": 20, "sendStarted": 20, "httpStarted": 14, "senderLagged": 5, "senderStartLagMsMax": 44, "httpSendDurationMsMax": 55, "responseObservationDurationMsMax": 66}
-                        ]
-                    }), (15.0, 25, 35, 45), (55.0, 65, 75), (85.0, 95, 105)),
+                    payload: with_wave_lag_metrics(
+                        json!({
+                            "totalSent": 20,
+                            "totalSuccess": 19,
+                            "totalError": 1,
+                            "rps": 120.0,
+                            "startTime": 900,
+                            "elapsedMs": 2_100,
+                            "scheduledStarts": 100,
+                            "missedStarts": 15,
+                            "dispatchSubmitted": 100,
+                            "dispatchStarted": 85,
+                            "httpSendReturned": 90,
+                            "responseBodyCompleted": 85,
+                            "dependencyLimitedStarts": 3,
+                            "dispatcherLaggedStarts": 7,
+                            "runtimeLaggedStarts": 4,
+                            "senderLaggedStarts": 9,
+                            "senderQueueDepth": 13,
+                            "schedulerLagMs": 50,
+                            "schedulerLaggedStarts": 6,
+                            "slotEnqueued": 100,
+                            "requestPrepared": 98,
+                            "requestEnqueued": 97,
+                            "sendTaskSpawned": 96,
+                            "sendStarted": 95,
+                            "readyRequests": 30,
+                            "activePipelines": 60,
+                            "outstandingRequests": 40,
+                            "curveAdherence": 85.0,
+                            "lifecycleBuckets": [
+                                {"elapsedMs": 1_000, "planned": 20, "sendStarted": 20, "httpStarted": 14, "senderLagged": 5, "senderStartLagMsMax": 44, "httpSendDurationMsMax": 55, "responseObservationDurationMsMax": 66}
+                            ]
+                        }),
+                        (15.0, 25, 35, 45),
+                        (55.0, 65, 75),
+                        (85.0, 95, 105),
+                    ),
                 },
             ),
         ]);
@@ -1737,7 +1744,10 @@ mod tests {
         assert_eq!(consolidated.http_send_duration_avg_ms, Some(55.0));
         assert_eq!(consolidated.http_send_duration_p95_ms, Some(65));
         assert_eq!(consolidated.http_send_duration_p99_ms, Some(75));
-        assert_eq!(consolidated.response_observation_duration_avg_ms, Some(85.0));
+        assert_eq!(
+            consolidated.response_observation_duration_avg_ms,
+            Some(85.0)
+        );
         assert_eq!(consolidated.response_observation_duration_p95_ms, Some(95));
         assert_eq!(consolidated.response_observation_duration_p99_ms, Some(105));
         assert_eq!(consolidated.scheduler_lag_ms, Some(80));
@@ -1751,8 +1761,14 @@ mod tests {
         assert_eq!(consolidated.active_pipelines, Some(110));
         assert_eq!(consolidated.outstanding_requests, Some(70));
         assert_eq!(consolidated.lifecycle_buckets[0].sender_lagged, 7);
-        assert_eq!(consolidated.lifecycle_buckets[0].sender_start_lag_ms_max, 44);
-        assert_eq!(consolidated.lifecycle_buckets[0].http_send_duration_ms_max, 55);
+        assert_eq!(
+            consolidated.lifecycle_buckets[0].sender_start_lag_ms_max,
+            44
+        );
+        assert_eq!(
+            consolidated.lifecycle_buckets[0].http_send_duration_ms_max,
+            55
+        );
         assert_eq!(
             consolidated.lifecycle_buckets[0].response_observation_duration_ms_max,
             66

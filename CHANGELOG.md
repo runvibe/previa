@@ -2,6 +2,13 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.21] - 2026-05-11
+
+### Maintenance
+- Bump version to 1.0.0-alpha.21.
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.20...v1.0.0-alpha.21
+
 ## [v1.0.0-alpha.20] - 2026-04-30
 
 ### Documentation

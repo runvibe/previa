@@ -1,17 +1,17 @@
 {
   "links": {
-    "previa_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-linux-amd64",
-    "previa_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-linux-arm64",
-    "previa_macos_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-macos-amd64",
-    "previa_macos_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-macos-arm64",
-    "previa_main_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-main-linux-amd64",
-    "previa_main_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-main-linux-arm64",
-    "previa_runner_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-runner-linux-amd64",
-    "previa_runner_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-runner-linux-arm64",
-    "previa_windows_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.20/previa-windows-amd64.exe"
+    "previa_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-linux-amd64",
+    "previa_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-linux-arm64",
+    "previa_macos_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-macos-amd64",
+    "previa_macos_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-macos-arm64",
+    "previa_main_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-main-linux-amd64",
+    "previa_main_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-main-linux-arm64",
+    "previa_runner_linux_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-runner-linux-amd64",
+    "previa_runner_linux_arm64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-runner-linux-arm64",
+    "previa_windows_amd64": "https://github.com/runvibe/previa/releases/download/v1.0.0-alpha.21/previa-windows-amd64.exe"
   },
   "name": "previa",
   "published_at": "2026-04-30T21:00:35Z",
-  "tag": "v1.0.0-alpha.20",
-  "version": "1.0.0-alpha.20"
+  "tag": "v1.0.0-alpha.21",
+  "version": "1.0.0-alpha.21"
 }

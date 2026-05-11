@@ -371,10 +371,8 @@ impl MetricsAccumulator {
         let scheduled_starts = wave
             .as_ref()
             .map(|value| self.dispatch_submitted.max(value.scheduled_starts));
-        let sender_start_lag =
-            summarize_duration_histogram(&self.sender_start_lag_histogram);
-        let http_send_duration =
-            summarize_duration_histogram(&self.http_send_duration_histogram);
+        let sender_start_lag = summarize_duration_histogram(&self.sender_start_lag_histogram);
+        let http_send_duration = summarize_duration_histogram(&self.http_send_duration_histogram);
         let response_observation_duration =
             summarize_duration_histogram(&self.response_observation_duration_histogram);
         let curve_adherence = wave.as_ref().map(|value| {
@@ -506,9 +504,11 @@ fn summarize_duration_histogram(
         return None;
     }
 
-    let total_ms = histogram.iter().fold(0_u128, |total, (duration_ms, count)| {
-        total.saturating_add((*duration_ms as u128).saturating_mul(*count as u128))
-    });
+    let total_ms = histogram
+        .iter()
+        .fold(0_u128, |total, (duration_ms, count)| {
+            total.saturating_add((*duration_ms as u128).saturating_mul(*count as u128))
+        });
     let max_ms = histogram.keys().next_back().copied().unwrap_or(0);
 
     Some(DurationHistogramSummary {

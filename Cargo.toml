@@ -3,7 +3,7 @@ resolver = "3"
 members = ['engine', 'main', 'previa', 'runner', 'load-target']
 
 [workspace.package]
-version = "1.0.0-alpha.20"
+version = "1.0.0-alpha.21"
 edition = "2024"
 rust-version = "1.90.0"
 authors = ["Previa Labs <previa@runvibe.dev>"]

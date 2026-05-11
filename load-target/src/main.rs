@@ -275,7 +275,12 @@ mod tests {
 
     async fn json_response(app: Router, uri: &str) -> (StatusCode, Value) {
         let response = app
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).expect("request"))
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
             .await
             .expect("response");
         let status = response.status();
@@ -315,6 +320,9 @@ mod tests {
 
         let (_status, metrics) = json_response(app, "/metrics").await;
         assert_eq!(metrics["totalRequests"], 0);
-        assert_eq!(metrics["perSecond"].as_array().expect("per second").len(), 0);
+        assert_eq!(
+            metrics["perSecond"].as_array().expect("per second").len(),
+            0
+        );
     }
 }

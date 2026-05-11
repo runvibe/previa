@@ -420,7 +420,11 @@ fn copilot_vscode_config_path(scope: McpScope) -> Result<PathBuf> {
 }
 
 fn warp_config_path(paths: &PreviaPaths, name: &str) -> PathBuf {
-    paths.home.join("clients").join("warp").join(format!("{name}.json"))
+    paths
+        .home
+        .join("clients")
+        .join("warp")
+        .join(format!("{name}.json"))
 }
 
 fn home_dir() -> Result<PathBuf> {
@@ -480,7 +484,10 @@ fn uninstall_codex(path: &Path, name: &str) -> Result<bool> {
     }
 
     let mut document = read_toml_document(path)?;
-    let Some(mcp_servers) = document.get_mut("mcp_servers").and_then(Item::as_table_like_mut) else {
+    let Some(mcp_servers) = document
+        .get_mut("mcp_servers")
+        .and_then(Item::as_table_like_mut)
+    else {
         return Ok(false);
     };
     let removed = mcp_servers.remove(name).is_some();
@@ -688,8 +695,8 @@ fn read_toml_document(path: &Path) -> Result<DocumentMut> {
     if !path.exists() {
         return Ok(DocumentMut::new());
     }
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("failed to read '{}'", path.display()))?;
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
     contents
         .parse::<DocumentMut>()
         .with_context(|| format!("failed to parse '{}'", path.display()))
@@ -726,8 +733,8 @@ fn read_json_document(path: &Path) -> Result<Map<String, Value>> {
         return Ok(Map::new());
     }
 
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("failed to read '{}'", path.display()))?;
+    let contents =
+        fs::read_to_string(path).with_context(|| format!("failed to read '{}'", path.display()))?;
     let value = serde_json::from_str::<Value>(&contents)
         .with_context(|| format!("failed to parse '{}'", path.display()))?;
     let Value::Object(map) = value else {
@@ -796,7 +803,9 @@ fn run_claude_command_allow_failure<const N: usize>(
 fn extract_first_url(input: &str) -> Option<String> {
     input
         .split_whitespace()
-        .map(|token| token.trim_matches(|ch: char| matches!(ch, '"' | '\'' | ',' | ';' | ')' | '(')))
+        .map(|token| {
+            token.trim_matches(|ch: char| matches!(ch, '"' | '\'' | ',' | ';' | ')' | '('))
+        })
         .map(|token| token.strip_prefix("url=").unwrap_or(token))
         .find(|token| token.starts_with("http://") || token.starts_with("https://"))
         .map(ToOwned::to_owned)
