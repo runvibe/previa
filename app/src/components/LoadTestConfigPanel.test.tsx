@@ -154,7 +154,8 @@ describe("LoadTestConfigPanel", () => {
       gracePeriodMs: 30_000,
     }, 3);
 
-    expect(screen.getAllByText("900 req")).toHaveLength(2);
+    expect(screen.getAllByText("900")).toHaveLength(2);
+    expect(screen.queryByText("900 req")).not.toBeInTheDocument();
   });
 
   it("keeps planned request markers sparse on long wave previews", () => {
@@ -169,7 +170,7 @@ describe("LoadTestConfigPanel", () => {
     }, 3);
 
     expect(screen.getAllByTestId(/^wave-second-marker-/)).toHaveLength(6);
-    expect(screen.getAllByText(/ req$/)).toHaveLength(6);
+    expect(screen.queryAllByText(/ req$/)).toHaveLength(0);
   });
 
   it("clamps runner max RPS manual values between 1 and 1000", async () => {
