@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LoadTestResultsPanel } from "@/components/LoadTestResultsPanel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { buildLifecycleChartData } from "@/lib/load-lifecycle-chart";
-import { buildRpsChartData } from "@/lib/load-rps-chart";
+import { buildRpsChartData, buildWaveSecondMarkers } from "@/lib/load-rps-chart";
 import type { LoadTestMetrics, WaveLoadConfig } from "@/types/load-test";
 
 vi.mock("react-i18next", () => ({
@@ -885,6 +885,56 @@ describe("LoadTestResultsPanel", () => {
     };
 
     expect(buildRpsChartData(metrics, config).data.find((point) => point.time === 3)?.targetRpsLimit).toBe(150);
+  });
+
+  it("builds per-second planned request markers from constant wave intensity", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 50 },
+        { atMs: 2_000, intensity: 50 },
+      ],
+      interpolation: "linear",
+      runnerMaxRps: 600,
+    };
+
+    expect(buildWaveSecondMarkers(config, { runnerCount: 3 })).toEqual([
+      { second: 1, plannedRequests: 900, showLabel: true },
+      { second: 2, plannedRequests: 900, showLabel: true },
+    ]);
+  });
+
+  it("samples linear wave intensity in thirds before summing each second", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 0 },
+        { atMs: 3_000, intensity: 100 },
+      ],
+      interpolation: "linear",
+      runnerMaxRps: 600,
+    };
+
+    expect(buildWaveSecondMarkers(config, { runnerCount: 3 })).toEqual([
+      { second: 1, plannedRequests: 300, showLabel: true },
+      { second: 2, plannedRequests: 900, showLabel: true },
+      { second: 3, plannedRequests: 1500, showLabel: true },
+    ]);
+  });
+
+  it("scales the final planned request marker for a partial second", () => {
+    const config: WaveLoadConfig = {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 2_500, intensity: 10 },
+      ],
+      interpolation: "step",
+      runnerMaxRps: 600,
+    };
+
+    expect(buildWaveSecondMarkers(config, { runnerCount: 3 })).toEqual([
+      { second: 1, plannedRequests: 180, showLabel: true },
+      { second: 2, plannedRequests: 180, showLabel: true },
+      { second: 2.5, plannedRequests: 90, showLabel: true },
+    ]);
   });
 
   it("shows wave dispatch adherence metrics when available", () => {

@@ -2,9 +2,9 @@ import { useTranslation } from "react-i18next";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge, AlertTriangle, ListChecks } from "lucide-react";
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { buildLifecycleChartData, type LifecycleSeriesTone } from "@/lib/load-lifecycle-chart";
-import { buildRpsChartData } from "@/lib/load-rps-chart";
+import { buildRpsChartData, buildWaveSecondMarkers } from "@/lib/load-rps-chart";
 import { deriveWaveDiagnostics } from "@/lib/wave-diagnostics";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, LoadTestMetrics, LoadTestState, RunnerResourcePoint, WaveLoadConfig } from "@/types/load-test";
@@ -147,6 +147,26 @@ function formatPointTime(point: LoadPoint) {
   return `${seconds.toFixed(1)}s`;
 }
 
+function formatWaveMarkerSecond(second: number) {
+  if (Number.isInteger(second)) return `${second}s`;
+  return `${second.toFixed(1)}s`;
+}
+
+function formatPlannedRequests(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M req`;
+  if (value >= 10_000) return `${(value / 1_000).toFixed(1)}K req`;
+  return `${value} req`;
+}
+
+function resolveWaveRunnerCount(
+  nodesInfo: LoadTestResultsPanelProps["nodesInfo"],
+  runnerSeriesCount: number,
+) {
+  if (nodesInfo && nodesInfo.nodesUsed > 0) return nodesInfo.nodesUsed;
+  if (runnerSeriesCount > 0) return runnerSeriesCount;
+  return 1;
+}
+
 interface LoadTestResultsPanelProps {
   metrics: LoadTestMetrics;
   state: LoadTestState;
@@ -168,6 +188,13 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
 
   const rpsChart = buildRpsChartData(metrics, waveConfig);
   const rpsChartData = rpsChart.data;
+  const waveRunnerCount = resolveWaveRunnerCount(nodesInfo, rpsChart.runnerSeries.length);
+  const waveSecondMarkers = waveConfig
+    ? buildWaveSecondMarkers(waveConfig, {
+      runnerCount: waveRunnerCount,
+      runnerMaxRps: waveConfig.runnerMaxRps ?? metrics.runnerMaxRps,
+    })
+    : [];
   const lifecycleChart = buildLifecycleChartData(metrics);
   const lifecycleChartData = lifecycleChart.data;
   const waveDiagnostics = deriveWaveDiagnostics(metrics);
@@ -400,8 +427,30 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                       fontSize: 11,
                     }}
                     formatter={(v: number) => [`${v}%`, t("loadTestResults.targetIntensity")]}
-                    labelFormatter={(v) => `${v}s`}
+                    labelFormatter={(v) => {
+                      const marker = waveSecondMarkers.find((item) => item.second === Number(v));
+                      if (!marker) return `${v}s`;
+                      return `${formatWaveMarkerSecond(marker.second)} - ${formatPlannedRequests(marker.plannedRequests)}`;
+                    }}
                   />
+                  {waveSecondMarkers.map((marker) => (
+                    <ReferenceLine
+                      key={`wave-second-${marker.second}`}
+                      x={marker.second}
+                      stroke="hsl(var(--muted-foreground))"
+                      strokeDasharray="2 4"
+                      strokeOpacity={0.42}
+                      ifOverflow="extendDomain"
+                      label={marker.showLabel
+                        ? {
+                          value: formatPlannedRequests(marker.plannedRequests),
+                          position: "top",
+                          fontSize: 9,
+                          fill: "hsl(var(--muted-foreground))",
+                        }
+                        : undefined}
+                    />
+                  ))}
                   <Area
                     type={waveChartType(waveConfig.interpolation)}
                     dataKey="intensity"

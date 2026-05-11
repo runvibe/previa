@@ -18,6 +18,18 @@ export interface RpsChartData {
   usesHttpRps: boolean;
 }
 
+export interface WaveSecondMarker {
+  second: number;
+  plannedRequests: number;
+  showLabel: boolean;
+}
+
+export interface WaveSecondMarkerOptions {
+  runnerCount?: number;
+  runnerMaxRps?: number;
+  maxLabels?: number;
+}
+
 function roundOne(value: number) {
   return Math.round(value * 10) / 10;
 }
@@ -81,6 +93,49 @@ function sampleWaveIntensity(config: WaveLoadConfig, elapsedMs: number) {
   const rawT = Math.min(1, Math.max(0, (elapsedMs - start.atMs) / span));
   const t = config.interpolation === "smooth" ? rawT * rawT * (3 - 2 * rawT) : rawT;
   return start.intensity + (end.intensity - start.intensity) * t;
+}
+
+function roundTimeSeconds(elapsedMs: number) {
+  return roundOne(elapsedMs / 1000);
+}
+
+export function buildWaveSecondMarkers(
+  config: WaveLoadConfig,
+  options: WaveSecondMarkerOptions = {},
+): WaveSecondMarker[] {
+  const sortedPoints = [...config.points].sort((a, b) => a.atMs - b.atMs);
+  const durationMs = sortedPoints.at(-1)?.atMs ?? 0;
+  const runnerMaxRps = options.runnerMaxRps ?? config.runnerMaxRps ?? 0;
+  const runnerCount = Math.max(1, Math.floor(options.runnerCount ?? 1));
+
+  if (durationMs <= 0 || runnerMaxRps <= 0) return [];
+
+  const markers: WaveSecondMarker[] = [];
+  for (let bucketStartMs = 0; bucketStartMs < durationMs; bucketStartMs += 1000) {
+    const bucketEndMs = Math.min(durationMs, bucketStartMs + 1000);
+    const bucketDurationMs = bucketEndMs - bucketStartMs;
+    let plannedRequests = 0;
+
+    for (let sliceIndex = 0; sliceIndex < 3; sliceIndex += 1) {
+      const sliceStartMs = bucketStartMs + (bucketDurationMs * sliceIndex) / 3;
+      const sliceEndMs = bucketStartMs + (bucketDurationMs * (sliceIndex + 1)) / 3;
+      const sampleAtMs = sliceStartMs + (sliceEndMs - sliceStartMs) / 2;
+      const intensity = sampleWaveIntensity(config, sampleAtMs) ?? 0;
+      plannedRequests += runnerMaxRps * runnerCount * (intensity / 100) * ((sliceEndMs - sliceStartMs) / 1000);
+    }
+
+    markers.push({
+      second: roundTimeSeconds(bucketEndMs),
+      plannedRequests: Math.round(plannedRequests),
+      showLabel: true,
+    });
+  }
+
+  const labelEvery = Math.max(1, Math.ceil(markers.length / Math.max(1, options.maxLabels ?? 8)));
+  return markers.map((marker, index) => ({
+    ...marker,
+    showLabel: index % labelEvery === 0 || index === markers.length - 1,
+  }));
 }
 
 function estimateTargetRpsLimit(
