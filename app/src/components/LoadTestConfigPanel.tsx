@@ -17,6 +17,11 @@ import { formatPlannedRequests } from "@/lib/load-rps-chart";
 const DEFAULT_RUNNER_MAX_RPS = 600;
 const MIN_RUNNER_MAX_RPS = 1;
 const MAX_RUNNER_MAX_RPS = 1000;
+const DURATION_PRESETS = [
+  { key: "1m", label: "1m", value: 60_000 },
+  { key: "10m", label: "10m", value: 600_000 },
+  { key: "30m", label: "30m", value: 1_800_000 },
+] as const;
 
 interface LoadTestConfigPanelProps {
   pipeline: Pipeline;
@@ -113,6 +118,9 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const initialWave = isWaveLoadConfig(initialConfig) ? initialConfig : defaultWaveConfig();
   const [points, setPoints] = useState<LoadPoint[]>(initialWave.points);
   const [durationMs, setDurationMs] = useState(Math.max(initialWave.points.at(-1)?.atMs ?? 120_000, 100));
+  const [durationMode, setDurationMode] = useState<"preset" | "custom">(() =>
+    findDurationPreset(Math.max(initialWave.points.at(-1)?.atMs ?? 120_000, 100)) ? "preset" : "custom",
+  );
   const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [interpolation, setInterpolation] = useState<LoadInterpolation>(initialWave.interpolation);
   const [runnerMaxRps, setRunnerMaxRps] = useState(
@@ -128,6 +136,8 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
   const sortedPoints = normalizeWavePoints(points, durationMs);
   const selectedPoint = sortedPoints[selectedPointIndex] ?? sortedPoints[0];
+  const selectedDurationPreset = findDurationPreset(durationMs);
+  const isCustomDuration = durationMode === "custom" || !selectedDurationPreset;
   const waveConfig: WaveLoadConfig = {
     points: sortedPoints,
     interpolation,
@@ -168,18 +178,52 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
         </p>
         <div className="grid grid-cols-[1fr_auto] items-end gap-3">
           <div className="space-y-1">
-            <Label htmlFor="load-wave-duration" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               {t("loadTest.duration")}
             </Label>
-            <Input
-              id="load-wave-duration"
-              type="number"
-              min={100}
-              value={durationMs}
-              onChange={(event) => setDuration(Number(event.target.value))}
-              className="h-8 text-xs"
-              aria-label={t("loadTest.duration")}
-            />
+            <div className="grid grid-cols-4 gap-1 rounded-md bg-muted/40 p-1">
+              {DURATION_PRESETS.map((preset) => {
+                const active = !isCustomDuration && selectedDurationPreset?.key === preset.key;
+                return (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    className={`h-7 rounded text-xs font-medium transition-colors ${
+                      active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      setDurationMode("preset");
+                      setDuration(preset.value);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className={`h-7 rounded text-xs font-medium transition-colors ${
+                  isCustomDuration ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                }`}
+                onClick={() => setDurationMode("custom")}
+              >
+                {t("loadTest.durationCustom")}
+              </button>
+            </div>
+            {isCustomDuration && (
+              <Input
+                id="load-wave-duration"
+                type="number"
+                min={100}
+                value={durationMs}
+                onChange={(event) => {
+                  setDurationMode("custom");
+                  setDuration(Number(event.target.value));
+                }}
+                className="h-8 text-xs"
+                aria-label={t("loadTest.duration")}
+              />
+            )}
           </div>
           <span className="pb-2 text-[10px] text-muted-foreground">{formatDurationMs(durationMs)}</span>
         </div>
@@ -545,6 +589,10 @@ function defaultWaveConfig(): WaveLoadConfig {
     runnerMaxRps: DEFAULT_RUNNER_MAX_RPS,
     gracePeriodMs: 30_000,
   };
+}
+
+function findDurationPreset(durationMs: number) {
+  return DURATION_PRESETS.find((preset) => preset.value === durationMs);
 }
 
 function normalizeWavePoints(points: LoadPoint[], durationMs: number): LoadPoint[] {

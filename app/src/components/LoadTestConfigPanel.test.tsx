@@ -14,6 +14,7 @@ vi.mock("react-i18next", () => ({
         "loadTest.wavePoints.hint": "Each row defines when the wave changes.",
         "loadTest.duration": "Duration",
         "loadTest.duration.help": "Total wave duration.",
+        "loadTest.durationCustom": "Custom",
         "loadTest.pointTimeMs": "Time in milliseconds",
         "loadTest.pointIntensity": "Intensity percent",
         "loadTest.pointTimeColumn": "Time (ms)",
@@ -94,6 +95,34 @@ describe("LoadTestConfigPanel", () => {
     fireEvent.change(screen.getByLabelText("Duration"), { target: { value: "300000" } });
 
     expect(screen.getAllByText("300,000 ms (300s)").length).toBeGreaterThan(0);
+  });
+
+  it("uses duration presets and only shows the duration input for custom values", async () => {
+    const onConfigChange = renderPanel(vi.fn(), {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 60_000, intensity: 80 },
+      ],
+      interpolation: "smooth",
+      gracePeriodMs: 30_000,
+    });
+
+    expect(screen.getByRole("button", { name: "1m" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "10m" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "30m" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Duration")).not.toBeInTheDocument();
+    expect(screen.getAllByText("60,000 ms (60s)").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByLabelText("Duration")).toHaveValue(60_000);
+
+    fireEvent.click(screen.getByRole("button", { name: "10m" }));
+    expect(screen.queryByLabelText("Duration")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
+      expect(latest.points.at(-1)?.atMs).toBe(600_000);
+    });
   });
 
   it("places interpolation immediately before the wave editor", () => {

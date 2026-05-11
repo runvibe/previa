@@ -211,6 +211,7 @@
   "loadTest.wavePoints.hint": "Set the test duration, then shape the wave directly on the graph. Click to add a point; drag points to change time and intensity.",
   "loadTest.duration": "Duration",
   "loadTest.duration.help": "Total wave duration. This defines the timeline width of the graph.",
+  "loadTest.durationCustom": "Custom",
   "loadTest.pointTimeMs": "Time in milliseconds",
   "loadTest.pointIntensity": "Intensity percent",
   "loadTest.pointTimeColumn": "Time (ms)",

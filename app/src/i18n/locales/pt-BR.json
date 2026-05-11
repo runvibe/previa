@@ -211,6 +211,7 @@
   "loadTest.wavePoints.hint": "Defina a duração do teste e desenhe a onda no gráfico. Clique para criar um ponto; arraste os pontos para mudar tempo e intensidade.",
   "loadTest.duration": "Duração",
   "loadTest.duration.help": "Duração total da onda. Esse valor define a largura da timeline no gráfico.",
+  "loadTest.durationCustom": "Custom",
   "loadTest.pointTimeMs": "Tempo em milissegundos",
   "loadTest.pointIntensity": "Intensidade percentual",
   "loadTest.pointTimeColumn": "Tempo (ms)",
