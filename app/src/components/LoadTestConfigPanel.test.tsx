@@ -54,13 +54,14 @@ const pipeline: Pipeline = {
   ],
 };
 
-function renderPanel(onConfigChange = vi.fn(), initialConfig?: WaveLoadConfig) {
+function renderPanel(onConfigChange = vi.fn(), initialConfig?: WaveLoadConfig, runnerCount?: number) {
   render(
     <LoadTestConfigPanel
       pipeline={pipeline}
       onStart={vi.fn()}
       onConfigChange={onConfigChange}
       initialConfig={initialConfig}
+      runnerCount={runnerCount}
     />,
   );
   return onConfigChange;
@@ -140,6 +141,20 @@ describe("LoadTestConfigPanel", () => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
       expect(latest.runnerMaxRps).toBe(750);
     });
+  });
+
+  it("shows per-second planned request markers in the wave editor preview", () => {
+    renderPanel(vi.fn(), {
+      points: [
+        { atMs: 0, intensity: 50 },
+        { atMs: 2_000, intensity: 50 },
+      ],
+      interpolation: "linear",
+      runnerMaxRps: 600,
+      gracePeriodMs: 30_000,
+    }, 3);
+
+    expect(screen.getAllByText("900 req")).toHaveLength(2);
   });
 
   it("clamps runner max RPS manual values between 1 and 1000", async () => {

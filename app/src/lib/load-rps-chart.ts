@@ -34,6 +34,12 @@ function roundOne(value: number) {
   return Math.round(value * 10) / 10;
 }
 
+export function formatPlannedRequests(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M req`;
+  if (value >= 10_000) return `${(value / 1_000).toFixed(1)}K req`;
+  return `${value} req`;
+}
+
 function dispatchStarted(point: { dispatchStarted?: number; httpStarted?: number }) {
   return point.dispatchStarted ?? point.httpStarted;
 }

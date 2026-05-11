@@ -12,6 +12,7 @@ import type { LoadInterpolation, LoadPoint, LoadRunConfig, WaveLoadConfig } from
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
 import type { ProjectEnvGroup } from "@/types/project";
+import { buildWaveSecondMarkers, formatPlannedRequests } from "@/lib/load-rps-chart";
 
 const DEFAULT_RUNNER_MAX_RPS = 600;
 const MIN_RUNNER_MAX_RPS = 1;
@@ -25,6 +26,7 @@ interface LoadTestConfigPanelProps {
   initialConfig?: LoadRunConfig | null;
   envGroups?: ProjectEnvGroup[];
   selectedEnvGroupSlug?: string | null;
+  runnerCount?: number;
 }
 
 function HelpPopover({ text }: { text: string }) {
@@ -106,7 +108,7 @@ function SliderWithManual({
   );
 }
 
-export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, envGroups = [], selectedEnvGroupSlug }: LoadTestConfigPanelProps) {
+export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, envGroups = [], selectedEnvGroupSlug, runnerCount = 1 }: LoadTestConfigPanelProps) {
   const { t } = useTranslation();
   const initialWave = isWaveLoadConfig(initialConfig) ? initialConfig : defaultWaveConfig();
   const [points, setPoints] = useState<LoadPoint[]>(initialWave.points);
@@ -221,6 +223,8 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
           points={sortedPoints}
           durationMs={durationMs}
           interpolation={interpolation}
+          runnerMaxRps={runnerMaxRps}
+          runnerCount={runnerCount}
           selectedPointIndex={selectedPointIndex}
           onPointsChange={setPoints}
           onSelectedPointIndex={setSelectedPointIndex}
@@ -304,6 +308,8 @@ function WaveEditor({
   points,
   durationMs,
   interpolation,
+  runnerMaxRps,
+  runnerCount,
   selectedPointIndex,
   onPointsChange,
   onSelectedPointIndex,
@@ -311,6 +317,8 @@ function WaveEditor({
   points: LoadPoint[];
   durationMs: number;
   interpolation: LoadInterpolation;
+  runnerMaxRps: number;
+  runnerCount: number;
   selectedPointIndex: number;
   onPointsChange: (points: LoadPoint[]) => void;
   onSelectedPointIndex: (index: number) => void;
@@ -323,6 +331,10 @@ function WaveEditor({
   const markerRadius = 2.3;
   const graphPoints = points.map((point) => pointToGraph(point, durationMs, plotWidth, plotHeight));
   const pathData = buildWavePath(graphPoints, interpolation);
+  const secondMarkers = buildWaveSecondMarkers(
+    { points, interpolation, runnerMaxRps },
+    { runnerCount, maxLabels: 8 },
+  );
 
   const pointFromEvent = (event: MouseEvent<SVGSVGElement> | PointerEvent<SVGSVGElement>): LoadPoint => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -424,6 +436,35 @@ function WaveEditor({
               strokeWidth="0.5"
             />
           ))}
+          {secondMarkers.map((marker) => {
+            const x = (marker.second * 1000 / Math.max(durationMs, 1)) * plotWidth;
+            return (
+              <g key={`second-marker-${marker.second}`} data-testid={`wave-second-marker-${marker.second}`} pointerEvents="none">
+                <line
+                  x1={x}
+                  x2={x}
+                  y1="0"
+                  y2={plotHeight}
+                  stroke="currentColor"
+                  strokeOpacity="0.22"
+                  strokeWidth="0.45"
+                  strokeDasharray="1 1.6"
+                />
+                {marker.showLabel && (
+                  <text
+                    x={clamp(x, 2, plotWidth - 2)}
+                    y="4.5"
+                    textAnchor={x >= plotWidth - 4 ? "end" : x <= 4 ? "start" : "middle"}
+                    fontSize="3.2"
+                    fill="currentColor"
+                    opacity="0.78"
+                  >
+                    {formatPlannedRequests(marker.plannedRequests)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
           <path data-testid="wave-editor-path" d={pathData} fill="none" stroke="currentColor" strokeWidth="1.8" />
           {graphPoints.map((point, index) => (
             <circle

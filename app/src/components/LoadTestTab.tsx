@@ -197,6 +197,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
             initialConfig={config}
             envGroups={envGroups}
             selectedEnvGroupSlug={selectedEnvGroupSlug}
+            runnerCount={nodesInfo?.nodesUsed}
           />
         </div>
       </div>
