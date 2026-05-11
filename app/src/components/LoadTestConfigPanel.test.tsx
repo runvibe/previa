@@ -122,10 +122,19 @@ describe("LoadTestConfigPanel", () => {
     });
   });
 
-  it("emits runner max RPS when configured for the wave test", async () => {
+  it("defaults runner max RPS to 600 and supports manual editing", async () => {
     const onConfigChange = renderPanel();
 
+    await waitFor(() => {
+      const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
+      expect(latest.runnerMaxRps).toBe(600);
+    });
+
+    expect(screen.getByText("600 RPS")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
     fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "750" } });
+    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
 
     await waitFor(() => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
@@ -133,7 +142,7 @@ describe("LoadTestConfigPanel", () => {
     });
   });
 
-  it("keeps runner max RPS unset when the field is blank", async () => {
+  it("clamps runner max RPS manual values between 1 and 1000", async () => {
     const onConfigChange = renderPanel(vi.fn(), {
       points: [
         { atMs: 0, intensity: 10 },
@@ -144,13 +153,24 @@ describe("LoadTestConfigPanel", () => {
       gracePeriodMs: 30_000,
     });
 
-    expect(screen.getByLabelText("RPS limit per runner")).toHaveValue(500);
+    expect(screen.getByText("500 RPS")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
+    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "1200" } });
+    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
 
     await waitFor(() => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
-      expect(latest).not.toHaveProperty("runnerMaxRps");
+      expect(latest.runnerMaxRps).toBe(1000);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
+    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "0" } });
+    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
+
+    await waitFor(() => {
+      const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
+      expect(latest.runnerMaxRps).toBe(1);
     });
   });
 

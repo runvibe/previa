@@ -13,6 +13,10 @@ import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
 import type { ProjectEnvGroup } from "@/types/project";
 
+const DEFAULT_RUNNER_MAX_RPS = 600;
+const MIN_RUNNER_MAX_RPS = 1;
+const MAX_RUNNER_MAX_RPS = 1000;
+
 interface LoadTestConfigPanelProps {
   pipeline: Pipeline;
   onStart: (config: LoadRunConfig, selectedBaseUrlKey?: string) => void;
@@ -39,10 +43,11 @@ function HelpPopover({ text }: { text: string }) {
 }
 
 function SliderWithManual({
-  value, onChange, min, max, step, suffix,
+  value, onChange, min, max, step, suffix, ariaLabel, manualButtonLabel,
 }: {
   value: number; onChange: (v: number) => void;
   min: number; max: number; step: number; suffix?: string;
+  ariaLabel?: string; manualButtonLabel?: string;
 }) {
   const { t } = useTranslation();
   const [manualMode, setManualMode] = useState(false);
@@ -50,8 +55,8 @@ function SliderWithManual({
 
   const commitManual = () => {
     const parsed = parseInt(manualValue, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onChange(parsed);
+    if (!isNaN(parsed)) {
+      onChange(clamp(parsed, min, max));
     }
     setManualMode(false);
   };
@@ -66,8 +71,11 @@ function SliderWithManual({
           onBlur={commitManual}
           onKeyDown={(e) => { if (e.key === "Enter") commitManual(); if (e.key === "Escape") setManualMode(false); }}
           className="h-7 text-xs font-mono flex-1"
+          aria-label={ariaLabel}
           autoFocus
-          min={0}
+          min={min}
+          max={max}
+          step={step}
         />
         {suffix && <span className="text-[10px] text-muted-foreground">{suffix}</span>}
       </div>
@@ -77,17 +85,19 @@ function SliderWithManual({
   return (
     <div className="flex items-center gap-2">
       <Slider
-        value={[Math.min(value, max)]}
+        value={[clamp(value, min, max)]}
         onValueChange={([v]) => onChange(v)}
         min={min}
         max={max}
         step={step}
+        aria-label={ariaLabel}
         className="flex-1"
       />
       <button
         type="button"
         onClick={() => { setManualValue(String(value)); setManualMode(true); }}
         className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        aria-label={manualButtonLabel ?? t("loadTest.configureManually")}
         title={t("loadTest.configureManually")}
       >
         <Pencil className="h-3 w-3" />
@@ -103,8 +113,12 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const [durationMs, setDurationMs] = useState(Math.max(initialWave.points.at(-1)?.atMs ?? 120_000, 100));
   const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [interpolation, setInterpolation] = useState<LoadInterpolation>(initialWave.interpolation);
-  const [runnerMaxRpsInput, setRunnerMaxRpsInput] = useState(
-    typeof initialWave.runnerMaxRps === "number" ? String(initialWave.runnerMaxRps) : "",
+  const [runnerMaxRps, setRunnerMaxRps] = useState(
+    clamp(
+      typeof initialWave.runnerMaxRps === "number" ? initialWave.runnerMaxRps : DEFAULT_RUNNER_MAX_RPS,
+      MIN_RUNNER_MAX_RPS,
+      MAX_RUNNER_MAX_RPS,
+    ),
   );
   const [gracePeriodMs, setGracePeriodMs] = useState(initialWave.gracePeriodMs ?? 30_000);
   const [selectedEnv, setSelectedEnv] = useState<string | undefined>(undefined);
@@ -112,17 +126,16 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
   const sortedPoints = normalizeWavePoints(points, durationMs);
   const selectedPoint = sortedPoints[selectedPointIndex] ?? sortedPoints[0];
-  const runnerMaxRps = parseOptionalPositiveNumber(runnerMaxRpsInput);
   const waveConfig: WaveLoadConfig = {
     points: sortedPoints,
     interpolation,
-    ...(typeof runnerMaxRps === "number" ? { runnerMaxRps } : {}),
+    runnerMaxRps,
     gracePeriodMs,
   };
 
   useEffect(() => {
     onConfigChange?.(waveConfig, selectedEnv);
-  }, [points, durationMs, interpolation, runnerMaxRpsInput, gracePeriodMs, selectedEnv, onConfigChange]);
+  }, [points, durationMs, interpolation, runnerMaxRps, gracePeriodMs, selectedEnv, onConfigChange]);
 
   const setPoint = (index: number, patch: Partial<LoadPoint>) => {
     setPoints((current) =>
@@ -187,23 +200,21 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
           </Select>
         </div>
 
-        <div className="grid grid-cols-[1fr_auto] items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="load-runner-max-rps" className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              {t("loadTest.runnerMaxRps")}
-            </Label>
-            <Input
-              id="load-runner-max-rps"
-              type="number"
-              min={1}
-              step={1}
-              value={runnerMaxRpsInput}
-              onChange={(event) => setRunnerMaxRpsInput(event.target.value)}
-              className="h-8 text-xs"
-              aria-label={t("loadTest.runnerMaxRps")}
-            />
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-medium">{t("loadTest.runnerMaxRps")}</Label>
+            <span className="text-xs font-bold text-primary">{runnerMaxRps} RPS</span>
           </div>
-          <span className="pb-2 text-[10px] text-muted-foreground">RPS</span>
+          <SliderWithManual
+            value={runnerMaxRps}
+            onChange={setRunnerMaxRps}
+            min={MIN_RUNNER_MAX_RPS}
+            max={MAX_RUNNER_MAX_RPS}
+            step={1}
+            suffix="RPS"
+            ariaLabel={t("loadTest.runnerMaxRps")}
+            manualButtonLabel={`${t("loadTest.configureManually")} ${t("loadTest.runnerMaxRps")}`}
+          />
         </div>
 
         <WaveEditor
@@ -458,14 +469,9 @@ function defaultWaveConfig(): WaveLoadConfig {
       { atMs: 120_000, intensity: 80 },
     ],
     interpolation: "smooth",
+    runnerMaxRps: DEFAULT_RUNNER_MAX_RPS,
     gracePeriodMs: 30_000,
   };
-}
-
-function parseOptionalPositiveNumber(value: string): number | undefined {
-  if (value.trim() === "") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function normalizeWavePoints(points: LoadPoint[], durationMs: number): LoadPoint[] {
