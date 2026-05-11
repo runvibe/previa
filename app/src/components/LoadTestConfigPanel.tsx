@@ -12,7 +12,7 @@ import type { LoadInterpolation, LoadPoint, LoadRunConfig, WaveLoadConfig } from
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
 import type { ProjectEnvGroup } from "@/types/project";
-import { buildWaveSecondMarkers, formatPlannedRequests } from "@/lib/load-rps-chart";
+import { formatPlannedRequests } from "@/lib/load-rps-chart";
 
 const DEFAULT_RUNNER_MAX_RPS = 600;
 const MIN_RUNNER_MAX_RPS = 1;
@@ -331,11 +331,11 @@ function WaveEditor({
   const markerRadius = 2.3;
   const graphPoints = points.map((point) => pointToGraph(point, durationMs, plotWidth, plotHeight));
   const pathData = buildWavePath(graphPoints, interpolation);
-  const secondMarkers = buildWaveSecondMarkers(
-    { points, interpolation, runnerMaxRps },
-    { runnerCount, maxLabels: 5 },
-  );
-  const visibleSecondMarkers = secondMarkers.filter((marker) => marker.showLabel);
+  const pointMarkers = points.map((point, index) => ({
+    key: `${point.atMs}-${point.intensity}-${index}`,
+    x: graphPoints[index]?.x ?? 0,
+    plannedRequests: Math.round(runnerMaxRps * Math.max(1, runnerCount) * (point.intensity / 100)),
+  }));
 
   const pointFromEvent = (event: MouseEvent<SVGSVGElement> | PointerEvent<SVGSVGElement>): LoadPoint => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -438,23 +438,6 @@ function WaveEditor({
                 strokeWidth="0.5"
               />
             ))}
-            {visibleSecondMarkers.map((marker) => {
-              const x = (marker.second * 1000 / Math.max(durationMs, 1)) * plotWidth;
-              return (
-                <g key={`second-marker-${marker.second}`} data-testid={`wave-second-marker-${marker.second}`} pointerEvents="none">
-                  <line
-                    x1={x}
-                    x2={x}
-                    y1="0"
-                    y2={plotHeight}
-                    stroke="currentColor"
-                    strokeOpacity="0.22"
-                    strokeWidth="0.45"
-                    strokeDasharray="1 1.6"
-                  />
-                </g>
-              );
-            })}
             <path data-testid="wave-editor-path" d={pathData} fill="none" stroke="currentColor" strokeWidth="1.8" />
             {graphPoints.map((point, index) => (
               <circle
@@ -484,9 +467,9 @@ function WaveEditor({
               />
             ))}
           </svg>
-          <div data-testid="wave-marker-value-strip" className="relative mt-1 h-5 text-[10px] font-mono text-muted-foreground">
-            {visibleSecondMarkers.map((marker) => {
-              const percent = clamp((marker.second * 1000 / Math.max(durationMs, 1)) * 100, 0, 100);
+          <div data-testid="wave-point-value-strip" className="relative mt-1 h-5 text-[10px] font-mono text-muted-foreground">
+            {pointMarkers.map((marker, index) => {
+              const percent = clamp((marker.x / Math.max(plotWidth, 1)) * 100, 0, 100);
               const edgeClass = percent >= 98
                 ? "-translate-x-full"
                 : percent <= 2
@@ -494,8 +477,8 @@ function WaveEditor({
                   : "-translate-x-1/2";
               return (
                 <span
-                  key={`second-marker-value-${marker.second}`}
-                  data-testid={`wave-second-marker-value-${marker.second}`}
+                  key={marker.key}
+                  data-testid={`wave-point-marker-value-${index}`}
                   className={`absolute top-0 rounded bg-background/70 px-1 leading-4 ${edgeClass}`}
                   style={{ left: `${percent}%` }}
                 >

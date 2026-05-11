@@ -143,7 +143,7 @@ describe("LoadTestConfigPanel", () => {
     });
   });
 
-  it("shows per-second planned request markers in the wave editor preview", () => {
+  it("shows planned request values below each wave point", () => {
     renderPanel(vi.fn(), {
       points: [
         { atMs: 0, intensity: 50 },
@@ -155,15 +155,18 @@ describe("LoadTestConfigPanel", () => {
     }, 3);
 
     expect(screen.getAllByText("900")).toHaveLength(2);
-    expect(screen.getByTestId("wave-marker-value-strip")).toHaveTextContent("900");
+    expect(screen.getByTestId("wave-point-value-strip")).toHaveTextContent("900");
+    expect(screen.getByTestId("wave-point-marker-value-0")).toHaveClass("translate-x-0");
+    expect(screen.getByTestId("wave-point-marker-value-1")).toHaveClass("-translate-x-full");
     expect(screen.getByTestId("wave-editor-graph").querySelectorAll("text")).toHaveLength(0);
     expect(screen.queryByText("900 req")).not.toBeInTheDocument();
   });
 
-  it("keeps planned request markers sparse on long wave previews", () => {
+  it("only renders planned request values for configured wave points", () => {
     renderPanel(vi.fn(), {
       points: [
         { atMs: 0, intensity: 10 },
+        { atMs: 60_000, intensity: 50 },
         { atMs: 120_000, intensity: 80 },
       ],
       interpolation: "smooth",
@@ -171,7 +174,12 @@ describe("LoadTestConfigPanel", () => {
       gracePeriodMs: 30_000,
     }, 3);
 
-    expect(screen.getAllByTestId(/^wave-second-marker-(?!value)/)).toHaveLength(6);
+    expect(screen.queryAllByTestId(/^wave-second-marker-/)).toHaveLength(0);
+    expect(screen.getAllByTestId(/^wave-point-marker-value-/)).toHaveLength(3);
+    expect(screen.getByTestId("wave-point-marker-value-0")).toHaveTextContent("180");
+    expect(screen.getByTestId("wave-point-marker-value-1")).toHaveTextContent("900");
+    expect(screen.getByTestId("wave-point-marker-value-2")).toHaveTextContent("1440");
+    expect(screen.getByTestId("wave-point-marker-value-1")).toHaveClass("-translate-x-1/2");
     expect(screen.queryAllByText(/ req$/)).toHaveLength(0);
   });
 
