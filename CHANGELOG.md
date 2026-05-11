@@ -4,8 +4,15 @@ All notable changes to Previa are documented in this file.
 
 ## [v1.0.0-alpha.22] - 2026-05-11
 
+### Features
+- Expand mcp capabilities (f247e5e)
+
+### Documentation
+- Plan mcp capability upgrades (bfc7132)
+
 ### Maintenance
-- Bump version to 1.0.0-alpha.22.
+- Bump version to alpha 22 (51287e4)
+- Update release metadata for v1.0.0-alpha.21 (cbf9380)
 
 Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.21...v1.0.0-alpha.22
 
