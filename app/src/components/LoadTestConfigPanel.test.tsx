@@ -197,8 +197,8 @@ describe("LoadTestConfigPanel", () => {
     expect(screen.getByTestId("wave-editor-graph")).toHaveAttribute("preserveAspectRatio", "none");
     expect(screen.getByTestId("wave-editor-graph").querySelectorAll("circle")).toHaveLength(0);
     expect(screen.getByTestId("wave-point-0")).toHaveClass("rounded-full");
-    expect(screen.getByTestId("wave-point-0")).toHaveStyle({ left: "0%", top: "90%" });
-    expect(screen.getByTestId("wave-point-1")).toHaveStyle({ left: "100%", top: "20%" });
+    expect(screen.getByTestId("wave-point-0")).toHaveStyle({ left: "0%", top: "90%", width: "18px", height: "18px" });
+    expect(screen.getByTestId("wave-point-1")).toHaveStyle({ left: "100%", top: "20%", width: "14px", height: "14px" });
   });
 
   it("clamps runner max RPS manual values between 1 and 1000", async () => {

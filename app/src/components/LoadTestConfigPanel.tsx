@@ -457,7 +457,7 @@ function WaveEditor({
               {pointMarkers.map((marker, index) => {
                 const left = graphPercent(marker.x, plotWidth);
                 const top = graphPercent(marker.y, plotHeight);
-                const markerSize = index === selectedPointIndex ? 9 : 7;
+                const markerSize = index === selectedPointIndex ? 18 : 14;
                 return (
                   <button
                     key={marker.key}
