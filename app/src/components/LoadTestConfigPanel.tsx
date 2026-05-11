@@ -470,9 +470,9 @@ function WaveEditor({
           <div data-testid="wave-point-value-strip" className="relative mt-1 h-5 text-[10px] font-mono text-muted-foreground">
             {pointMarkers.map((marker, index) => {
               const percent = clamp((marker.x / Math.max(plotWidth, 1)) * 100, 0, 100);
-              const edgeClass = percent >= 98
+              const edgeClass = index === pointMarkers.length - 1
                 ? "-translate-x-full"
-                : percent <= 2
+                : index === 0
                   ? "translate-x-0"
                   : "-translate-x-1/2";
               return (
@@ -533,8 +533,10 @@ function formatDurationMs(ms: number): string {
 }
 
 function pointToGraph(point: LoadPoint, durationMs: number, width: number, height: number) {
+  const markerInset = 3.2;
+  const usableWidth = Math.max(1, width - markerInset * 2);
   return {
-    x: (point.atMs / Math.max(durationMs, 1)) * width,
+    x: markerInset + (point.atMs / Math.max(durationMs, 1)) * usableWidth,
     y: height - (point.intensity / 100) * height,
   };
 }

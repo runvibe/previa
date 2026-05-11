@@ -183,6 +183,21 @@ describe("LoadTestConfigPanel", () => {
     expect(screen.queryAllByText(/ req$/)).toHaveLength(0);
   });
 
+  it("keeps first and last wave point circles inside the graph bounds", () => {
+    renderPanel(vi.fn(), {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 120_000, intensity: 80 },
+      ],
+      interpolation: "smooth",
+      runnerMaxRps: 600,
+      gracePeriodMs: 30_000,
+    });
+
+    expect(Number(screen.getByTestId("wave-point-0").getAttribute("cx"))).toBeGreaterThan(0);
+    expect(Number(screen.getByTestId("wave-point-1").getAttribute("cx"))).toBeLessThan(100);
+  });
+
   it("clamps runner max RPS manual values between 1 and 1000", async () => {
     const onConfigChange = renderPanel(vi.fn(), {
       points: [
