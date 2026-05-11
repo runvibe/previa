@@ -134,6 +134,16 @@ describe("LoadTestConfigPanel", () => {
     expect(interpolationSelect.compareDocumentPosition(graph)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
+  it("keeps the wave graph and selected point controls in one bordered card", () => {
+    renderPanel();
+
+    const card = screen.getByTestId("wave-point-editor-card");
+
+    expect(card).toHaveClass("border");
+    expect(card).toContainElement(screen.getByTestId("wave-editor-graph"));
+    expect(card).toContainElement(screen.getByText("Selected point"));
+  });
+
   it("does not expose or emit max in flight from the wave config", async () => {
     const onConfigChange = renderPanel(vi.fn(), {
       points: [

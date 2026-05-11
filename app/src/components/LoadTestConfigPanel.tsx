@@ -263,64 +263,66 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
           />
         </div>
 
-        <WaveEditor
-          points={sortedPoints}
-          durationMs={durationMs}
-          interpolation={interpolation}
-          runnerMaxRps={runnerMaxRps}
-          runnerCount={runnerCount}
-          selectedPointIndex={selectedPointIndex}
-          onPointsChange={setPoints}
-          onSelectedPointIndex={setSelectedPointIndex}
-        />
+        <div className="rounded-md border border-border/60 p-3 text-primary" data-testid="wave-point-editor-card">
+          <WaveEditor
+            points={sortedPoints}
+            durationMs={durationMs}
+            interpolation={interpolation}
+            runnerMaxRps={runnerMaxRps}
+            runnerCount={runnerCount}
+            selectedPointIndex={selectedPointIndex}
+            onPointsChange={setPoints}
+            onSelectedPointIndex={setSelectedPointIndex}
+          />
 
-        {selectedPoint && (
-          <div className="space-y-2 rounded-md border border-border/60 p-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("loadTest.selectedPoint")}</p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={sortedPoints.length <= 2}
-                onClick={() => {
-                  setPoints((current) => normalizeWavePoints(current.filter((_, index) => index !== selectedPointIndex), durationMs));
-                  setSelectedPointIndex((current) => Math.max(0, current - 1));
-                }}
-                aria-label={t("loadTest.removePoint")}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointTimeColumn")}</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={durationMs}
-                  value={selectedPoint.atMs}
-                  disabled={selectedPointIndex === 0 || selectedPointIndex === sortedPoints.length - 1}
-                  onChange={(event) => setPoint(selectedPointIndex, { atMs: Math.max(0, Math.min(durationMs, Number(event.target.value))) })}
-                  className="h-8 text-xs"
-                  aria-label={t("loadTest.pointTimeMs")}
-                />
+          {selectedPoint && (
+            <div className="mt-4 space-y-2 border-t border-border/60 pt-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{t("loadTest.selectedPoint")}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={sortedPoints.length <= 2}
+                  onClick={() => {
+                    setPoints((current) => normalizeWavePoints(current.filter((_, index) => index !== selectedPointIndex), durationMs));
+                    setSelectedPointIndex((current) => Math.max(0, current - 1));
+                  }}
+                  aria-label={t("loadTest.removePoint")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointIntensityColumn")}</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={selectedPoint.intensity}
-                  onChange={(event) => setPoint(selectedPointIndex, { intensity: Math.min(100, Math.max(0, Number(event.target.value))) })}
-                  className="h-8 text-xs"
-                  aria-label={t("loadTest.pointIntensity")}
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointTimeColumn")}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={durationMs}
+                    value={selectedPoint.atMs}
+                    disabled={selectedPointIndex === 0 || selectedPointIndex === sortedPoints.length - 1}
+                    onChange={(event) => setPoint(selectedPointIndex, { atMs: Math.max(0, Math.min(durationMs, Number(event.target.value))) })}
+                    className="h-8 text-xs"
+                    aria-label={t("loadTest.pointTimeMs")}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("loadTest.pointIntensityColumn")}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={selectedPoint.intensity}
+                    onChange={(event) => setPoint(selectedPointIndex, { intensity: Math.min(100, Math.max(0, Number(event.target.value))) })}
+                    className="h-8 text-xs"
+                    aria-label={t("loadTest.pointIntensity")}
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -431,7 +433,7 @@ function WaveEditor({
   };
 
   return (
-    <div className="rounded-md border border-border/60 p-3 text-primary">
+    <div>
       <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         <span>{t("loadTest.previewIntensityAxis")}</span>
         <span>{t("loadTest.previewTimeAxis")}</span>
