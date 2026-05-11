@@ -17,6 +17,7 @@ import { useThemeStore } from "@/stores/useThemeStore";
 import { useExecutionHistoryStore } from "@/stores/useExecutionHistoryStore";
 import { useChatPositionStore } from "@/stores/useChatPositionStore";
 import { useOpenAIKeyStore } from "@/stores/useOpenAIKeyStore";
+import { useExperimentalFeaturesEnabled } from "@/stores/useExperimentalFeaturesStore";
 
 import * as api from "@/lib/api-client";
 import { generateUUID } from "@/lib/uuid";
@@ -48,7 +49,9 @@ export default function ProjectFlowPage() {
   const chatPosition = useChatPositionStore((s) => s.position);
   const chatCollapsed = useChatPositionStore((s) => s.collapsed);
   const toggleChatCollapsed = useChatPositionStore((s) => s.toggleCollapsed);
+  const experimentalFeaturesEnabled = useExperimentalFeaturesEnabled();
   const hasApiKey = useOpenAIKeyStore((s) => !!s.apiKey?.trim());
+  const aiAssistantAvailable = experimentalFeaturesEnabled && hasApiKey;
   const isMobile = useIsMobile();
   const backendUrl = orchUrl || undefined;
 
@@ -60,12 +63,12 @@ export default function ProjectFlowPage() {
   const [editingPipelineIndex, setEditingPipelineIndex] = useState<number | null>(null);
   const [mobileView, setMobileView] = useState<"app" | "chat">("app");
 
-  const [chatMounted, setChatMounted] = useState(!chatCollapsed && hasApiKey);
+  const [chatMounted, setChatMounted] = useState(!chatCollapsed && aiAssistantAvailable);
   const [isClosing, setIsClosing] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
 
   useEffect(() => {
-    if (!chatCollapsed && hasApiKey) {
+    if (!chatCollapsed && aiAssistantAvailable) {
       setChatMounted(true);
       setIsOpening(true);
       requestAnimationFrame(() => {
@@ -79,7 +82,7 @@ export default function ProjectFlowPage() {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [chatCollapsed, chatMounted, hasApiKey]);
+  }, [aiAssistantAvailable, chatCollapsed, chatMounted]);
 
   useEffect(() => {
     if (!id) { navigate("/"); return; }
@@ -368,11 +371,12 @@ export default function ProjectFlowPage() {
   };
 
   const handleAICreatePipeline = useCallback(() => {
+    if (!experimentalFeaturesEnabled) return;
     chatRef.current?.sendCommand(
       "Analyze the available OpenAPI specs and suggest E2E test scenarios I should create. Use the suggest_scenarios tool to present the suggestions organized by resource/entity.",
       "Generate Pipelines"
     );
-  }, []);
+  }, [experimentalFeaturesEnabled]);
 
   if (!project) {
     return (
@@ -437,7 +441,7 @@ export default function ProjectFlowPage() {
         projectId={project.id}
         onDeletePipeline={handleDeletePipeline}
         onCreatePipeline={handleCreatePipeline}
-        onCreateAIPipeline={handleAICreatePipeline}
+        onCreateAIPipeline={experimentalFeaturesEnabled ? handleAICreatePipeline : undefined}
         onEditPipeline={handleEditPipeline}
         onDuplicatePipeline={handleDuplicatePipeline}
         onImportSpec={handleImportSpec}
@@ -454,7 +458,7 @@ export default function ProjectFlowPage() {
         executionBackendUrl={backendUrl}
         autoRunPipelineId={aiAutoRunId}
         autoSelectTab={aiAutoTab}
-        onAnalyzeStepWithAI={(step, result) => {
+        onAnalyzeStepWithAI={experimentalFeaturesEnabled ? (step, result) => {
           const summary = JSON.stringify({
             step: { id: step.id, name: step.name, method: step.method, url: step.url },
             result: {
@@ -470,12 +474,12 @@ export default function ProjectFlowPage() {
             `Analyze the following step execution result and provide insights about what happened, potential issues, and suggestions for improvement:\n\n\`\`\`json\n${summary}\n\`\`\``,
             `Analyze Step: ${step.name}`
           );
-        }}
+        } : undefined}
       />
     );
   })();
 
-  const chatPanel = (
+  const chatPanel = experimentalFeaturesEnabled ? (
     <AIPipelineChat
       ref={chatRef}
       projectId={project.id}
@@ -483,14 +487,14 @@ export default function ProjectFlowPage() {
       envGroups={project.envGroups}
       pipelines={project.pipelines}
     />
-  );
+  ) : null;
 
   return isMobile ? (
     <>
       <main className="flex h-full min-h-0 flex-1 overflow-hidden">
-        {mobileView === "chat" && hasApiKey ? chatPanel : leftContent}
+        {mobileView === "chat" && aiAssistantAvailable ? chatPanel : leftContent}
       </main>
-      {hasApiKey && (
+      {aiAssistantAvailable && (
         <div className="glass h-12 border-t border-border flex shrink-0 z-50">
           <button
             onClick={() => setMobileView("app")}
@@ -521,7 +525,7 @@ export default function ProjectFlowPage() {
         {leftContent}
       </div>
 
-      {hasApiKey && chatMounted && (
+      {aiAssistantAvailable && chatMounted && (
         <div
           className={cn(
             "flex h-full min-h-0 shrink-0 overflow-hidden border-border transition-[width] duration-300 ease-out",
@@ -534,7 +538,7 @@ export default function ProjectFlowPage() {
         </div>
       )}
 
-      {hasApiKey && chatCollapsed && !chatMounted && (
+      {aiAssistantAvailable && chatCollapsed && !chatMounted && (
         <Button
           onClick={toggleChatCollapsed}
           size="icon"

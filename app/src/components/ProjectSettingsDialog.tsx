@@ -16,6 +16,7 @@ import { useThemeStore } from "@/stores/useThemeStore";
 import { useStepViewStore } from "@/stores/useStepViewStore";
 import type { StepViewMode } from "@/stores/useStepViewStore";
 import { useAutoScrollStore } from "@/stores/useAutoScrollStore";
+import { setExperimentalFeaturesEnabled, useExperimentalFeaturesEnabled } from "@/stores/useExperimentalFeaturesStore";
 import { Switch } from "@/components/ui/switch";
 import type { FormatType } from "@/lib/pipeline-schema";
 import { ALL_PALETTES } from "@/lib/theme-palettes";
@@ -32,6 +33,7 @@ export function ProjectSettingsDialog() {
   const { theme, setTheme: applyTheme, palette, setPalette: applyPalette, glassLevel, setGlassLevel } = useThemeStore();
   const { mode: stepViewMode, setMode: setStepViewMode } = useStepViewStore();
   const { enabled: autoScrollEnabled, setEnabled: setAutoScrollEnabled } = useAutoScrollStore();
+  const experimentalFeaturesEnabled = useExperimentalFeaturesEnabled();
   const [showKey, setShowKey] = useState(false);
 
   const isComplex = isComplexPalette(palette);
@@ -74,61 +76,90 @@ export function ProjectSettingsDialog() {
         </DialogHeader>
 
         <div className="space-y-6 py-2">
-          {/* ── AI Assistant ── */}
+          {/* ── Experimental Features ── */}
           <section className="space-y-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
               <Sparkles className="h-3.5 w-3.5" />
-              AI Assistant
+              {t("settings.experimental.label", "Experimental Features")}
             </h3>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="openai-key" className="text-sm font-medium">
-                  {t("settings.openai.label")}
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 px-3 py-2.5">
+              <div className="space-y-1">
+                <Label htmlFor="experimental-features" className="text-sm font-medium">
+                  {t("settings.experimental.toggle", "Enable experimental features")}
                 </Label>
-                <div className="relative">
-                  <Input
-                    id="openai-key"
-                    type={showKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    defaultValue={apiKey || ""}
-                    onChange={(e) => handleApiKeyChange(e.target.value)}
-                    className="font-mono text-xs pr-9"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full w-9"
-                    onClick={() => setShowKey(!showKey)}
-                  >
-                    {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">{t("settings.openai.description")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.experimental.description", "Shows API Specs, AI Assistant settings, and AI actions across the project.")}
+                </p>
               </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">{t("settings.model.label")}</Label>
-                <ToggleGroup
-                  type="single"
-                  value={model}
-                  onValueChange={(value) => {
-                    if (value) setModel(value as OpenAIModel);
-                  }}
-                  className="justify-start flex-wrap"
-                >
-                  {OPENAI_MODELS.map((m) => (
-                    <ToggleGroupItem key={m.value} value={m.value} className="text-xs px-3" title={m.description}>
-                      {m.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                <p className="text-xs text-muted-foreground">{t("settings.model.description")}</p>
-              </div>
+              <Switch
+                id="experimental-features"
+                checked={experimentalFeaturesEnabled}
+                onCheckedChange={setExperimentalFeaturesEnabled}
+              />
             </div>
           </section>
 
           <hr className="border-border" />
+
+          {/* ── AI Assistant ── */}
+          {experimentalFeaturesEnabled && (
+            <>
+              <section className="space-y-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  AI Assistant
+                </h3>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="openai-key" className="text-sm font-medium">
+                      {t("settings.openai.label")}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="openai-key"
+                        type={showKey ? "text" : "password"}
+                        placeholder="sk-..."
+                        defaultValue={apiKey || ""}
+                        onChange={(e) => handleApiKeyChange(e.target.value)}
+                        className="font-mono text-xs pr-9"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full w-9"
+                        onClick={() => setShowKey(!showKey)}
+                      >
+                        {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t("settings.openai.description")}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">{t("settings.model.label")}</Label>
+                    <ToggleGroup
+                      type="single"
+                      value={model}
+                      onValueChange={(value) => {
+                        if (value) setModel(value as OpenAIModel);
+                      }}
+                      className="justify-start flex-wrap"
+                    >
+                      {OPENAI_MODELS.map((m) => (
+                        <ToggleGroupItem key={m.value} value={m.value} className="text-xs px-3" title={m.description}>
+                          {m.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                    <p className="text-xs text-muted-foreground">{t("settings.model.description")}</p>
+                  </div>
+                </div>
+              </section>
+
+              <hr className="border-border" />
+            </>
+          )}
 
           {/* ── Editor & Layout ── */}
           <section className="space-y-4">
@@ -153,29 +184,31 @@ export function ProjectSettingsDialog() {
                 <p className="text-xs text-muted-foreground">{t("settings.editorFormat.description")}</p>
               </div>
 
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-sm font-medium">
-                  <PanelRight className="h-3.5 w-3.5" />
-                  {t("settings.chatPosition.label")}
-                </Label>
-                <ToggleGroup
-                  type="single"
-                  value={chatPosition}
-                  onValueChange={(value) => {
-                    if (value) setChatPosition(value as "left" | "right");
-                  }}
-                  className="justify-start"
-                >
-                  <ToggleGroupItem value="left" className="text-xs px-3 gap-1.5">
-                    <PanelLeft className="h-3.5 w-3.5" />
-                    {t("settings.chatPosition.left")}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="right" className="text-xs px-3 gap-1.5">
+              {experimentalFeaturesEnabled && (
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 text-sm font-medium">
                     <PanelRight className="h-3.5 w-3.5" />
-                    {t("settings.chatPosition.right")}
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
+                    {t("settings.chatPosition.label")}
+                  </Label>
+                  <ToggleGroup
+                    type="single"
+                    value={chatPosition}
+                    onValueChange={(value) => {
+                      if (value) setChatPosition(value as "left" | "right");
+                    }}
+                    className="justify-start"
+                  >
+                    <ToggleGroupItem value="left" className="text-xs px-3 gap-1.5">
+                      <PanelLeft className="h-3.5 w-3.5" />
+                      {t("settings.chatPosition.left")}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="right" className="text-xs px-3 gap-1.5">
+                      <PanelRight className="h-3.5 w-3.5" />
+                      {t("settings.chatPosition.right")}
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label className="flex items-center gap-2 text-sm font-medium">

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import TestExecutionPage from "@/pages/TestExecutionPage";
@@ -96,7 +96,21 @@ const pipeline: Pipeline = {
   ],
 };
 
-const renderPage = () =>
+const spec = {
+  id: "spec-1",
+  slug: "example",
+  name: "Example API",
+  sync: false,
+  servers: {},
+  spec: {
+    raw: {},
+    title: "Example API",
+    version: "1.0.0",
+    routes: [{ method: "GET", path: "/users" }],
+  },
+};
+
+const renderPage = (props: Partial<ComponentProps<typeof TestExecutionPage>> = {}) =>
   render(
     <TestExecutionPage
       pipelines={[pipeline]}
@@ -106,6 +120,7 @@ const renderPage = () =>
       onSelectPipeline={vi.fn()}
       initialTab="loadtest"
       executionBackendUrl="http://localhost:8080"
+      {...props}
     />,
   );
 
@@ -144,5 +159,20 @@ describe("TestExecutionPage", () => {
       expect(screen.getByLabelText("Test modes")).toHaveClass("w-[184px]");
     });
     expect(localStorage.getItem("api-pipeline-studio:test-mode-sidebar-collapsed")).toBe("false");
+  });
+
+  it("hides API specs and AI creation when experimental features are disabled", () => {
+    localStorage.setItem("previa-experimental-features-enabled", "false");
+
+    renderPage({
+      specs: [spec],
+      onCreateAIPipeline: vi.fn(),
+      onEditSpec: vi.fn(),
+      onDeleteSpec: vi.fn(),
+    });
+
+    expect(screen.queryByText("API Specs")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("testExecution.createWithAI")).not.toBeInTheDocument();
+    expect(screen.getByTitle("testExecution.newPipeline")).toBeInTheDocument();
   });
 });
