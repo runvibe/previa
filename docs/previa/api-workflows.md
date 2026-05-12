@@ -57,8 +57,11 @@ curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/e2e \
 ```bash
 curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/load \
   -H 'content-type: application/json' \
-  -d "{\"pipelineId\":\"$PIPELINE_ID\",\"selectedBaseUrlKey\":\"hml\",\"load\":{\"points\":[{\"atMs\":0,\"intensity\":10},{\"atMs\":60000,\"intensity\":80},{\"atMs\":120000,\"intensity\":30}],\"interpolation\":\"smooth\",\"gracePeriodMs\":30000},\"specs\":[]}"
+  -d "{\"pipelineId\":\"$PIPELINE_ID\",\"selectedBaseUrlKey\":\"hml\",\"load\":{\"points\":[{\"atMs\":0,\"intensity\":10},{\"atMs\":60000,\"intensity\":80},{\"atMs\":120000,\"intensity\":30}],\"interpolation\":\"smooth\",\"runnerMaxRps\":600,\"gracePeriodMs\":30000},\"specs\":[]}"
 ```
+
+See [Wave load tests](./wave-load-tests.md) for the load wave model and
+diagnostics.
 
 ## 6. Run an E2E Queue
 

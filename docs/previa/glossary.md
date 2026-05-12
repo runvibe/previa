@@ -52,6 +52,18 @@ A pipeline execution repeated under a timeline-based wave of load intensity.
 The wave maps elapsed time to an intensity percentage, and runners translate
 that percentage into local request flow using their configured safe capacity.
 
+## wave
+
+The load-test curve used by Previa. A wave is a list of points such as
+`0ms -> 10%` and `60000ms -> 80%`. Each intensity value is a percentage of
+`runnerMaxRps` for each active runner.
+
+## open-loop load
+
+A load-generation model where request starts are scheduled from time and the
+configured wave, rather than from completed responses. In Previa, slow responses
+are observed as metrics but should not directly throttle ready request starts.
+
 ## queue
 
 An ordered set of E2E pipeline executions that Previa runs and tracks as one larger workflow.
@@ -80,4 +92,5 @@ The browser UI served by `previa-main`. Embedded builds use `window.location.ori
 
 - [Architecture at a glance](./architecture.md)
 - [Home and contexts](./home-and-contexts.md)
+- [Wave load tests](./wave-load-tests.md)
 - [MCP integration](./mcp.md)

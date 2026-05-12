@@ -26,6 +26,7 @@ This is the main documentation index for Previa as an operator-facing platform a
 - [Spec-driven testing](./spec-driven-testing.md)
 - [Examples cookbook](./examples-cookbook.md)
 - [E2E queues](./e2e-queues.md)
+- [Wave load tests](./wave-load-tests.md)
 - [Proxy](./proxy.md)
 
 ## Operations

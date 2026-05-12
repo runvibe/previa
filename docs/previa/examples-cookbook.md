@@ -73,12 +73,13 @@ curl -sS http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/e2e/queue \
 ## Wave Load Baseline
 
 Wave load tests use elapsed time and intensity percentage. A runner treats
-`100%` as its configured safe RPS capacity.
+`100%` as its configured safe RPS capacity. Set `runnerMaxRps` to define the
+per-runner ceiling for this test.
 
 ```bash
 curl -N http://127.0.0.1:5588/api/v1/projects/$PROJECT_ID/tests/load \
   -H 'content-type: application/json' \
-  -d '{"pipelineId":"users-crud","selectedBaseUrlKey":"hml","load":{"points":[{"atMs":0,"intensity":30},{"atMs":300000,"intensity":30}],"interpolation":"smooth","gracePeriodMs":30000},"specs":[]}'
+  -d '{"pipelineId":"users-crud","selectedBaseUrlKey":"hml","load":{"points":[{"atMs":0,"intensity":30},{"atMs":300000,"intensity":30}],"interpolation":"smooth","runnerMaxRps":600,"gracePeriodMs":30000},"specs":[]}'
 ```
 
 ## Repository Import
@@ -106,5 +107,6 @@ url = "http://localhost:5588/mcp"
 ## See Also
 
 - [Pipeline authoring](./pipeline-authoring.md)
+- [Wave load tests](./wave-load-tests.md)
 - [MCP integration](./mcp.md)
 - [Remote runners](./remote-runners.md)

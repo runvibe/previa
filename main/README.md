@@ -119,6 +119,10 @@ Pipeline rule: every `step.url` must be an absolute URL (`http://` or `https://`
 - `POST /api/v1/projects/{projectId}/tests/e2e`
 - `POST /api/v1/projects/{projectId}/tests/load`
 
+Load tests should use the Wave payload shape with `load.points`,
+`load.interpolation`, `load.runnerMaxRps`, and `load.gracePeriodMs`. See
+[`docs/previa/wave-load-tests.md`](../docs/previa/wave-load-tests.md).
+
 ### Execution Stream / Cancel
 
 - `GET /api/v1/projects/{projectId}/executions/{executionId}`

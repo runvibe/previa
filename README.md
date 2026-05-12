@@ -152,7 +152,7 @@ It also creates a project named `Local Load Target Reference` and prints the loa
 curl -fsS http://127.0.0.1:5620/metrics | jq
 ```
 
-Use this target to compare the configured wave, runner HTTP RPS, and target-side received RPS without depending on DNS, gateway behavior, or a remote application.
+Use this target to compare the configured wave, runner HTTP RPS, and target-side received RPS without depending on DNS, gateway behavior, or a remote application. See [Wave load tests](docs/previa/wave-load-tests.md) for the Wave model, configuration, and diagnostics.
 
 `previa open` launches:
 
@@ -178,6 +178,7 @@ Recommended first reads:
 - [Minimal happy path](docs/previa/minimal-happy-path.md)
 - [Architecture at a glance](docs/previa/architecture.md)
 - [Runtime modes](docs/previa/runtime-modes.md)
+- [Wave load tests](docs/previa/wave-load-tests.md)
 - [Release and install](docs/previa/release-install.md)
 - [MCP integration](docs/previa/mcp.md)
 - [Operations cheatsheet](docs/previa/operations-cheatsheet.md)

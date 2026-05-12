@@ -51,11 +51,23 @@ Pipeline rule: every `step.url` must be an absolute URL (`http://` or `https://`
 ```json
 {
   "pipeline": { "name": "Load", "steps": [] },
-  "config": { "totalRequests": 100, "concurrency": 10, "rampUpSeconds": 5 },
+  "load": {
+    "points": [
+      { "atMs": 0, "intensity": 10 },
+      { "atMs": 60000, "intensity": 80 },
+      { "atMs": 120000, "intensity": 30 }
+    ],
+    "interpolation": "smooth",
+    "runnerMaxRps": 600,
+    "gracePeriodMs": 30000
+  },
   "selectedBaseUrlKey": null,
   "specs": []
 }
 ```
+
+The legacy `config.totalRequests` shape may still be accepted for compatibility,
+but new load tests should use the Wave `load` shape.
 
 ## SSE Event Contracts
 
