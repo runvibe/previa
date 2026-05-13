@@ -32,7 +32,7 @@ vi.mock("react-i18next", () => ({
         "loadTest.capacityPreview.rpsPerRunner": "RPS per runner",
         "loadTest.capacityPreview.mode": "Capacity mode",
         "loadTest.capacityPreview.unavailable": "Capacity preview unavailable",
-        "loadTest.runnerMaxRps": "RPS limit per runner",
+        "loadTest.runnerMaxRps": "Runner throttle",
         "loadTest.gracePeriod": "Grace period",
         "loadTest.wavePreview": "Wave editor",
         "loadTest.previewIntensityAxis": "Intensity (%)",
@@ -184,9 +184,9 @@ describe("LoadTestConfigPanel", () => {
 
     expect(screen.getByText("600 RPS")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
-    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "750" } });
-    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually Runner throttle" }));
+    fireEvent.change(screen.getByLabelText("Runner throttle"), { target: { value: "750" } });
+    fireEvent.blur(screen.getByLabelText("Runner throttle"));
 
     await waitFor(() => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
@@ -330,18 +330,18 @@ describe("LoadTestConfigPanel", () => {
 
     expect(screen.getByText("500 RPS")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
-    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "1200" } });
-    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually Runner throttle" }));
+    fireEvent.change(screen.getByLabelText("Runner throttle"), { target: { value: "1200" } });
+    fireEvent.blur(screen.getByLabelText("Runner throttle"));
 
     await waitFor(() => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
       expect(latest.runnerMaxRps).toBe(1000);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Configure manually RPS limit per runner" }));
-    fireEvent.change(screen.getByLabelText("RPS limit per runner"), { target: { value: "0" } });
-    fireEvent.blur(screen.getByLabelText("RPS limit per runner"));
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually Runner throttle" }));
+    fireEvent.change(screen.getByLabelText("Runner throttle"), { target: { value: "0" } });
+    fireEvent.blur(screen.getByLabelText("Runner throttle"));
 
     await waitFor(() => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;

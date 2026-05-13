@@ -230,7 +230,7 @@
   "loadTest.capacityPreview.rpsPerRunner": "RPS por runner",
   "loadTest.capacityPreview.mode": "Modo de capacidade",
   "loadTest.capacityPreview.unavailable": "Prévia de capacidade indisponível",
-  "loadTest.runnerMaxRps": "Limite RPS por runner",
+  "loadTest.runnerMaxRps": "Throttle do runner",
   "loadTest.gracePeriod": "Período de espera",
   "loadTest.wavePreview": "Prévia da onda",
   "loadTest.previewIntensityAxis": "Intensidade (%)",
