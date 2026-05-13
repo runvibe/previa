@@ -7,6 +7,7 @@ use serde_json::Value;
 use tokio::sync::{RwLock, broadcast};
 use tokio_util::sync::CancellationToken;
 
+use crate::server::auth::AuthRuntime;
 use crate::server::execution::scheduler::{ExecutionScheduler, SharedValue};
 use crate::server::mcp::models::McpSession;
 use crate::server::models::{E2eQueueRecord, SseMessage};
@@ -17,6 +18,7 @@ pub struct AppState {
     pub db: DbPool,
     pub context_name: String,
     pub runner_auth_key: Option<String>,
+    pub auth: AuthRuntime,
     pub rps_per_node: u64,
     pub scheduler: ExecutionScheduler,
     pub executions: Arc<RwLock<HashMap<String, Arc<ExecutionCtx>>>>,

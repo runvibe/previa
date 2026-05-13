@@ -4,6 +4,7 @@
  */
 
 import { useEventStore } from "@/stores/useEventStore";
+import { clearAuthSession, getAuthToken } from "@/stores/useAuthStore";
 import type { Pipeline, OpenAPISpec } from "@/types/pipeline";
 import type { Project, ProjectEnvEntry, ProjectEnvGroup, ProjectSpec } from "@/types/project";
 import { getMergedSpec } from "@/types/project";
@@ -221,11 +222,16 @@ function detectOperation(url: string, method: string): string {
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
+  const token = getAuthToken();
+  const requestInit = token ? withBearer(init, token) : init;
   try {
-    const res = await fetch(url, init);
+    const res = await fetch(url, requestInit);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const statusCode = res.status;
+      if (statusCode === 401) {
+        clearAuthSession();
+      }
       useEventStore.getState().addEvent({
         uid: simpleHash(`${method}:${url}:${text || `HTTP ${statusCode}`}`),
         type: "error",
@@ -250,6 +256,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw err;
   }
+}
+
+function withBearer(init: RequestInit | undefined, token: string): RequestInit {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return { ...init, headers };
 }
 
 export function ensureApiPrefix(url: string): string {

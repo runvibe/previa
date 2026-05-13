@@ -9,6 +9,7 @@ use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use urlencoding::encode;
 
+use crate::auth::apply_optional_bearer;
 use crate::cli::{PipelineExportArgs, PipelineExportFormat};
 
 #[derive(Debug, Clone)]
@@ -50,11 +51,12 @@ pub async fn export_pipelines(
     http: &Client,
     main_address: &str,
     main_port: u16,
+    auth_path: Option<&std::path::PathBuf>,
     args: &PipelineExportArgs,
 ) -> Result<PipelineExportOutcome> {
     let api_base = format!("http://{}:{}", main_address, main_port);
-    let project = resolve_project(http, &api_base, &args.project).await?;
-    let pipelines = load_project_pipelines(http, &api_base, &project.id).await?;
+    let project = resolve_project(http, &api_base, auth_path, &args.project).await?;
+    let pipelines = load_project_pipelines(http, &api_base, auth_path, &project.id).await?;
     let selected = select_pipelines(&pipelines, &args.pipelines)?;
     let planned = plan_exports(&args.output_dir, &selected, args.format, args.overwrite)?;
     write_exports(&planned, args.format)?;
@@ -68,12 +70,17 @@ pub async fn export_pipelines(
     })
 }
 
-async fn resolve_project(http: &Client, api_base: &str, selector: &str) -> Result<ProjectRecord> {
-    if let Some(project) = load_project_by_id(http, api_base, selector).await? {
+async fn resolve_project(
+    http: &Client,
+    api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
+    selector: &str,
+) -> Result<ProjectRecord> {
+    if let Some(project) = load_project_by_id(http, api_base, auth_path, selector).await? {
         return Ok(project);
     }
 
-    let projects = list_all_projects(http, api_base).await?;
+    let projects = list_all_projects(http, api_base, auth_path).await?;
     let matches = projects
         .into_iter()
         .filter(|project| project.name == selector)
@@ -100,11 +107,16 @@ async fn resolve_project(http: &Client, api_base: &str, selector: &str) -> Resul
 async fn load_project_by_id(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     selector: &str,
 ) -> Result<Option<ProjectRecord>> {
     let url = format!("{}/api/v1/projects/{}", api_base, encode(selector));
-    let response = http
-        .get(&url)
+    let request = http.get(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to query local project API at '{url}'"))?;
@@ -125,15 +137,23 @@ async fn load_project_by_id(
         .map(Some)
 }
 
-async fn list_all_projects(http: &Client, api_base: &str) -> Result<Vec<ProjectRecord>> {
+async fn list_all_projects(
+    http: &Client,
+    api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
+) -> Result<Vec<ProjectRecord>> {
     let mut offset = 0u32;
     let limit = 500u32;
     let mut projects = Vec::new();
 
     loop {
         let url = format!("{}/api/v1/projects?limit={limit}&offset={offset}", api_base);
-        let response = http
-            .get(&url)
+        let request = http.get(&url);
+        let request = match auth_path {
+            Some(path) => apply_optional_bearer(request, path)?,
+            None => request,
+        };
+        let response = request
             .send()
             .await
             .with_context(|| format!("failed to query local projects API at '{url}'"))?;
@@ -162,6 +182,7 @@ async fn list_all_projects(http: &Client, api_base: &str) -> Result<Vec<ProjectR
 async fn load_project_pipelines(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     project_id: &str,
 ) -> Result<Vec<Pipeline>> {
     let url = format!(
@@ -169,8 +190,12 @@ async fn load_project_pipelines(
         api_base,
         encode(project_id)
     );
-    let response = http
-        .get(&url)
+    let request = http.get(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to query local pipelines API at '{url}'"))?;

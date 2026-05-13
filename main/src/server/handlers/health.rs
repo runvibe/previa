@@ -68,6 +68,7 @@ mod tests {
             db,
             context_name: "other".to_owned(),
             runner_auth_key: None,
+            auth: crate::server::auth::AuthRuntime::anonymous(),
             rps_per_node: 1000,
             scheduler: ExecutionScheduler::new(Default::default()),
             executions: Arc::new(RwLock::new(HashMap::new())),

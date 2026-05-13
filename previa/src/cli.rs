@@ -27,6 +27,14 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    #[command(about = "Authenticate to a protected Previa main and store an API token")]
+    Login(LoginArgs),
+    #[command(about = "Remove a stored Previa API token")]
+    Logout(AuthContextArgs),
+    #[command(about = "Show the authenticated Previa principal")]
+    Whoami(AuthContextArgs),
+    #[command(about = "Manage fixed API tokens")]
+    Token(TokenArgs),
     #[command(about = "Create a starter previa-compose.yaml in the current directory")]
     Init(InitArgs),
     #[command(about = "Run Previa commands with project-local home ./.previa")]
@@ -57,6 +65,122 @@ pub enum Commands {
     Export(ExportArgs),
     #[command(about = "Print the CLI version")]
     Version,
+}
+
+#[derive(Debug, Args)]
+pub struct LoginArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+    #[arg(long = "username", value_name = "USERNAME")]
+    pub username: String,
+    #[arg(long = "password-stdin")]
+    pub password_stdin: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AuthContextArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct TokenArgs {
+    #[command(subcommand)]
+    pub command: TokenCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TokenCommands {
+    #[command(about = "List API tokens")]
+    List(TokenListArgs),
+    #[command(about = "Create a fixed API token")]
+    Create(TokenCreateArgs),
+    #[command(about = "Revoke a fixed API token")]
+    Revoke(TokenRevokeArgs),
+    #[command(about = "Store an API token from an environment variable")]
+    Use(TokenUseArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct TokenListArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct TokenCreateArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+    #[arg(long = "name", value_name = "NAME")]
+    pub name: String,
+    #[arg(long = "role", value_name = "ROLE", default_value = "viewer")]
+    pub role: String,
+}
+
+#[derive(Debug, Args)]
+pub struct TokenRevokeArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+    #[arg(value_name = "TOKEN_ID")]
+    pub token_id: String,
+}
+
+#[derive(Debug, Args)]
+pub struct TokenUseArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        conflicts_with = "url",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long = "url", value_name = "URL", conflicts_with = "context")]
+    pub url: Option<String>,
+    #[arg(long = "token-env", value_name = "ENV_NAME")]
+    pub token_env: String,
 }
 
 #[derive(Debug, Args)]
@@ -530,7 +654,7 @@ pub struct OpenArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands};
+    use super::{Cli, Commands, TokenCommands};
     use clap::Parser;
 
     #[test]
@@ -546,6 +670,76 @@ mod tests {
         };
         assert!(args.detach);
         assert_eq!(args.context, "default");
+    }
+
+    #[test]
+    fn parses_login_with_password_stdin() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "login",
+            "--context",
+            "default",
+            "--username",
+            "root",
+            "--password-stdin",
+        ])
+        .expect("parse login");
+
+        let Commands::Login(args) = cli.command else {
+            panic!("expected login command");
+        };
+        assert_eq!(args.context, "default");
+        assert_eq!(args.username, "root");
+        assert!(args.password_stdin);
+    }
+
+    #[test]
+    fn parses_token_use_with_env() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "token",
+            "use",
+            "--context",
+            "default",
+            "--token-env",
+            "PREVIA_API_TOKEN",
+        ])
+        .expect("parse token use");
+
+        let Commands::Token(args) = cli.command else {
+            panic!("expected token command");
+        };
+        let TokenCommands::Use(args) = args.command else {
+            panic!("expected token use");
+        };
+        assert_eq!(args.context, "default");
+        assert_eq!(args.token_env, "PREVIA_API_TOKEN");
+    }
+
+    #[test]
+    fn parses_token_create_with_role() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "token",
+            "create",
+            "--context",
+            "default",
+            "--name",
+            "ci",
+            "--role",
+            "operator",
+        ])
+        .expect("parse token create");
+
+        let Commands::Token(args) = cli.command else {
+            panic!("expected token command");
+        };
+        let TokenCommands::Create(args) = args.command else {
+            panic!("expected token create");
+        };
+        assert_eq!(args.context, "default");
+        assert_eq!(args.name, "ci");
+        assert_eq!(args.role, "operator");
     }
 
     #[test]

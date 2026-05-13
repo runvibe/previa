@@ -6,6 +6,7 @@ use previa_runner::Pipeline;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::auth::apply_optional_bearer;
 use crate::browser::main_url;
 use crate::cli::UpArgs;
 
@@ -91,6 +92,7 @@ pub async fn import_pipelines(
     http: &Client,
     address: &str,
     port: u16,
+    auth_path: Option<&std::path::PathBuf>,
     config: &PipelineImportConfig,
 ) -> Result<PipelineImportOutcome> {
     let files = if config.recursive {
@@ -111,11 +113,15 @@ pub async fn import_pipelines(
         .map(|path| read_pipeline_file(path))
         .collect::<Result<Vec<_>>>()?;
 
-    let response = http
-        .post(format!(
-            "{}/api/v1/projects/import/pipelines",
-            main_url(address, port)
-        ))
+    let request = http.post(format!(
+        "{}/api/v1/projects/import/pipelines",
+        main_url(address, port)
+    ));
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .json(&PipelineImportRequest {
             stack_name: config.stack_name.clone(),
             pipelines,

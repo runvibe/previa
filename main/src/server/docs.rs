@@ -1,12 +1,15 @@
 use utoipa::OpenApi;
 
+use crate::server::auth::permissions::Role;
 use crate::server::models::{
-    CancelExecutionResponse, ConsolidatedLoadMetrics, E2eHistoryRecord, E2eQueuePipelineRecord,
-    E2eQueueRecord, E2eQueueStatus, EnvGroupEntry, ErrorResponse, HistoryOrder, HistoryQuery,
-    KubernetesReservationCreateRequest, KubernetesReservationRunner, KubernetesReservationStatus,
-    LoadCapacityPreviewRequest, LoadCapacityPreviewResponse, LoadExecutionStartResponse,
-    LoadHistoryRecord, LoadInterpolation, LoadPoint, LoadProfile, LoadTestConfig,
-    OpenApiValidationPoint, OpenApiValidationRequest, OpenApiValidationResponse,
+    ApiTokenCreateRequest, ApiTokenCreateResponse, ApiTokenRecord, ApiTokenUpdateRequest,
+    AuthClientKind, AuthLoginRequest, AuthLoginResponse, AuthPrincipalSource, AuthTokenKind,
+    AuthUserResponse, CancelExecutionResponse, ConsolidatedLoadMetrics, E2eHistoryRecord,
+    E2eQueuePipelineRecord, E2eQueueRecord, E2eQueueStatus, EnvGroupEntry, ErrorResponse,
+    HistoryOrder, HistoryQuery, KubernetesReservationCreateRequest, KubernetesReservationRunner,
+    KubernetesReservationStatus, LoadCapacityPreviewRequest, LoadCapacityPreviewResponse,
+    LoadExecutionStartResponse, LoadHistoryRecord, LoadInterpolation, LoadPoint, LoadProfile,
+    LoadTestConfig, OpenApiValidationPoint, OpenApiValidationRequest, OpenApiValidationResponse,
     OpenApiValidationSeverity, OpenApiValidationStatus, OrchestratorInfoResponse,
     OrchestratorSseEventData, PipelineExecutionKind, PipelineExecutionRef, PipelineImportRequest,
     PipelineImportResponse, PipelineInput, PipelineQueueRef, PipelineRuntimeState,
@@ -17,6 +20,7 @@ use crate::server::models::{
     ProjectRecord, ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectSqliteExportRequest,
     ProjectTransferQuery, ProjectUpsertRequest, ProxyRequest, RunnerInfo, RunnerLoadLine,
     RunnerRecord, RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
+    UserCreateRequest, UserRecord, UserUpdateRequest,
 };
 
 const API_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -30,6 +34,16 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
     ),
     paths(
         crate::server::handlers::health::health,
+        crate::server::handlers::auth::login,
+        crate::server::handlers::auth::me,
+        crate::server::handlers::users::list_users,
+        crate::server::handlers::users::create_user,
+        crate::server::handlers::users::update_user,
+        crate::server::handlers::users::delete_user,
+        crate::server::handlers::api_tokens::list_api_tokens,
+        crate::server::handlers::api_tokens::create_api_token,
+        crate::server::handlers::api_tokens::update_api_token,
+        crate::server::handlers::api_tokens::delete_api_token,
         crate::server::handlers::health::get_info,
         crate::server::handlers::proxy::proxy_request,
         crate::server::handlers::projects::list_projects,
@@ -147,7 +161,21 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         OrchestratorInfoResponse,
         OrchestratorSseEventData,
         RunnerLoadLine,
-        ConsolidatedLoadMetrics
+        ConsolidatedLoadMetrics,
+        Role,
+        AuthClientKind,
+        AuthLoginRequest,
+        AuthLoginResponse,
+        AuthTokenKind,
+        AuthPrincipalSource,
+        AuthUserResponse,
+        UserRecord,
+        UserCreateRequest,
+        UserUpdateRequest,
+        ApiTokenRecord,
+        ApiTokenCreateRequest,
+        ApiTokenUpdateRequest,
+        ApiTokenCreateResponse
     )),
     servers(
         (url = "http://localhost:5588", description = "Orchestrator local")

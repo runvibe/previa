@@ -119,6 +119,11 @@ async fn main() {
         db,
         context_name: context_name.clone(),
         runner_auth_key,
+        auth: crate::server::auth::AuthRuntime::from_config(
+            crate::server::auth::config::AuthConfig::from_env()
+                .expect("invalid auth configuration"),
+        )
+        .expect("invalid auth runtime"),
         rps_per_node,
         scheduler: crate::server::execution::ExecutionScheduler::new(SchedulerConfig {
             e2e_per_runner_limit,

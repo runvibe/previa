@@ -1,11 +1,15 @@
 use std::time::Duration;
 
 use axum::Router;
-use axum::middleware::from_fn;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post, put};
 use tower_http::cors::{Any, CorsLayer};
 
+use crate::server::handlers::api_tokens::{
+    create_api_token, delete_api_token, list_api_tokens, update_api_token,
+};
 use crate::server::handlers::app::app_fallback;
+use crate::server::handlers::auth::{login, me};
 use crate::server::handlers::env_groups::{
     create_project_env_group, delete_project_env_group, get_project_env_group,
     list_project_env_groups, upsert_project_env_group,
@@ -46,8 +50,10 @@ use crate::server::handlers::tests_load::{preview_load_capacity, run_load_test_f
 use crate::server::handlers::transfers::{
     export_project, export_projects_sqlite, import_pipelines, import_project,
 };
+use crate::server::handlers::users::{create_user, delete_user, list_users, update_user};
 use crate::server::mcp::handlers::{delete_http_session, get_http, handle_http, preflight};
 use crate::server::mcp::models::McpConfig;
+use crate::server::middleware::auth::require_client_auth;
 use crate::server::middleware::transaction::propagate_transaction_header;
 use crate::server::state::AppState;
 
@@ -67,6 +73,7 @@ impl AppConfig {
     }
 }
 
+pub mod auth;
 pub mod db;
 pub mod docs;
 pub mod errors;
@@ -93,6 +100,21 @@ pub fn build_app_with_config(
     let fallback_config = app_config.clone();
     let mut app = Router::new()
         .route("/health", get(health))
+        .route("/api/v1/auth/login", post(login))
+        .route("/api/v1/auth/me", get(me))
+        .route(
+            "/api/v1/api-tokens",
+            get(list_api_tokens).post(create_api_token),
+        )
+        .route(
+            "/api/v1/api-tokens/{tokenId}",
+            axum::routing::patch(update_api_token).delete(delete_api_token),
+        )
+        .route("/api/v1/users", get(list_users).post(create_user))
+        .route(
+            "/api/v1/users/{userId}",
+            axum::routing::patch(update_user).delete(delete_user),
+        )
         .route("/info", get(get_info))
         .route("/openapi.json", get(openapi_json))
         .route("/proxy", post(proxy_request).options(preflight))
@@ -203,18 +225,19 @@ pub fn build_app_with_config(
         );
     }
 
-    app.layer(
-        CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any)
-            .allow_private_network(true)
-            .expose_headers(Any)
-            .max_age(Duration::from_secs(60 * 60)),
-    )
-    .layer(from_fn(propagate_transaction_header))
-    .fallback(move |method, uri| app_fallback(method, uri, fallback_config.clone()))
-    .with_state(state)
+    app.layer(from_fn_with_state(state.clone(), require_client_auth))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any)
+                .allow_private_network(true)
+                .expose_headers(Any)
+                .max_age(Duration::from_secs(60 * 60)),
+        )
+        .layer(from_fn(propagate_transaction_header))
+        .fallback(move |method, uri| app_fallback(method, uri, fallback_config.clone()))
+        .with_state(state)
 }
 
 #[cfg(test)]
@@ -230,6 +253,8 @@ mod tests {
     use tokio::sync::RwLock;
     use tower::ServiceExt;
 
+    use crate::server::auth::AuthRuntime;
+    use crate::server::auth::config::AuthConfig;
     use crate::server::db::{
         insert_project_pipeline, insert_project_spec_record, upsert_project_metadata,
     };
@@ -256,6 +281,7 @@ mod tests {
             db,
             context_name: "default".to_owned(),
             runner_auth_key: None,
+            auth: crate::server::auth::AuthRuntime::anonymous(),
             rps_per_node: 1000,
             scheduler: ExecutionScheduler::new(Default::default()),
             executions: Arc::new(RwLock::new(HashMap::new())),
@@ -285,6 +311,7 @@ mod tests {
             db,
             context_name: "default".to_owned(),
             runner_auth_key: None,
+            auth: crate::server::auth::AuthRuntime::anonymous(),
             rps_per_node: 1000,
             scheduler: ExecutionScheduler::new(Default::default()),
             executions: Arc::new(RwLock::new(HashMap::new())),
@@ -300,6 +327,390 @@ mod tests {
             },
             app_config,
         )
+    }
+
+    async fn test_app_with_auth_and_config(
+        auth: AuthRuntime,
+        app_config: AppConfig,
+    ) -> axum::Router {
+        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+            .await
+            .expect("sqlite memory db");
+        sqlx::migrate!("./migrations/sqlite")
+            .run(db.pool())
+            .await
+            .expect("migrations");
+        let state = AppState {
+            client: Client::new(),
+            db,
+            context_name: "default".to_owned(),
+            runner_auth_key: None,
+            auth,
+            rps_per_node: 1000,
+            scheduler: ExecutionScheduler::new(Default::default()),
+            executions: Arc::new(RwLock::new(HashMap::new())),
+            e2e_queues: Arc::new(RwLock::new(HashMap::new())),
+            mcp_sessions: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        build_app_with_config(
+            state,
+            &McpConfig {
+                enabled: false,
+                path: "/mcp".to_owned(),
+            },
+            app_config,
+        )
+    }
+
+    async fn test_app_with_auth(auth: AuthRuntime) -> axum::Router {
+        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+            .await
+            .expect("sqlite memory db");
+        sqlx::migrate!("./migrations/sqlite")
+            .run(db.pool())
+            .await
+            .expect("migrations");
+        let state = AppState {
+            client: Client::new(),
+            db,
+            context_name: "default".to_owned(),
+            runner_auth_key: None,
+            auth,
+            rps_per_node: 1000,
+            scheduler: ExecutionScheduler::new(Default::default()),
+            executions: Arc::new(RwLock::new(HashMap::new())),
+            e2e_queues: Arc::new(RwLock::new(HashMap::new())),
+            mcp_sessions: Arc::new(RwLock::new(HashMap::new())),
+        };
+
+        build_app(
+            state,
+            &McpConfig {
+                enabled: true,
+                path: "/mcp".to_owned(),
+            },
+        )
+    }
+
+    fn protected_auth() -> AuthRuntime {
+        let config = AuthConfig::from_env_values(&[
+            ("PREVIA_AUTH_ANONYMOUS", "false"),
+            ("PREVIA_ROOT_USERNAME", "root"),
+            ("PREVIA_ROOT_PASSWORD", "secret"),
+            ("PREVIA_JWT_SECRET", "test-jwt-secret"),
+        ])
+        .expect("protected auth config");
+        AuthRuntime::from_config(config).expect("protected auth runtime")
+    }
+
+    fn protected_root_jwt(auth: &AuthRuntime) -> String {
+        auth.jwt
+            .as_ref()
+            .expect("jwt")
+            .issue(
+                "root",
+                "root",
+                crate::server::auth::permissions::Role::Root,
+                "env",
+            )
+            .expect("issue root jwt")
+    }
+
+    #[tokio::test]
+    async fn anonymous_login_returns_conflict() {
+        let app = test_app_with_auth(AuthRuntime::anonymous()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"root","password":"secret","clientKind":"app"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(payload["error"], "auth_disabled");
+    }
+
+    #[tokio::test]
+    async fn protected_mode_rejects_info_without_bearer() {
+        let app = test_app_with_auth(protected_auth()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/info")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn protected_mode_allows_static_app_shell_without_bearer() {
+        let app = test_app_with_auth_and_config(
+            protected_auth(),
+            AppConfig {
+                enabled: true,
+                mcp_path: Some("/mcp".to_owned()),
+            },
+        )
+        .await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn protected_app_login_returns_jwt() {
+        let app = test_app_with_auth(protected_auth()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"root","password":"secret","clientKind":"app"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(payload["tokenKind"], "jwt");
+        assert!(
+            payload["token"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
+        assert_eq!(payload["user"]["role"], "root");
+    }
+
+    #[tokio::test]
+    async fn protected_cli_login_returns_api_token() {
+        let app = test_app_with_auth(protected_auth()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"username":"root","password":"secret","clientKind":"api_token","tokenName":"cli"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(payload["tokenKind"], "api_token");
+        assert!(
+            payload["token"]
+                .as_str()
+                .is_some_and(|value| value.starts_with("pvk_"))
+        );
+        assert_eq!(payload["record"]["name"], "cli");
+    }
+
+    #[tokio::test]
+    async fn protected_api_token_can_access_info() {
+        let app = test_app_with_auth(protected_auth()).await;
+        let login = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"username":"root","password":"secret","clientKind":"api_token","tokenName":"cli"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(login.status(), StatusCode::OK);
+        let body = to_bytes(login.into_body(), usize::MAX).await.expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        let token = payload["token"].as_str().expect("api token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/info")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn protected_editor_jwt_cannot_mutate_runners() {
+        let auth = protected_auth();
+        let token = auth
+            .jwt
+            .as_ref()
+            .expect("jwt")
+            .issue(
+                "usr_editor",
+                "editor",
+                crate::server::auth::permissions::Role::Editor,
+                "database",
+            )
+            .expect("issue editor jwt");
+        let app = test_app_with_auth(auth).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/runners")
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"endpoint":"http://runner.example:55880"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn protected_root_can_create_user_and_database_user_can_login() {
+        let auth = protected_auth();
+        let token = protected_root_jwt(&auth);
+        let app = test_app_with_auth(auth).await;
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/users")
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"editor","password":"editor-secret","role":"editor","active":true}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let user = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(user["username"], "editor");
+        assert_eq!(user["role"], "editor");
+        assert!(user.get("password").is_none());
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/v1/users")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(listed.status(), StatusCode::OK);
+
+        let login = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"editor","password":"editor-secret","clientKind":"app"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(login.status(), StatusCode::OK);
+        let body = to_bytes(login.into_body(), usize::MAX).await.expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(payload["tokenKind"], "jwt");
+        assert_eq!(payload["user"]["role"], "editor");
+    }
+
+    #[tokio::test]
+    async fn protected_editor_cannot_manage_api_tokens() {
+        let auth = protected_auth();
+        let token = auth
+            .jwt
+            .as_ref()
+            .expect("jwt")
+            .issue(
+                "usr_editor",
+                "editor",
+                crate::server::auth::permissions::Role::Editor,
+                "database",
+            )
+            .expect("issue editor jwt");
+        let app = test_app_with_auth(auth).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/api-tokens")
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"editor-token","role":"editor"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     async fn initialize_mcp_session(app: &axum::Router) -> String {
@@ -701,6 +1112,7 @@ mod tests {
                 db,
                 context_name: "default".to_owned(),
                 runner_auth_key: None,
+                auth: crate::server::auth::AuthRuntime::anonymous(),
                 rps_per_node: 1000,
                 scheduler: ExecutionScheduler::new(Default::default()),
                 executions: Arc::new(RwLock::new(HashMap::new())),

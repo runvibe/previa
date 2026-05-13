@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { CircleHelp, EllipsisVertical, Github, Server } from "lucide-react";
+import { CircleHelp, EllipsisVertical, Github, ShieldCheck, Server } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
 
 import { AppHeader } from "@/components/AppHeader";
 import { EventsPanel } from "@/components/EventsPanel";
 import { InstallAppButton } from "@/components/InstallAppButton";
 import { OnboardingModal } from "@/components/OnboardingModal";
+import { SpecSyncNotifier } from "@/components/SpecSyncNotifier";
 import { Button } from "@/components/ui/button";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import {
@@ -13,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuthStore } from "@/stores/useAuthStore";
 
 export interface AppHeaderConfig {
   projectName?: string;
@@ -82,6 +84,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const orchestratorInfo = useOrchestratorStore((state) => state.info);
   const fetchOrchestratorInfo = useOrchestratorStore((state) => state.fetchInfo);
+  const currentUser = useAuthStore((state) => state.user);
   const [headerConfig, setHeaderConfigState] = useState<AppHeaderConfig>({});
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
@@ -131,9 +134,22 @@ export function AppShell() {
         hasUnavailableRunners={hasUnavailableRunners}
         onClick={() => navigate("/runners")}
       />
+      {currentUser?.role === "root" || currentUser?.role === "admin" ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 rounded-full"
+          onClick={() => navigate("/access")}
+          aria-label="Gerenciar acesso"
+          title="Acesso"
+        >
+          <ShieldCheck className="h-4 w-4" />
+        </Button>
+      ) : null}
       {headerConfig.headerActions}
     </>
-  ), [handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, navigate]);
+  ), [currentUser?.role, handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, navigate]);
 
   const mobileHeaderActions = useMemo(() => (
     <DropdownMenu open={isMobileActionsOpen} onOpenChange={setIsMobileActionsOpen}>
@@ -193,6 +209,24 @@ export function AppShell() {
               }}
             />
           </MobileHeaderActionRow>
+          {currentUser?.role === "root" || currentUser?.role === "admin" ? (
+            <MobileHeaderActionRow label="Acesso">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-full"
+                onClick={() => {
+                  navigate("/access");
+                  setIsMobileActionsOpen(false);
+                }}
+                aria-label="Gerenciar acesso"
+                title="Acesso"
+              >
+                <ShieldCheck className="h-4 w-4" />
+              </Button>
+            </MobileHeaderActionRow>
+          ) : null}
           <MobileHeaderActionRow label="Eventos">
             <EventsPanel />
           </MobileHeaderActionRow>
@@ -204,7 +238,7 @@ export function AppShell() {
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
-  ), [handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, isMobileActionsOpen, navigate]);
+  ), [currentUser?.role, handleOpenOnboarding, hasUnavailableRunners, headerConfig.headerActions, isMobileActionsOpen, navigate]);
 
   return (
     <AppHeaderContext.Provider value={setHeaderConfig}>
@@ -214,6 +248,7 @@ export function AppShell() {
           headerActions={shellHeaderActions}
           mobileHeaderActions={mobileHeaderActions}
         />
+        <SpecSyncNotifier />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <Outlet />
         </div>

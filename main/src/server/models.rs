@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::server::auth::permissions::Role;
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestRequest {
@@ -23,6 +25,143 @@ pub struct LoadTestRequest {
     pub specs: Vec<RuntimeSpec>,
     #[serde(default)]
     pub env_groups: Vec<RuntimeEnvGroup>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthClientKind {
+    App,
+    ApiToken,
+}
+
+impl Default for AuthClientKind {
+    fn default() -> Self {
+        Self::App
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthLoginRequest {
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub client_kind: AuthClientKind,
+    #[serde(default)]
+    pub token_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthTokenKind {
+    Jwt,
+    ApiToken,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthPrincipalSource {
+    Env,
+    Database,
+    Anonymous,
+    ApiToken,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthUserResponse {
+    pub id: String,
+    pub username: String,
+    pub role: Role,
+    pub source: AuthPrincipalSource,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiTokenRecord {
+    pub id: String,
+    pub name: String,
+    pub token_prefix: String,
+    pub role: Role,
+    pub active: bool,
+    pub expires_at: Option<String>,
+    pub created_by_username: String,
+    pub last_used_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthLoginResponse {
+    pub token_kind: AuthTokenKind,
+    pub token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<AuthUserResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record: Option<ApiTokenRecord>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApiTokenCreateRequest {
+    pub name: String,
+    pub role: Role,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApiTokenUpdateRequest {
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiTokenCreateResponse {
+    pub token: String,
+    pub record: ApiTokenRecord,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UserRecord {
+    pub id: String,
+    pub username: String,
+    pub role: Role,
+    pub active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserCreateRequest {
+    pub username: String,
+    pub password: String,
+    pub role: Role,
+    #[serde(default = "default_user_active")]
+    pub active: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserUpdateRequest {
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub role: Option<Role>,
+    #[serde(default)]
+    pub active: Option<bool>,
+}
+
+fn default_user_active() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

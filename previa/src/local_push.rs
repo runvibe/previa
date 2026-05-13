@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use urlencoding::encode;
 
+use crate::auth::{apply_optional_bearer, auth_path_for_context, auth_path_for_url};
 use crate::cli::LocalPushArgs;
+use crate::paths::PreviaPaths;
 
 const PROJECT_EXPORT_FORMAT: &str = "previa.project.export.v1";
 
@@ -65,26 +67,47 @@ struct ApiErrorResponse {
 }
 
 pub async fn push_project(
+    paths: &PreviaPaths,
     http: &Client,
     local_base_url: &str,
     args: &LocalPushArgs,
 ) -> Result<LocalPushOutcome> {
     let remote_base_url = normalize_remote_url(&args.to)?;
-    push_project_between(http, local_base_url, &remote_base_url, args).await
+    let local_auth = auth_path_for_context(paths, &args.context)?;
+    let remote_auth = auth_path_for_url(paths, &remote_base_url);
+    push_project_between(
+        http,
+        local_base_url,
+        Some(&local_auth),
+        &remote_base_url,
+        Some(&remote_auth),
+        args,
+    )
+    .await
 }
 
 async fn push_project_between(
     http: &Client,
     local_base_url: &str,
+    local_auth_path: Option<&std::path::PathBuf>,
     remote_base_url: &str,
+    remote_auth_path: Option<&std::path::PathBuf>,
     args: &LocalPushArgs,
 ) -> Result<LocalPushOutcome> {
     let local_base_url = trim_base_url(local_base_url)?;
     let remote_base_url = trim_base_url(remote_base_url)?;
-    let local_project = resolve_project(http, local_base_url, &args.project, "local").await?;
+    let local_project = resolve_project(
+        http,
+        local_base_url,
+        local_auth_path,
+        &args.project,
+        "local",
+    )
+    .await?;
     let envelope = export_project(
         http,
         local_base_url,
+        local_auth_path,
         &local_project.id,
         args.include_history,
         "local",
@@ -99,9 +122,17 @@ async fn push_project_between(
     }
 
     let remote_existing = if let Some(remote_project_id) = args.remote_project_id.as_deref() {
-        load_project_by_id(http, remote_base_url, remote_project_id, "remote").await?
+        load_project_by_id(
+            http,
+            remote_base_url,
+            remote_auth_path,
+            remote_project_id,
+            "remote",
+        )
+        .await?
     } else {
-        resolve_existing_remote_project(http, remote_base_url, &envelope.project).await?
+        resolve_existing_remote_project(http, remote_base_url, remote_auth_path, &envelope.project)
+            .await?
     };
 
     if let Some(remote_project) = remote_existing.as_ref() {
@@ -113,10 +144,17 @@ async fn push_project_between(
             );
         }
 
-        delete_project(http, remote_base_url, &remote_project.id).await?;
+        delete_project(http, remote_base_url, remote_auth_path, &remote_project.id).await?;
     }
 
-    let imported = import_project(http, remote_base_url, &envelope, args.include_history).await?;
+    let imported = import_project(
+        http,
+        remote_base_url,
+        remote_auth_path,
+        &envelope,
+        args.include_history,
+    )
+    .await?;
 
     Ok(LocalPushOutcome {
         project_id: imported.project_id,
@@ -151,13 +189,16 @@ fn trim_base_url(raw: &str) -> Result<&str> {
 async fn resolve_existing_remote_project(
     http: &Client,
     remote_base_url: &str,
+    auth_path: Option<&std::path::PathBuf>,
     project: &ProjectExportProject,
 ) -> Result<Option<ProjectRecord>> {
-    if let Some(project) = load_project_by_id(http, remote_base_url, &project.id, "remote").await? {
+    if let Some(project) =
+        load_project_by_id(http, remote_base_url, auth_path, &project.id, "remote").await?
+    {
         return Ok(Some(project));
     }
 
-    let matches = list_all_projects(http, remote_base_url, "remote")
+    let matches = list_all_projects(http, remote_base_url, auth_path, "remote")
         .await?
         .into_iter()
         .filter(|remote| remote.name == project.name)
@@ -184,14 +225,15 @@ async fn resolve_existing_remote_project(
 async fn resolve_project(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     selector: &str,
     label: &str,
 ) -> Result<ProjectRecord> {
-    if let Some(project) = load_project_by_id(http, api_base, selector, label).await? {
+    if let Some(project) = load_project_by_id(http, api_base, auth_path, selector, label).await? {
         return Ok(project);
     }
 
-    let matches = list_all_projects(http, api_base, label)
+    let matches = list_all_projects(http, api_base, auth_path, label)
         .await?
         .into_iter()
         .filter(|project| project.name == selector)
@@ -218,12 +260,17 @@ async fn resolve_project(
 async fn load_project_by_id(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     selector: &str,
     label: &str,
 ) -> Result<Option<ProjectRecord>> {
     let url = format!("{}/api/v1/projects/{}", api_base, encode(selector));
-    let response = http
-        .get(&url)
+    let request = http.get(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to query {label} project API at '{url}'"))?;
@@ -250,6 +297,7 @@ async fn load_project_by_id(
 async fn list_all_projects(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     label: &str,
 ) -> Result<Vec<ProjectRecord>> {
     let mut offset = 0u32;
@@ -258,8 +306,12 @@ async fn list_all_projects(
 
     loop {
         let url = format!("{api_base}/api/v1/projects?limit={limit}&offset={offset}");
-        let response = http
-            .get(&url)
+        let request = http.get(&url);
+        let request = match auth_path {
+            Some(path) => apply_optional_bearer(request, path)?,
+            None => request,
+        };
+        let response = request
             .send()
             .await
             .with_context(|| format!("failed to query {label} projects API at '{url}'"))?;
@@ -291,6 +343,7 @@ async fn list_all_projects(
 async fn export_project(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     project_id: &str,
     include_history: bool,
     label: &str,
@@ -301,8 +354,12 @@ async fn export_project(
         encode(project_id),
         include_history
     );
-    let response = http
-        .get(&url)
+    let request = http.get(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to export {label} project at '{url}'"))?;
@@ -319,10 +376,19 @@ async fn export_project(
         .with_context(|| format!("failed to decode {label} project export from '{url}'"))
 }
 
-async fn delete_project(http: &Client, api_base: &str, project_id: &str) -> Result<()> {
+async fn delete_project(
+    http: &Client,
+    api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
+    project_id: &str,
+) -> Result<()> {
     let url = format!("{}/api/v1/projects/{}", api_base, encode(project_id));
-    let response = http
-        .delete(&url)
+    let request = http.delete(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to delete remote project at '{url}'"))?;
@@ -339,12 +405,17 @@ async fn delete_project(http: &Client, api_base: &str, project_id: &str) -> Resu
 async fn import_project(
     http: &Client,
     api_base: &str,
+    auth_path: Option<&std::path::PathBuf>,
     envelope: &ProjectExportEnvelope,
     include_history: bool,
 ) -> Result<ProjectImportResponse> {
     let url = format!("{api_base}/api/v1/projects/import?includeHistory={include_history}");
-    let response = http
-        .post(&url)
+    let request = http.post(&url);
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request
         .header("content-type", "application/json")
         .json(envelope)
         .send()
@@ -559,7 +630,7 @@ mod tests {
             ..push_args(false)
         };
 
-        let outcome = push_project_between(&http, &local_url, &remote_url, &args)
+        let outcome = push_project_between(&http, &local_url, None, &remote_url, None, &args)
             .await
             .expect("push succeeds");
 
@@ -589,7 +660,7 @@ mod tests {
             ..push_args(false)
         };
 
-        let err = push_project_between(&http, &local_url, &remote_url, &args)
+        let err = push_project_between(&http, &local_url, None, &remote_url, None, &args)
             .await
             .expect_err("push should fail");
 
@@ -616,7 +687,7 @@ mod tests {
             ..push_args(true)
         };
 
-        let outcome = push_project_between(&http, &local_url, &remote_url, &args)
+        let outcome = push_project_between(&http, &local_url, None, &remote_url, None, &args)
             .await
             .expect("push succeeds");
 

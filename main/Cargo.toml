@@ -12,13 +12,19 @@ publish = true
 [dependencies]
 axum = { workspace = true }
 async-stream = "0.3"
+argon2 = "0.5"
+base64 = "0.22"
 dotenvy = { workspace = true }
 either = "1"
 futures-core = "0.3"
 futures-util = "0.3"
+hmac = "0.12"
 include_dir = "0.7"
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
+subtle = "2"
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }

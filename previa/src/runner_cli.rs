@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use urlencoding::encode;
 
+use crate::auth::{apply_optional_bearer, auth_path_for_context};
 use crate::browser::main_url;
 use crate::cli::{RunnerAddArgs, RunnerArgs, RunnerCommands, RunnerListArgs, RunnerSelectorArgs};
 use crate::paths::PreviaPaths;
@@ -59,7 +60,8 @@ pub async fn run_runner_cli(paths: &PreviaPaths, http: &Client, args: RunnerArgs
 
 async fn list_runners(paths: &PreviaPaths, http: &Client, args: RunnerListArgs) -> Result<()> {
     let base_url = context_base_url(paths, &args.context)?;
-    let runners = fetch_runners(http, &base_url).await?;
+    let auth_path = auth_path_for_context(paths, &args.context)?;
+    let runners = fetch_runners(http, &base_url, Some(&auth_path)).await?;
 
     if args.json {
         println!(
@@ -75,16 +77,17 @@ async fn list_runners(paths: &PreviaPaths, http: &Client, args: RunnerListArgs) 
 
 async fn add_runner(paths: &PreviaPaths, http: &Client, args: RunnerAddArgs) -> Result<()> {
     let base_url = context_base_url(paths, &args.context)?;
-    let response = http
-        .post(format!("{base_url}/api/v1/runners"))
-        .json(&RunnerUpsertBody {
-            endpoint: &args.endpoint,
-            name: args.name.as_deref(),
-            enabled: Some(!args.disabled),
-        })
-        .send()
-        .await
-        .context("failed to call runner API")?;
+    let auth_path = auth_path_for_context(paths, &args.context)?;
+    let response =
+        apply_optional_bearer(http.post(format!("{base_url}/api/v1/runners")), &auth_path)?
+            .json(&RunnerUpsertBody {
+                endpoint: &args.endpoint,
+                name: args.name.as_deref(),
+                enabled: Some(!args.disabled),
+            })
+            .send()
+            .await
+            .context("failed to call runner API")?;
     let runner: RunnerRecord = response_json(response, "add runner").await?;
     println!(
         "{} runner '{}' ({})",
@@ -106,16 +109,19 @@ async fn set_runner_enabled(
     enabled: bool,
 ) -> Result<()> {
     let base_url = context_base_url(paths, &args.context)?;
-    let runner_id = resolve_runner_id(http, &base_url, &args.selector).await?;
-    let response = http
-        .patch(format!("{base_url}/api/v1/runners/{}", encode(&runner_id)))
-        .json(&RunnerUpdateBody {
-            name: None,
-            enabled: Some(enabled),
-        })
-        .send()
-        .await
-        .context("failed to call runner API")?;
+    let auth_path = auth_path_for_context(paths, &args.context)?;
+    let runner_id = resolve_runner_id(http, &base_url, Some(&auth_path), &args.selector).await?;
+    let response = apply_optional_bearer(
+        http.patch(format!("{base_url}/api/v1/runners/{}", encode(&runner_id))),
+        &auth_path,
+    )?
+    .json(&RunnerUpdateBody {
+        name: None,
+        enabled: Some(enabled),
+    })
+    .send()
+    .await
+    .context("failed to call runner API")?;
     let runner: RunnerRecord = response_json(response, "update runner").await?;
     println!(
         "{} runner '{}' ({})",
@@ -128,12 +134,15 @@ async fn set_runner_enabled(
 
 async fn remove_runner(paths: &PreviaPaths, http: &Client, args: RunnerSelectorArgs) -> Result<()> {
     let base_url = context_base_url(paths, &args.context)?;
-    let runner_id = resolve_runner_id(http, &base_url, &args.selector).await?;
-    let response = http
-        .delete(format!("{base_url}/api/v1/runners/{}", encode(&runner_id)))
-        .send()
-        .await
-        .context("failed to call runner API")?;
+    let auth_path = auth_path_for_context(paths, &args.context)?;
+    let runner_id = resolve_runner_id(http, &base_url, Some(&auth_path), &args.selector).await?;
+    let response = apply_optional_bearer(
+        http.delete(format!("{base_url}/api/v1/runners/{}", encode(&runner_id))),
+        &auth_path,
+    )?
+    .send()
+    .await
+    .context("failed to call runner API")?;
     ensure_success(response, "remove runner").await?;
     println!("removed runner '{}'", args.selector);
     Ok(())
@@ -151,8 +160,13 @@ fn context_base_url(paths: &PreviaPaths, context: &str) -> Result<String> {
     Ok(main_url(&state.main.address, state.main.port))
 }
 
-async fn resolve_runner_id(http: &Client, base_url: &str, selector: &str) -> Result<String> {
-    let runners = fetch_runners(http, base_url).await?;
+async fn resolve_runner_id(
+    http: &Client,
+    base_url: &str,
+    auth_path: Option<&std::path::PathBuf>,
+    selector: &str,
+) -> Result<String> {
+    let runners = fetch_runners(http, base_url, auth_path).await?;
     let normalized_endpoint = normalize_endpoint(selector);
     let matches = runners
         .into_iter()
@@ -170,12 +184,17 @@ async fn resolve_runner_id(http: &Client, base_url: &str, selector: &str) -> Res
     }
 }
 
-async fn fetch_runners(http: &Client, base_url: &str) -> Result<Vec<RunnerRecord>> {
-    let response = http
-        .get(format!("{base_url}/api/v1/runners"))
-        .send()
-        .await
-        .context("failed to call runner API")?;
+async fn fetch_runners(
+    http: &Client,
+    base_url: &str,
+    auth_path: Option<&std::path::PathBuf>,
+) -> Result<Vec<RunnerRecord>> {
+    let request = http.get(format!("{base_url}/api/v1/runners"));
+    let request = match auth_path {
+        Some(path) => apply_optional_bearer(request, path)?,
+        None => request,
+    };
+    let response = request.send().await.context("failed to call runner API")?;
     response_json(response, "list runners").await
 }
 

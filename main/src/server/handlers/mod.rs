@@ -1,4 +1,6 @@
+pub mod api_tokens;
 pub mod app;
+pub mod auth;
 pub mod env_groups;
 pub mod executions;
 pub mod health;
@@ -13,3 +15,4 @@ pub mod tests_e2e;
 pub mod tests_e2e_queue;
 pub mod tests_load;
 pub mod transfers;
+pub mod users;

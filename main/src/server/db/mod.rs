@@ -1,3 +1,4 @@
+pub mod api_tokens;
 pub mod common;
 pub mod e2e_queues;
 pub mod env_groups;
@@ -10,6 +11,7 @@ pub mod runner_reservations;
 pub mod runners;
 pub mod specs;
 pub mod transfers;
+pub mod users;
 
 pub use common::project_exists;
 pub use e2e_queues::{
@@ -168,3 +170,11 @@ mod runner_registry_tests {
         );
     }
 }
+pub use api_tokens::{
+    ApiTokenInsert, delete_api_token_record, insert_api_token_record, list_api_token_records,
+    load_api_token_auth_record_by_hash, set_api_token_active, update_api_token_last_used,
+};
+pub use users::{
+    UserInsert, UserUpdate, delete_user_record, insert_user_record, list_user_records,
+    load_user_auth_record_by_username, update_user_record,
+};

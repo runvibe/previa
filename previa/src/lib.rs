@@ -1,3 +1,4 @@
+mod auth;
 mod browser;
 mod cli;
 mod compose;
@@ -29,6 +30,7 @@ use clap::Parser;
 use reqwest::Client;
 use tokio::time::sleep;
 
+use crate::auth::{run_login, run_logout, run_token, run_whoami};
 use crate::browser::{build_open_url, open_browser};
 use crate::cli::{
     Cli, Commands, DownArgs, ExportArgs, ExportTarget, InitArgs, LocalArgs, LocalCommands,
@@ -78,6 +80,10 @@ pub async fn run() -> Result<()> {
         .context("failed to build HTTP client")?;
 
     match cli.command {
+        Commands::Login(args) => run_login(&paths, &http, args).await,
+        Commands::Logout(args) => run_logout(&paths, args).await,
+        Commands::Whoami(args) => run_whoami(&paths, &http, args).await,
+        Commands::Token(args) => run_token(&paths, &http, args).await,
         Commands::Init(args) => cmd_init(args),
         Commands::Local(args) => cmd_local(&paths, &http, args).await,
         Commands::Up(args) => cmd_up(&paths, &http, args).await,
@@ -134,7 +140,7 @@ async fn cmd_local_push(
         .timeout(Duration::from_secs(30))
         .build()
         .context("failed to build HTTP client")?;
-    let outcome = push_project(&http, &local_base_url, &args).await?;
+    let outcome = push_project(paths, &http, &local_base_url, &args).await?;
 
     if let Some(replaced) = outcome.remote_project_replaced.as_deref() {
         println!(
@@ -170,8 +176,8 @@ async fn cmd_local_import(paths: &PreviaPaths, args: LocalImportArgs) -> Result<
         .context("failed to build HTTP client")?;
     let include_history = !args.no_history;
     let url = format!("{local_base_url}/api/v1/projects/import?includeHistory={include_history}");
-    let response = http
-        .post(&url)
+    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+    let response = crate::auth::apply_optional_bearer(http.post(&url), &auth_path)?
         .header("content-type", "application/vnd.sqlite3")
         .body(bytes)
         .send()
@@ -246,8 +252,8 @@ async fn cmd_local_export(paths: &PreviaPaths, args: LocalExportArgs) -> Result<
         .build()
         .context("failed to build HTTP client")?;
     let url = format!("{local_base_url}/api/v1/projects/export");
-    let response = http
-        .post(&url)
+    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+    let response = crate::auth::apply_optional_bearer(http.post(&url), &auth_path)?
         .json(&body)
         .send()
         .await
@@ -346,9 +352,15 @@ async fn cmd_up(paths: &PreviaPaths, http: &Client, args: UpArgs) -> Result<()> 
                     stack_name, state.main.address, state.main.port
                 );
                 if let Some(import_config) = import_config.as_ref() {
-                    let outcome =
-                        import_pipelines(http, &state.main.address, state.main.port, import_config)
-                            .await?;
+                    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+                    let outcome = import_pipelines(
+                        http,
+                        &state.main.address,
+                        state.main.port,
+                        Some(&auth_path),
+                        import_config,
+                    )
+                    .await?;
                     println!(
                         "imported {} pipeline(s) into stack '{}' ({})",
                         outcome.pipelines_imported, outcome.stack_name, outcome.project_id
@@ -377,9 +389,15 @@ async fn cmd_up(paths: &PreviaPaths, http: &Client, args: UpArgs) -> Result<()> 
                     stack_name, state.main.address, state.main.port
                 );
                 if let Some(import_config) = import_config.as_ref() {
-                    let outcome =
-                        import_pipelines(http, &state.main.address, state.main.port, import_config)
-                            .await?;
+                    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+                    let outcome = import_pipelines(
+                        http,
+                        &state.main.address,
+                        state.main.port,
+                        Some(&auth_path),
+                        import_config,
+                    )
+                    .await?;
                     println!(
                         "imported {} pipeline(s) into stack '{}' ({})",
                         outcome.pipelines_imported, outcome.stack_name, outcome.project_id
@@ -699,8 +717,15 @@ async fn cmd_export(paths: &PreviaPaths, http: &Client, args: ExportArgs) -> Res
             let stack_name = parse_stack_name(&args.context)?;
             let stack_paths = paths.stack(&stack_name);
             let state = read_required_state(&stack_paths)?;
-            let outcome =
-                export_pipelines(http, &state.main.address, state.main.port, &args).await?;
+            let auth_path = crate::auth::auth_path_for_context(paths, &args.context)?;
+            let outcome = export_pipelines(
+                http,
+                &state.main.address,
+                state.main.port,
+                Some(&auth_path),
+                &args,
+            )
+            .await?;
 
             println!(
                 "exported {} pipeline(s) from project '{}' ({}) to '{}' as {}",
