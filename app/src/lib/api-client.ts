@@ -189,6 +189,17 @@ export interface RunnerUpdateRequest {
   enabled?: boolean;
 }
 
+export interface LoadCapacityPreviewRequest {
+  targetRps: number;
+}
+
+export interface LoadCapacityPreviewResponse {
+  targetRps: number;
+  rpsPerRunner: number;
+  estimatedRunnerCount: number;
+  capacityMode: "static" | "kubernetes" | string;
+}
+
 // ============ Helper ============
 
 function simpleHash(input: string): string {
@@ -647,6 +658,17 @@ export async function deleteLoadHistory(
     `${ensureApiPrefix(baseUrl)}/projects/${projectId}/tests/load${params}`,
     { method: "DELETE" }
   );
+}
+
+export async function previewLoadCapacity(
+  baseUrl: string,
+  payload: LoadCapacityPreviewRequest,
+): Promise<LoadCapacityPreviewResponse> {
+  return request<LoadCapacityPreviewResponse>(`${ensureApiPrefix(baseUrl)}/tests/load/capacity-preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 // ============ History Mapping ============

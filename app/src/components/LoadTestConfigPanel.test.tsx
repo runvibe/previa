@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LoadTestConfigPanel } from "@/components/LoadTestConfigPanel";
 import type { WaveLoadConfig } from "@/types/load-test";
@@ -25,6 +25,13 @@ vi.mock("react-i18next", () => ({
         "loadTest.interpolationSmooth": "Smooth",
         "loadTest.interpolationLinear": "Linear",
         "loadTest.interpolationStep": "Step",
+        "loadTest.targetRps": "Global target RPS",
+        "loadTest.targetRps.help": "Total desired RPS for the whole load test.",
+        "loadTest.capacityPreview": "Capacity preview",
+        "loadTest.capacityPreview.runners": "Estimated runners",
+        "loadTest.capacityPreview.rpsPerRunner": "RPS per runner",
+        "loadTest.capacityPreview.mode": "Capacity mode",
+        "loadTest.capacityPreview.unavailable": "Capacity preview unavailable",
         "loadTest.runnerMaxRps": "RPS limit per runner",
         "loadTest.gracePeriod": "Grace period",
         "loadTest.wavePreview": "Wave editor",
@@ -39,6 +46,10 @@ vi.mock("react-i18next", () => ({
     },
   }),
 }));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const pipeline: Pipeline = {
   id: "pipeline-1",
@@ -181,6 +192,70 @@ describe("LoadTestConfigPanel", () => {
       const latest = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
       expect(latest.runnerMaxRps).toBe(750);
     });
+  });
+
+  it("emits global target RPS separately from the per-runner limit", async () => {
+    const onConfigChange = renderPanel(vi.fn(), {
+      points: [
+        { atMs: 0, intensity: 10 },
+        { atMs: 120_000, intensity: 80 },
+      ],
+      interpolation: "smooth",
+      runnerMaxRps: 500,
+      gracePeriodMs: 30_000,
+    }, 3);
+
+    expect(screen.getByText("Global target RPS")).toBeInTheDocument();
+    expect(screen.getByText("500 RPS")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure manually Global target RPS" }));
+    fireEvent.change(screen.getByLabelText("Global target RPS"), { target: { value: "2500" } });
+    fireEvent.blur(screen.getByLabelText("Global target RPS"));
+
+    await waitFor(() => {
+      const latestConfig = onConfigChange.mock.calls.at(-1)?.[0] as WaveLoadConfig;
+      const latestTargetRps = onConfigChange.mock.calls.at(-1)?.[2] as number;
+      expect(latestConfig.runnerMaxRps).toBe(500);
+      expect(latestTargetRps).toBe(2500);
+    });
+  });
+
+  it("shows capacity preview for the global target RPS", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        targetRps: 2500,
+        rpsPerRunner: 1000,
+        estimatedRunnerCount: 3,
+        capacityMode: "kubernetes",
+      }),
+    } as Response);
+
+    render(
+      <LoadTestConfigPanel
+        pipeline={pipeline}
+        onStart={vi.fn()}
+        onConfigChange={vi.fn()}
+        initialTargetRps={2500}
+        executionBackendUrl="http://localhost:5589"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Capacity preview")).toBeInTheDocument();
+      expect(screen.getByText("Estimated runners")).toBeInTheDocument();
+      expect(screen.getByText("3")).toBeInTheDocument();
+      expect(screen.getByText("1,000 RPS")).toBeInTheDocument();
+      expect(screen.getByText("kubernetes")).toBeInTheDocument();
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://localhost:5589/api/v1/tests/load/capacity-preview",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ targetRps: 2500 }),
+      }),
+    );
   });
 
   it("shows planned request values below each wave point", () => {

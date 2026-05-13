@@ -36,7 +36,7 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   const { t } = useTranslation();
   const store = useLoadTestHistoryStore();
   const isMobile = useIsMobile();
-  const pendingConfigRef = useRef<{ config: LoadRunConfig; selectedBaseUrlKey?: string } | null>(null);
+  const pendingConfigRef = useRef<{ config: LoadRunConfig; selectedBaseUrlKey?: string; targetRps?: number } | null>(null);
   const [historyCollapsed, setHistoryCollapsedState] = useState(() => getTestHistoryCollapsed("loadtest"));
 
   const setHistoryCollapsed = useCallback((collapsed: boolean) => {
@@ -69,7 +69,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
           pendingConfigRef.current.selectedBaseUrlKey,
           specs,
           envGroups,
-          selectedEnvGroupSlug
+          selectedEnvGroupSlug,
+          pendingConfigRef.current.targetRps,
         );
       }
     };
@@ -81,8 +82,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   }, [projectId, pipelineIndex, executionBackendUrl]);
 
 
-  const handleStart = useCallback((cfg: LoadRunConfig, selectedBaseUrlKey?: string) => {
-    store.runTest(pipeline, pipelineIndex, projectId, cfg, executionBackendUrl, selectedBaseUrlKey, specs, envGroups, selectedEnvGroupSlug);
+  const handleStart = useCallback((cfg: LoadRunConfig, selectedBaseUrlKey?: string, targetRps?: number) => {
+    store.runTest(pipeline, pipelineIndex, projectId, cfg, executionBackendUrl, selectedBaseUrlKey, specs, envGroups, selectedEnvGroupSlug, targetRps);
   }, [pipeline, pipelineIndex, projectId, executionBackendUrl, specs, envGroups, selectedEnvGroupSlug]);
 
   const handleClearHistory = useCallback(async () => {
@@ -190,14 +191,15 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
           <LoadTestConfigPanel
             pipeline={pipeline}
             onStart={handleStart}
-            onConfigChange={(cfg, envKey) => {
-              pendingConfigRef.current = { config: cfg, selectedBaseUrlKey: envKey };
+            onConfigChange={(cfg, envKey, targetRps) => {
+              pendingConfigRef.current = { config: cfg, selectedBaseUrlKey: envKey, targetRps };
             }}
             lastAvgLatencyMs={lastAvgLatencyMs}
             initialConfig={config}
             envGroups={envGroups}
             selectedEnvGroupSlug={selectedEnvGroupSlug}
             runnerCount={nodesInfo?.nodesUsed}
+            executionBackendUrl={executionBackendUrl}
           />
         </div>
       </div>

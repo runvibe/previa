@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   parseIntegrationSnapshot,
   parseLoadExecutionSnapshot,
+  runRemoteLoadTest,
 } from "@/lib/remote-executor";
+import type { Pipeline } from "@/types/pipeline";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("remote execution snapshot parsing", () => {
   it("parses e2e execution snapshots into step results", () => {
@@ -199,5 +205,62 @@ describe("remote execution snapshot parsing", () => {
   it("ignores incompatible snapshot kinds", () => {
     expect(parseIntegrationSnapshot({ kind: "load" })).toBeNull();
     expect(parseLoadExecutionSnapshot({ kind: "e2e" })).toBeNull();
+  });
+});
+
+describe("remote load execution requests", () => {
+  it("sends global targetRps alongside the per-runner load profile", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      text: async () => "stop",
+    } as Response);
+    const pipeline: Pipeline = {
+      id: "pipeline-1",
+      name: "Pipeline",
+      description: null,
+      steps: [
+        {
+          id: "step-1",
+          name: "Step",
+          description: null,
+          method: "GET",
+          url: "https://example.com",
+          headers: {},
+        },
+      ],
+    };
+
+    runRemoteLoadTest(
+      "http://localhost:5589",
+      pipeline,
+      {
+        points: [
+          { atMs: 0, intensity: 10 },
+          { atMs: 60_000, intensity: 80 },
+        ],
+        interpolation: "smooth",
+        runnerMaxRps: 500,
+        gracePeriodMs: 30_000,
+      },
+      { onError: vi.fn() },
+      "project-1",
+      undefined,
+      0,
+      [],
+      [],
+      null,
+      2500,
+    );
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+
+    expect(requestBody).toMatchObject({
+      pipelineId: "pipeline-1",
+      targetRps: 2500,
+      load: {
+        runnerMaxRps: 500,
+      },
+    });
   });
 });

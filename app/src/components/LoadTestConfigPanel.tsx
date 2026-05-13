@@ -13,10 +13,14 @@ import { isWaveLoadConfig } from "@/types/load-test";
 import type { Pipeline } from "@/types/pipeline";
 import type { ProjectEnvGroup } from "@/types/project";
 import { formatPlannedRequests } from "@/lib/load-rps-chart";
+import { previewLoadCapacity, type LoadCapacityPreviewResponse } from "@/lib/api-client";
 
 const DEFAULT_RUNNER_MAX_RPS = 600;
 const MIN_RUNNER_MAX_RPS = 1;
 const MAX_RUNNER_MAX_RPS = 1000;
+const DEFAULT_TARGET_RPS = 1000;
+const MIN_TARGET_RPS = 1;
+const MAX_TARGET_RPS = 100_000;
 const DURATION_PRESETS = [
   { key: "1m", label: "1m", value: 60_000 },
   { key: "10m", label: "10m", value: 600_000 },
@@ -25,13 +29,15 @@ const DURATION_PRESETS = [
 
 interface LoadTestConfigPanelProps {
   pipeline: Pipeline;
-  onStart: (config: LoadRunConfig, selectedBaseUrlKey?: string) => void;
-  onConfigChange?: (config: LoadRunConfig, selectedBaseUrlKey?: string) => void;
+  onStart: (config: LoadRunConfig, selectedBaseUrlKey?: string, targetRps?: number) => void;
+  onConfigChange?: (config: LoadRunConfig, selectedBaseUrlKey?: string, targetRps?: number) => void;
   lastAvgLatencyMs?: number;
   initialConfig?: LoadRunConfig | null;
+  initialTargetRps?: number | null;
   envGroups?: ProjectEnvGroup[];
   selectedEnvGroupSlug?: string | null;
   runnerCount?: number;
+  executionBackendUrl?: string;
 }
 
 function HelpPopover({ text }: { text: string }) {
@@ -113,7 +119,7 @@ function SliderWithManual({
   );
 }
 
-export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, envGroups = [], selectedEnvGroupSlug, runnerCount = 1 }: LoadTestConfigPanelProps) {
+export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvgLatencyMs, initialConfig, initialTargetRps, envGroups = [], selectedEnvGroupSlug, runnerCount = 1, executionBackendUrl }: LoadTestConfigPanelProps) {
   const { t } = useTranslation();
   const initialWave = isWaveLoadConfig(initialConfig) ? initialConfig : defaultWaveConfig();
   const [points, setPoints] = useState<LoadPoint[]>(initialWave.points);
@@ -131,6 +137,15 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
     ),
   );
   const [gracePeriodMs, setGracePeriodMs] = useState(initialWave.gracePeriodMs ?? 30_000);
+  const [targetRps, setTargetRps] = useState(
+    clamp(
+      typeof initialTargetRps === "number" ? initialTargetRps : DEFAULT_TARGET_RPS,
+      MIN_TARGET_RPS,
+      MAX_TARGET_RPS,
+    ),
+  );
+  const [capacityPreview, setCapacityPreview] = useState<LoadCapacityPreviewResponse | null>(null);
+  const [capacityPreviewError, setCapacityPreviewError] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string | undefined>(undefined);
 
   const selectedEnvGroup = envGroups.find((group) => group.slug === selectedEnvGroupSlug);
@@ -146,8 +161,33 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
   };
 
   useEffect(() => {
-    onConfigChange?.(waveConfig, selectedEnv);
-  }, [points, durationMs, interpolation, runnerMaxRps, gracePeriodMs, selectedEnv, onConfigChange]);
+    onConfigChange?.(waveConfig, selectedEnv, targetRps);
+  }, [points, durationMs, interpolation, runnerMaxRps, gracePeriodMs, selectedEnv, targetRps, onConfigChange]);
+
+  useEffect(() => {
+    if (!executionBackendUrl) {
+      setCapacityPreview(null);
+      setCapacityPreviewError(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCapacityPreviewError(false);
+    previewLoadCapacity(executionBackendUrl, { targetRps })
+      .then((preview) => {
+        if (!cancelled) setCapacityPreview(preview);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCapacityPreview(null);
+          setCapacityPreviewError(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [executionBackendUrl, targetRps]);
 
   const setPoint = (index: number, patch: Partial<LoadPoint>) => {
     setPoints((current) =>
@@ -245,6 +285,52 @@ export function LoadTestConfigPanel({ pipeline, onStart, onConfigChange, lastAvg
             </SelectContent>
           </Select>
         </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs font-medium">{t("loadTest.targetRps")}</Label>
+              <HelpPopover text={t("loadTest.targetRps.help")} />
+            </div>
+            <span className="text-xs font-bold text-primary">{targetRps.toLocaleString()} RPS</span>
+          </div>
+          <SliderWithManual
+            value={targetRps}
+            onChange={setTargetRps}
+            min={MIN_TARGET_RPS}
+            max={MAX_TARGET_RPS}
+            step={1}
+            suffix="RPS"
+            ariaLabel={t("loadTest.targetRps")}
+            manualButtonLabel={`${t("loadTest.configureManually")} ${t("loadTest.targetRps")}`}
+          />
+        </div>
+
+        {(capacityPreview || capacityPreviewError) && (
+          <div className="rounded-md border border-border/60 px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("loadTest.capacityPreview")}
+            </p>
+            {capacityPreview ? (
+              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <p className="text-[10px] text-muted-foreground">{t("loadTest.capacityPreview.runners")}</p>
+                  <p className="font-semibold">{capacityPreview.estimatedRunnerCount.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">{t("loadTest.capacityPreview.rpsPerRunner")}</p>
+                  <p className="font-semibold">{capacityPreview.rpsPerRunner.toLocaleString()} RPS</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">{t("loadTest.capacityPreview.mode")}</p>
+                  <p className="font-semibold">{capacityPreview.capacityMode}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">{t("loadTest.capacityPreview.unavailable")}</p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">

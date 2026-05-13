@@ -1476,7 +1476,8 @@ export function runRemoteLoadTest(
   pipelineIndex?: number,
   specs?: Array<{ slug: string; servers: Record<string, string> }>,
   envGroups?: Array<{ slug: string; urls: Record<string, string> }>,
-  selectedEnvGroupSlug?: string | null
+  selectedEnvGroupSlug?: string | null,
+  targetRps?: number,
 ): RemoteLoadTestController {
   const abortController = new AbortController();
   const transactionId = generateUUID();
@@ -1554,6 +1555,7 @@ export function runRemoteLoadTest(
       const body = {
         pipelineId: pipeline.id,
         ...(isWaveLoadConfig(config) ? { load: config } : { config }),
+        ...(typeof targetRps === "number" && Number.isFinite(targetRps) ? { targetRps } : {}),
         selectedBaseUrlKey,
         selectedEnvGroupSlug,
         pipelineIndex,

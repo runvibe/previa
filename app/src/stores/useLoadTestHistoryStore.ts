@@ -60,7 +60,8 @@ interface LoadTestHistoryState {
     selectedBaseUrlKey?: string,
     specs?: import("@/types/project").ProjectSpec[],
     envGroups?: import("@/types/project").ProjectEnvGroup[],
-    selectedEnvGroupSlug?: string | null
+    selectedEnvGroupSlug?: string | null,
+    targetRps?: number
   ) => void;
   cancelTest: () => void;
   resetTest: () => void;
@@ -108,7 +109,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
 
   // ── Execution actions ──
 
-  runTest: (pipeline, pipelineIndex, projectId, cfg, executionBackendUrl?, selectedBaseUrlKey?, specs?, envGroups?, selectedEnvGroupSlug?) => {
+  runTest: (pipeline, pipelineIndex, projectId, cfg, executionBackendUrl?, selectedBaseUrlKey?, specs?, envGroups?, selectedEnvGroupSlug?, targetRps?) => {
     // selectedBaseUrlKey is kept for remote compat but unused locally
     const syntheticId = `running-${Date.now()}`;
     const syntheticRun: LoadTestRunRecord = {
@@ -210,7 +211,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
             },
           });
         },
-      }, projectId, selectedBaseUrlKey, pipelineIndex, runtimeSpecs, runtimeEnvGroups, selectedEnvGroupSlug);
+      }, projectId, selectedBaseUrlKey, pipelineIndex, runtimeSpecs, runtimeEnvGroups, selectedEnvGroupSlug, targetRps);
       _loadController = controller;
     }
   },
