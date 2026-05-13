@@ -252,8 +252,9 @@ clients interpreting token contents.
 ## Kubernetes Scheduling
 
 The plugin must enforce one runner per Kubernetes node. This protects the
-runner's access to node-level network capacity, especially on small AWS
-instances such as 4gn nano or micro profiles.
+runner's access to node-level network capacity, regardless of whether the
+cluster runs on AWS, GCP, Azure, another managed Kubernetes provider, or a
+self-hosted Kubernetes environment.
 
 The recommended implementation uses:
 
@@ -261,10 +262,48 @@ The recommended implementation uses:
 - pod labels identifying Previa runners and reservation ownership;
 - pod anti-affinity or topology spread constraints keyed by hostname;
 - taints and tolerations to keep unrelated workloads off runner nodes;
-- Karpenter or Cluster Autoscaler integration to provision and remove nodes.
+- a provider-specific provisioner integration to provision and remove nodes.
 
-The plugin should expose node profile configuration rather than hard-coding AWS
-instance types.
+The plugin must expose portable node profile configuration rather than
+hard-coding cloud-specific instance types. A node profile describes the capacity
+shape Previa needs, while a provisioner driver maps that shape to the target
+cluster implementation.
+
+Examples:
+
+- AWS may map a profile to Karpenter `NodePool` and EC2 instance families.
+- GCP may map a profile to GKE node pools and machine types.
+- Azure may map a profile to AKS node pools and VM sizes.
+- Generic Kubernetes may map a profile to existing node labels, taints, and a
+  Cluster Autoscaler-compatible node group.
+
+The reservation and runner lifecycle should depend on the generic profile name,
+not on provider-specific details.
+
+## Node Provisioning Abstraction
+
+The plugin should keep Kubernetes orchestration independent from any single
+cloud by introducing a provisioner boundary:
+
+```text
+Reservation reconciler -> NodeProvisioner -> Kubernetes/cloud-specific mapping
+```
+
+The `NodeProvisioner` contract should cover:
+
+- resolving a `node_profile` into labels, tolerations, resource requests, and
+  scheduling constraints;
+- ensuring enough node capacity exists for the requested runner count;
+- tagging or labeling nodes and pods for reservation ownership and cleanup;
+- reporting provisioning progress and capacity errors;
+- releasing unused capacity when reservations expire or consumed runners become
+  idle.
+
+Provider-specific behavior belongs behind provisioner implementations such as
+`karpenter`, `cluster-autoscaler`, `static-node-pool`, `gke-node-pool`, or
+`aks-node-pool`. The first implementation may support one provider, but the
+configuration and service boundary must make additional providers incremental
+rather than a rewrite.
 
 ## Plugin Configuration
 
@@ -282,12 +321,35 @@ runner_capacity:
     idle_shutdown_seconds: 300
     reservation_poll_interval_ms: 1000
     reservation_ready_timeout_seconds: 600
-    node_profile: aws-4gn-micro
+    node_profile: small-dedicated-runner
+    provisioner:
+      kind: karpenter
+    node_profiles:
+      small-dedicated-runner:
+        runner_cpu_request: "500m"
+        runner_memory_request: "512Mi"
+        required_network_gbps: 5
+        labels:
+          previa.dev/runner-profile: small-dedicated-runner
+        tolerations:
+          - key: previa.dev/runner
+            operator: Equal
+            value: dedicated
+            effect: NoSchedule
+        provider:
+          aws:
+            instance_families: ["t4g", "c7g"]
+            instance_sizes: ["nano", "micro"]
 ```
 
 The plugin owns reservation TTL, idle timeout, Kubernetes scheduling profile,
 and runner reuse policy. `previa-main` owns execution state, pipeline queueing,
 capacity calculation, and dispatch.
+
+Only the `provider` section should be cloud-specific. The rest of the profile
+should remain portable enough that a GCP, Azure, or generic Kubernetes mapping
+can be added without changing the public reservation API or the `previa-main`
+integration.
 
 ## Main Architecture
 
