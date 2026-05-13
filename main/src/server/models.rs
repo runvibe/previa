@@ -101,6 +101,51 @@ pub struct ProjectLoadTestRequest {
     pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LoadCapacityPreviewRequest {
+    pub target_rps: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadCapacityPreviewResponse {
+    pub target_rps: u64,
+    pub rps_per_runner: u64,
+    pub estimated_runner_count: usize,
+    pub capacity_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KubernetesReservationCreateRequest {
+    pub execution_id: String,
+    pub pipeline_id: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KubernetesReservationStatus {
+    pub reservation_id: String,
+    pub status: String,
+    pub requested_runners: usize,
+    pub ready_runners: usize,
+    #[serde(default)]
+    pub reservation_token: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub runners: Vec<KubernetesReservationRunner>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KubernetesReservationRunner {
+    pub id: String,
+    pub endpoint: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestConfig {
@@ -595,6 +640,14 @@ pub struct RunnerRuntimeInfo {
     pub network_rx_bytes: u64,
     #[serde(default)]
     pub network_total_bytes: u64,
+    #[serde(default)]
+    pub busy: bool,
+    #[serde(default)]
+    pub started_execution_count: u64,
+    #[serde(default)]
+    pub last_started_at: Option<String>,
+    #[serde(default)]
+    pub last_finished_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

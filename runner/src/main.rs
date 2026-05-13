@@ -34,6 +34,7 @@ async fn main() {
 
     let state = AppState {
         runner_auth_key: optional_env("RUNNER_AUTH_KEY"),
+        reservation: crate::server::reservation::ReservationState::from_env(),
         ..AppState::default()
     };
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_owned());

@@ -1,4 +1,5 @@
 use axum::Json;
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use utoipa::OpenApi;
@@ -6,6 +7,7 @@ use utoipa::OpenApi;
 use crate::server::docs::ApiDoc;
 use crate::server::models::{ErrorResponse, RunnerInfoResponse};
 use crate::server::runtime::snapshot_current_process_runtime;
+use crate::server::state::AppState;
 
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     let mut openapi = ApiDoc::openapi();
@@ -53,8 +55,8 @@ pub async fn health() -> StatusCode {
         )
     )
 )]
-pub async fn info_runtime() -> Response {
-    let Some(runtime) = snapshot_current_process_runtime() else {
+pub async fn info_runtime(State(state): State<AppState>) -> Response {
+    let Some(mut runtime) = snapshot_current_process_runtime() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(ErrorResponse {
@@ -64,6 +66,11 @@ pub async fn info_runtime() -> Response {
         )
             .into_response();
     };
+    let reservation = state.reservation.snapshot().await;
+    runtime.busy = reservation.busy;
+    runtime.started_execution_count = reservation.started_execution_count;
+    runtime.last_started_at = reservation.last_started_at;
+    runtime.last_finished_at = reservation.last_finished_at;
 
     Json(runtime).into_response()
 }

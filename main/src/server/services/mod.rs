@@ -1,5 +1,7 @@
 pub mod e2e_rerun;
+pub mod kubernetes_reservations;
 pub mod pipeline_import;
 pub mod pipeline_runtime;
+pub mod runner_capacity;
 pub mod runner_registry;
 pub mod sqlite_transfer;

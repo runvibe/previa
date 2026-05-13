@@ -243,6 +243,10 @@ mod tests {
             network_tx_bytes: 0,
             network_rx_bytes: 0,
             network_total_bytes: 0,
+            busy: false,
+            started_execution_count: 0,
+            last_started_at: None,
+            last_finished_at: None,
         })
         .into_response()
     }

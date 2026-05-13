@@ -26,3 +26,14 @@ pub fn bad_request_message_response(message: &str) -> Response {
     )
         .into_response()
 }
+
+pub fn forbidden_message_response(error: &str, message: &str) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: error.to_owned(),
+            message: message.to_owned(),
+        }),
+    )
+        .into_response()
+}

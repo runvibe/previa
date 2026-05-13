@@ -359,6 +359,10 @@ pub struct RunnerInfoResponse {
     pub network_tx_bytes: u64,
     pub network_rx_bytes: u64,
     pub network_total_bytes: u64,
+    pub busy: bool,
+    pub started_execution_count: u64,
+    pub last_started_at: Option<String>,
+    pub last_finished_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

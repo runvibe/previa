@@ -20,6 +20,7 @@ pub mod load_wave;
 pub mod metrics;
 pub mod middleware;
 pub mod models;
+pub mod reservation;
 pub mod runtime;
 pub mod sse;
 pub mod state;

@@ -2,7 +2,7 @@ use axum::Json;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, header};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 
 use crate::server::db::load_project_pipeline_for_execution;
 use crate::server::errors::{
@@ -14,9 +14,50 @@ use crate::server::execution::{
 };
 use crate::server::middleware::transaction::extract_transaction_id;
 use crate::server::models::{
-    ErrorResponse, LoadTestRequest, OrchestratorSseEventData, ProjectLoadTestRequest,
+    ErrorResponse, LoadCapacityPreviewRequest, LoadCapacityPreviewResponse, LoadTestRequest,
+    OrchestratorSseEventData, ProjectLoadTestRequest,
 };
+use crate::server::services::runner_capacity::estimate_runner_count;
 use crate::server::state::AppState;
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/tests/load/capacity-preview",
+    request_body = LoadCapacityPreviewRequest,
+    responses(
+        (
+            status = 200,
+            description = "Estimativa de runners necessários para um alvo de RPS.",
+            body = LoadCapacityPreviewResponse
+        ),
+        (
+            status = 400,
+            description = "Request inválido",
+            body = ErrorResponse
+        )
+    )
+)]
+pub async fn preview_load_capacity(
+    State(state): State<AppState>,
+    payload: Result<Json<LoadCapacityPreviewRequest>, JsonRejection>,
+) -> Response {
+    let Json(payload) = match payload {
+        Ok(payload) => payload,
+        Err(rejection) => return bad_request_response(rejection),
+    };
+    let estimated_runner_count = match estimate_runner_count(payload.target_rps, state.rps_per_node)
+    {
+        Ok(count) => count,
+        Err(message) => return bad_request_message_response(message),
+    };
+    Json(LoadCapacityPreviewResponse {
+        target_rps: payload.target_rps,
+        rps_per_runner: state.rps_per_node,
+        estimated_runner_count,
+        capacity_mode: "manual".to_owned(),
+    })
+    .into_response()
+}
 
 pub async fn run_load_test_internal(
     State(state): State<AppState>,
@@ -229,6 +270,40 @@ mod tests {
         let payload = String::from_utf8(first_chunk.to_vec()).unwrap();
         assert!(payload.contains("event: execution:init"));
         assert!(payload.contains(&format!("\"executionId\":\"{execution_id}\"")));
+    }
+
+    #[tokio::test]
+    async fn capacity_preview_returns_estimated_runner_count() {
+        let (runner_url, _runner_task) = spawn_runner_server().await;
+        let app = test_app(runner_url).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/tests/load/capacity-preview")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({
+                            "targetRps": 2501
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["targetRps"], 2501);
+        assert_eq!(payload["rpsPerRunner"], 1000);
+        assert_eq!(payload["estimatedRunnerCount"], 3);
+        assert_eq!(payload["capacityMode"], "manual");
     }
 
     async fn test_app(runner_url: String) -> Router {

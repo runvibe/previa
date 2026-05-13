@@ -16,11 +16,14 @@ use previa_runner::{
     Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_request_gate,
 };
 
-use crate::server::errors::{bad_request_message_response, bad_request_response};
+use crate::server::errors::{
+    bad_request_message_response, bad_request_response, forbidden_message_response,
+};
 use crate::server::load_wave::validate_load_profile;
 use crate::server::metrics::{MetricsAccumulator, estimate_results_network_bytes};
 use crate::server::middleware::transaction::{extract_transaction_id, with_transaction_header};
 use crate::server::models::{ErrorResponse, LoadTestConfig, LoadTestRequest};
+use crate::server::reservation::ReservationError;
 use crate::server::runtime::RuntimeSampler;
 use crate::server::sse::{SseMessage, send_sse_or_cancel, sse_response};
 use crate::server::state::AppState;
@@ -74,6 +77,15 @@ pub async fn run_load_test(
             return bad_request_message_response(&message);
         }
     }
+    if let Err(err) = state.reservation.validate_first_execution_headers(&headers) {
+        let message = match err {
+            ReservationError::MissingHeaders => "reservation headers are required",
+            ReservationError::InvalidReservation => "reservation headers are invalid",
+            ReservationError::Expired => "reservation expired before first use",
+        };
+        return forbidden_message_response("reservation_forbidden", message);
+    }
+    state.reservation.mark_execution_started().await;
 
     let execution_id = Uuid::new_v4().to_string();
     let token = tokio_util::sync::CancellationToken::new();
@@ -94,6 +106,7 @@ pub async fn run_load_test(
     let load = payload.load.clone();
     let state_clone = state.clone();
     let execution_id_clone = execution_id.clone();
+    let reservation = state.reservation.clone();
 
     // Cancel execution as soon as SSE client disconnects.
     // A stop token is used so this watcher can exit on normal completion
@@ -118,6 +131,7 @@ pub async fn run_load_test(
             &token,
         ) {
             disconnect_watcher_stop_exec.cancel();
+            reservation.mark_execution_finished().await;
             let mut executions = state_clone.executions.write().await;
             executions.remove(&execution_id);
             return;
@@ -154,6 +168,7 @@ pub async fn run_load_test(
         }
 
         disconnect_watcher_stop_exec.cancel();
+        reservation.mark_execution_finished().await;
         let mut executions = state_clone.executions.write().await;
         executions.remove(&execution_id);
         drop(tx);
@@ -299,5 +314,144 @@ async fn run_classic_load(
             serde_json::to_value(complete).unwrap_or(Value::Null),
             &token,
         );
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use http_body_util::BodyExt;
+    use serde_json::json;
+    use tower::ServiceExt;
+
+    use crate::server::build_app;
+    use crate::server::reservation::ReservationState;
+    use crate::server::state::AppState;
+
+    fn reserved_app() -> Router {
+        build_app(AppState {
+            reservation: ReservationState::reserved_for_test(
+                "rr_test",
+                "secret-token",
+                "2999-01-01T00:00:00Z",
+            ),
+            ..AppState::default()
+        })
+    }
+
+    fn load_request() -> serde_json::Value {
+        json!({
+            "pipeline": {
+                "id": "pipe-test",
+                "name": "Reserved pipeline",
+                "description": null,
+                "steps": [
+                    {
+                        "id": "step-1",
+                        "name": "GET example",
+                        "description": null,
+                        "method": "GET",
+                        "url": "http://127.0.0.1:1",
+                        "headers": {},
+                        "body": null,
+                        "asserts": []
+                    }
+                ]
+            },
+            "config": {
+                "totalRequests": 1,
+                "concurrency": 1,
+                "rampUpSeconds": 0
+            },
+            "selectedBaseUrlKey": null,
+            "selectedEnvGroupSlug": null,
+            "specs": [],
+            "envGroups": []
+        })
+    }
+
+    #[tokio::test]
+    async fn reserved_runner_rejects_load_without_reservation_headers() {
+        let response = reserved_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "reservation_forbidden");
+    }
+
+    #[tokio::test]
+    async fn reserved_runner_rejects_load_with_wrong_reservation_token() {
+        let response = reserved_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .header("x-previa-reservation-id", "rr_test")
+                    .header("x-previa-reservation-token", "wrong-token")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["error"], "reservation_forbidden");
+    }
+
+    #[tokio::test]
+    async fn reserved_runner_accepts_matching_headers_and_reports_consumed_execution() {
+        let app = reserved_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .header("x-previa-reservation-id", "rr_test")
+                    .header("x-previa-reservation-token", "secret-token")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = response.into_body().collect().await.unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/info")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["startedExecutionCount"], 1);
+        assert_eq!(payload["busy"], false);
+        assert!(payload["lastStartedAt"].is_string());
+        assert!(payload["lastFinishedAt"].is_string());
     }
 }

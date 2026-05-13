@@ -40,7 +40,7 @@ use crate::server::handlers::tests_e2e_queue::{
     create_e2e_queue_for_project, delete_e2e_queue_for_project, get_current_e2e_queue_for_project,
     get_e2e_queue_for_project,
 };
-use crate::server::handlers::tests_load::run_load_test_for_project;
+use crate::server::handlers::tests_load::{preview_load_capacity, run_load_test_for_project};
 use crate::server::handlers::transfers::{
     export_project, export_projects_sqlite, import_pipelines, import_project,
 };
@@ -177,6 +177,10 @@ pub fn build_app_with_config(
             get(list_load_history)
                 .post(run_load_test_for_project)
                 .delete(delete_load_history),
+        )
+        .route(
+            "/api/v1/tests/load/capacity-preview",
+            post(preview_load_capacity),
         )
         .route(
             "/api/v1/projects/{projectId}/tests/load/{test_id}",
