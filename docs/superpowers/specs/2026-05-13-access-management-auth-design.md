@@ -122,13 +122,19 @@ V0 uses fixed roles:
 - `root`: full access, includes user management.
 - `admin`: full access, includes user management, cannot mutate the env root.
 - `editor`: read/write projects, specs, env groups, pipelines, imports/exports,
-  and executions.
+  and executions. Editors can read runner status for execution planning but
+  cannot create, update, enable, disable, or delete runners.
 - `operator`: read data, run/cancel executions, manage queues, inspect runners.
 - `viewer`: read-only access.
 - `anonymous`: full access only when anonymous mode is enabled.
 
 The first implementation should keep role checks centralized in one permissions
 module instead of spreading role strings through handlers.
+
+Runner management is an infrastructure permission. Only `root` and `admin` can
+create, update, enable, disable, or delete runner records. `editor`, `operator`,
+and `viewer` can list and inspect runners but cannot mutate runner
+configuration.
 
 ## Backend Architecture
 
@@ -470,6 +476,8 @@ Suggested grouping:
   - read routes: `viewer`.
   - write routes: `editor`.
   - execution routes: `operator`.
+  - runner read routes: `viewer`.
+  - runner write routes: `admin`.
   - user routes: `admin`.
   - API token routes: `admin`.
 
