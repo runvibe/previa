@@ -309,9 +309,28 @@ Cluster Autoscaler-only and static node pool modes are out of scope for the
 dynamic provisioning path because they do not provide the same standard control
 surface for per-runner node claims, constraints, expiry, and consolidation.
 
-The first implementation may support only AWS Karpenter, but the configuration
-and service boundary must make additional Karpenter providers incremental
-rather than a rewrite.
+## Version Scope
+
+Version 0 should focus on AWS Karpenter. This keeps the first implementation
+small and gives Previa one concrete, production-grade provisioning path.
+
+Even with AWS as the only supported provider in v0, the stable contract should
+remain provider-neutral at the Previa boundary:
+
+- `previa-main` talks only to the internal reservation API;
+- public execution APIs do not expose AWS, EC2, Karpenter, node claims, or
+  provider-specific resource names;
+- reservation records store generic `node_profile` and runner endpoint data,
+  not cloud-specific instance details;
+- plugin configuration keeps provider-specific fields under
+  `node_profiles.<name>.provider.aws`;
+- the provisioner service boundary is named around Karpenter behavior, not AWS
+  APIs.
+
+Adding another Karpenter-compatible provider later should require a new
+provider mapping inside the plugin, not a change to public APIs, runner
+authorization headers, execution queueing, or the `previa-main` reservation
+client.
 
 ## Plugin Configuration
 
@@ -477,5 +496,7 @@ The first implementation still needs concrete choices for:
 - the exact Kubernetes client library and deployment manifest format;
 - whether runner reuse is enabled in the first release or deferred behind a
   configuration flag;
+- the exact AWS Karpenter resources the v0 plugin manages directly versus
+  expects to find pre-created;
 - the exact execution status names used in the existing load-test history and
   SSE flows.
