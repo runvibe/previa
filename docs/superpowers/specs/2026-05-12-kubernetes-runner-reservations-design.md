@@ -258,24 +258,26 @@ self-hosted Kubernetes environment.
 
 The recommended implementation uses:
 
-- a dedicated runner node class or node pool;
+- a dedicated Karpenter `NodePool` and provider-specific node class;
 - pod labels identifying Previa runners and reservation ownership;
 - pod anti-affinity or topology spread constraints keyed by hostname;
 - taints and tolerations to keep unrelated workloads off runner nodes;
-- a provider-specific provisioner integration to provision and remove nodes.
+- Karpenter disruption, consolidation, and expiry settings to remove unused
+  runner nodes.
 
 The plugin must expose portable node profile configuration rather than
 hard-coding cloud-specific instance types. A node profile describes the capacity
-shape Previa needs, while a provisioner driver maps that shape to the target
-cluster implementation.
+shape Previa needs, while a Karpenter provider mapping translates that shape to
+the target cluster implementation.
 
 Examples:
 
-- AWS may map a profile to Karpenter `NodePool` and EC2 instance families.
-- GCP may map a profile to GKE node pools and machine types.
-- Azure may map a profile to AKS node pools and VM sizes.
-- Generic Kubernetes may map a profile to existing node labels, taints, and a
-  Cluster Autoscaler-compatible node group.
+- AWS maps a profile to a Karpenter `NodePool`, EC2 node class, and EC2
+  instance requirements.
+- Azure may map a profile to AKS Node Autoprovisioning or an Azure Karpenter
+  provider when available.
+- Other clouds may be supported when they expose a Karpenter-compatible
+  provider model.
 
 The reservation and runner lifecycle should depend on the generic profile name,
 not on provider-specific details.
@@ -283,26 +285,32 @@ not on provider-specific details.
 ## Node Provisioning Abstraction
 
 The plugin should keep Kubernetes orchestration independent from any single
-cloud by introducing a provisioner boundary:
+cloud while still requiring a common Karpenter-based provisioning model:
 
 ```text
-Reservation reconciler -> NodeProvisioner -> Kubernetes/cloud-specific mapping
+Reservation reconciler -> KarpenterProvisioner -> provider-specific Karpenter mapping
 ```
 
-The `NodeProvisioner` contract should cover:
+The `KarpenterProvisioner` contract should cover:
 
 - resolving a `node_profile` into labels, tolerations, resource requests, and
-  scheduling constraints;
+  Karpenter scheduling requirements;
 - ensuring enough node capacity exists for the requested runner count;
-- tagging or labeling nodes and pods for reservation ownership and cleanup;
+- creating or selecting the Karpenter `NodePool` and provider node class needed
+  for the profile;
+- tagging or labeling Karpenter resources, nodes, and pods for reservation
+  ownership and cleanup;
 - reporting provisioning progress and capacity errors;
 - releasing unused capacity when reservations expire or consumed runners become
   idle.
 
-Provider-specific behavior belongs behind provisioner implementations such as
-`karpenter`, `cluster-autoscaler`, `static-node-pool`, `gke-node-pool`, or
-`aks-node-pool`. The first implementation may support one provider, but the
-configuration and service boundary must make additional providers incremental
+Dynamic runner capacity requires Karpenter or a Karpenter-compatible provider.
+Cluster Autoscaler-only and static node pool modes are out of scope for the
+dynamic provisioning path because they do not provide the same standard control
+surface for per-runner node claims, constraints, expiry, and consolidation.
+
+The first implementation may support only AWS Karpenter, but the configuration
+and service boundary must make additional Karpenter providers incremental
 rather than a rewrite.
 
 ## Plugin Configuration
@@ -324,11 +332,16 @@ runner_capacity:
     node_profile: small-dedicated-runner
     provisioner:
       kind: karpenter
+      provider: aws
     node_profiles:
       small-dedicated-runner:
         runner_cpu_request: "500m"
         runner_memory_request: "512Mi"
         required_network_gbps: 5
+        karpenter:
+          node_pool: previa-runner-small
+          expire_after: 10m
+          consolidate_after: 30s
         labels:
           previa.dev/runner-profile: small-dedicated-runner
         tolerations:
@@ -347,9 +360,8 @@ and runner reuse policy. `previa-main` owns execution state, pipeline queueing,
 capacity calculation, and dispatch.
 
 Only the `provider` section should be cloud-specific. The rest of the profile
-should remain portable enough that a GCP, Azure, or generic Kubernetes mapping
-can be added without changing the public reservation API or the `previa-main`
-integration.
+should remain portable enough that another Karpenter provider can be added
+without changing the public reservation API or the `previa-main` integration.
 
 ## Main Architecture
 
