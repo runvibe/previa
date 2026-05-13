@@ -16,8 +16,9 @@ The public client does not manage runner reservations directly. A client asks
 `previa-main` to run a load test, and `previa-main` decides whether to use
 manual runners or dynamic Kubernetes capacity.
 
-When dynamic capacity is enabled, `previa-main` calculates the required runner
-count from a configured `rps_per_runner` value:
+When dynamic capacity is enabled, load-test requests must include an explicit
+target RPS. `previa-main` calculates the required runner count from that
+requested target and a configured `rps_per_runner` value:
 
 ```text
 runner_count = ceil(target_rps / rps_per_runner)
@@ -25,6 +26,10 @@ runner_count = ceil(target_rps / rps_per_runner)
 
 The client can call a capacity preview API before starting a test to see how
 many runners the execution is expected to use.
+
+This is allowed to be a breaking change for the current load-test API. V0 should
+prefer a clear asynchronous execution contract over preserving the existing
+streaming response shape.
 
 ## Capacity Modes
 
@@ -42,7 +47,12 @@ smaller manual runner pool.
 ## Public Main API
 
 The public API remains execution-oriented. It should not expose reservation
-tokens or runner IPs.
+tokens, reservation ids, or runner IPs.
+
+V0 may break the current load-test response contract. Load-test creation should
+return an execution resource immediately, and clients should follow execution
+status or event endpoints instead of depending on the create request remaining
+open as the runner SSE stream.
 
 Capacity preview:
 
@@ -50,14 +60,22 @@ Capacity preview:
 POST /api/v1/tests/load/capacity-preview
 ```
 
+Request:
+
+```json
+{
+  "targetRps": 50000
+}
+```
+
 Example response:
 
 ```json
 {
-  "target_rps": 50000,
-  "rps_per_runner": 5000,
-  "estimated_runner_count": 10,
-  "capacity_mode": "kubernetes"
+  "targetRps": 50000,
+  "rpsPerRunner": 5000,
+  "estimatedRunnerCount": 10,
+  "capacityMode": "kubernetes"
 }
 ```
 
@@ -67,23 +85,48 @@ Load execution:
 POST /api/v1/tests/load
 ```
 
+Request shape:
+
+```json
+{
+  "pipelineId": "pipe_123",
+  "targetRps": 50000,
+  "load": {
+    "points": [
+      { "atMs": 0, "intensity": 10 },
+      { "atMs": 60000, "intensity": 100 }
+    ],
+    "interpolation": "smooth"
+  }
+}
+```
+
 Example response while dynamic runners are being prepared:
 
 ```json
 {
-  "execution_id": "exec_123",
+  "executionId": "exec_123",
   "status": "provisioning",
   "capacity": {
-    "target_rps": 50000,
-    "rps_per_runner": 5000,
-    "requested_runners": 10,
-    "ready_runners": 0
+    "targetRps": 50000,
+    "rpsPerRunner": 5000,
+    "requestedRunners": 10,
+    "readyRunners": 0
   }
 }
 ```
 
 The client polls the existing execution status API. When the reservation is
 ready, `previa-main` starts the load test automatically.
+
+The implementation may add or repurpose an execution event endpoint such as:
+
+```http
+GET /api/v1/executions/{executionId}/events
+```
+
+That endpoint, not the create request, should own SSE delivery for provisioning,
+running, cancellation, and final status updates.
 
 ## Pipeline Queueing
 
@@ -110,12 +153,18 @@ When a new load-test execution is requested:
 
 Queued executions do not consume runner reservations.
 
+The queueing implementation must avoid head-of-line blocking across different
+pipelines. A queued execution for pipeline A must not prevent pipeline B from
+starting when B has no active execution and capacity can be provisioned for B.
+This can be implemented as independent FIFO queues per pipeline or as a
+scheduler that scans past blocked entries when locks do not conflict.
+
 ## Cancellation
 
 Cancellation is exposed through the execution API:
 
 ```http
-POST /api/v1/executions/{execution_id}/cancel
+POST /api/v1/executions/{executionId}/cancel
 ```
 
 Cancellation behavior depends on execution state:
@@ -144,8 +193,8 @@ Request:
 
 ```json
 {
-  "execution_id": "exec_123",
-  "pipeline_id": "pipe_123",
+  "executionId": "exec_123",
+  "pipelineId": "pipe_123",
   "count": 10
 }
 ```
@@ -154,29 +203,29 @@ Initial response:
 
 ```json
 {
-  "reservation_id": "rr_123",
+  "reservationId": "rr_123",
   "status": "provisioning",
-  "requested": 10,
-  "ready": 0
+  "requestedRunners": 10,
+  "readyRunners": 0
 }
 ```
 
 Poll reservation:
 
 ```http
-GET /internal/runner-reservations/{reservation_id}
+GET /internal/runner-reservations/{reservationId}
 ```
 
 Ready response:
 
 ```json
 {
-  "reservation_id": "rr_123",
+  "reservationId": "rr_123",
   "status": "ready",
-  "requested": 10,
-  "ready": 10,
-  "reservation_token": "opaque-secret",
-  "expires_at": "2026-05-12T18:40:00Z",
+  "requestedRunners": 10,
+  "readyRunners": 10,
+  "reservationToken": "opaque-secret",
+  "expiresAt": "2026-05-12T18:40:00Z",
   "runners": [
     {
       "id": "runner-1",
@@ -189,12 +238,17 @@ Ready response:
 Cancel reservation:
 
 ```http
-POST /internal/runner-reservations/{reservation_id}/cancel
+POST /internal/runner-reservations/{reservationId}/cancel
 ```
 
 The plugin returns the reservation token only after all requested runners are
 ready. `previa-main` stores the token with the execution reservation record and
 uses it only when dispatching work to runners.
+
+`expiresAt` is calculated from the moment the reservation reaches `ready`, not
+from the moment the reservation request is created. Reservations in
+`provisioning` should use `reservation_ready_timeout_seconds`; ready-but-unused
+reservations should use `reservation_ttl_seconds`.
 
 ## Reservation Lifecycle
 
@@ -215,6 +269,8 @@ PREVIA_RESERVATION_EXPIRES_AT
 Rules:
 
 - The reservation TTL is configured in the plugin, not supplied by the client.
+- The reservation TTL starts when all runners are ready and the reservation
+  token becomes available to `previa-main`.
 - A runner reserved for an execution accepts its first load execution only when
   the reservation headers match its configured reservation.
 - Once the first execution starts, the runner marks the reservation as consumed.
@@ -415,10 +471,11 @@ Follow the existing server boundaries:
   capacity state.
 - `db/`: persisted execution-to-reservation records and queue state.
 
-The existing runner registry remains useful. When a Kubernetes reservation is
-ready, `previa-main` may upsert the runner endpoints with a source such as
-`kubernetes-reservation`, but dispatch for the reserved execution should use
-the reservation's explicit endpoint list rather than the global enabled runner
+The existing public runner registry remains useful for manual capacity, but
+reserved Kubernetes runners should not be exposed through public runner listing
+APIs. Dynamic runners should be stored in execution-reservation records or an
+internal runner lease table. Dispatch for the reserved execution must use the
+reservation's explicit endpoint list rather than the global enabled runner
 list.
 
 ## Plugin Architecture
@@ -434,10 +491,10 @@ The plugin should keep transport, orchestration, and Kubernetes data separated:
 The reconciler observes runners directly through their health or info endpoints
 to determine readiness, first-use consumption, busy state, and idleness.
 
-Runner info should expose durable enough execution state for the reconciler to
-detect first use without relying only on a transient `busy` poll. Preferred
-fields include `started_execution_count`, `last_started_at`, `last_finished_at`,
-and `busy`.
+Runner info must expose durable execution state for the reconciler to detect
+first use without relying only on a transient `busy` poll. Required fields
+include `started_execution_count`, `last_started_at`, `last_finished_at`, and
+`busy`.
 
 ## Error Handling
 
@@ -467,6 +524,8 @@ pipeline_id
 capacity_mode
 requested_runner_count
 ready_runner_count
+target_rps
+node_profile
 reservation_id
 reservation_token
 reservation_expires_at
@@ -483,13 +542,16 @@ in public execution responses, logs, or API error messages.
 
 Main tests:
 
-- capacity preview calculates `ceil(target_rps / rps_per_runner)`;
+- capacity preview calculates `ceil(targetRps / rpsPerRunner)`;
+- dynamic capacity rejects requests without explicit `targetRps`;
 - same-pipeline execution requests are queued while one is active;
 - different-pipeline execution requests can provision in parallel;
+- a blocked queued execution for one pipeline does not block another pipeline;
 - queued cancellation does not contact the plugin;
 - provisioning cancellation cancels the plugin reservation;
 - ready reservation starts execution automatically;
-- public responses never include reservation token or runner IPs.
+- public responses never include reservation ids, reservation token, or runner
+  IPs.
 
 Runner tests:
 
@@ -506,6 +568,7 @@ Plugin tests:
 - reuses eligible idle runners when policy allows it;
 - never assigns the same reserved runner to two reservations;
 - marks reservations ready only when all runners are healthy;
+- starts reservation TTL only when the reservation reaches `ready`;
 - expires unused reservations and terminates idle reserved runners;
 - preserves running consumed runners until they become idle.
 
@@ -517,5 +580,5 @@ The first implementation still needs concrete choices for:
 - the exact Kubernetes client library and deployment manifest format;
 - whether runner reuse is enabled in the first release or deferred behind a
   configuration flag;
-- the exact execution status names used in the existing load-test history and
-  SSE flows.
+- the exact execution status names used in load-test history and execution
+  event flows.
