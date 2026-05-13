@@ -10,12 +10,17 @@ on:
       - Cargo.lock
       - Cargo.toml
       - Dockerfile.kubernetes-plugin
+      - Dockerfile.artifact
       - kubernetes-plugin/**
       - runner/**
 
 permissions:
   contents: read
   packages: write
+
+concurrency:
+  group: kubernetes-plugin-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   IMAGE: ghcr.io/runvibe/previa-kubernetes-plugin
@@ -43,13 +48,97 @@ jobs:
       - name: Build plugin crate
         run: cargo build --release -p previa-kubernetes-plugin
 
+  linux_binaries:
+    name: Build Linux binary (${{ matrix.arch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+            use_cross: false
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+            use_cross: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: plugin-${{ matrix.arch }}
+
+      - name: Setup QEMU
+        if: matrix.use_cross == true
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Buildx
+        if: matrix.use_cross == true
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: cargo install cross --locked
+
+      - name: Build plugin binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target "${{ matrix.target }}" -p previa-kubernetes-plugin
+          else
+            cargo build --release --target "${{ matrix.target }}" -p previa-kubernetes-plugin
+          fi
+
+      - name: Prepare Docker artifact layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "artifacts/previa-kubernetes-plugin/${{ matrix.arch }}"
+          cp \
+            "target/${{ matrix.target }}/release/previa-kubernetes-plugin" \
+            "artifacts/previa-kubernetes-plugin/${{ matrix.arch }}/previa-kubernetes-plugin"
+          chmod +x "artifacts/previa-kubernetes-plugin/${{ matrix.arch }}/previa-kubernetes-plugin"
+
+      - name: Upload plugin binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-linux-${{ matrix.arch }}
+          path: artifacts/previa-kubernetes-plugin/${{ matrix.arch }}/previa-kubernetes-plugin
+          if-no-files-found: error
+
   image:
     name: Build and publish image
-    needs: test
+    needs: linux_binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download Linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-linux-*
+          path: artifacts/previa-kubernetes-plugin
+          merge-multiple: false
+
+      - name: Normalize artifact layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/previa-kubernetes-plugin/amd64 artifacts/previa-kubernetes-plugin/arm64
+          mv artifacts/previa-kubernetes-plugin/plugin-linux-amd64/previa-kubernetes-plugin artifacts/previa-kubernetes-plugin/amd64/previa-kubernetes-plugin
+          mv artifacts/previa-kubernetes-plugin/plugin-linux-arm64/previa-kubernetes-plugin artifacts/previa-kubernetes-plugin/arm64/previa-kubernetes-plugin
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -68,12 +157,15 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.kubernetes-plugin
+          file: ./Dockerfile.artifact
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:sha-${{ github.sha }}
+          build-args: |
+            BIN_NAME=previa-kubernetes-plugin
+            ARTIFACT_ROOT=artifacts
           cache-from: type=gha,scope=kubernetes-plugin
           cache-to: type=gha,mode=max,scope=kubernetes-plugin
