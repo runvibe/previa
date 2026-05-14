@@ -178,6 +178,7 @@ Recommended first reads:
 - [Minimal happy path](docs/previa/minimal-happy-path.md)
 - [Architecture at a glance](docs/previa/architecture.md)
 - [Runtime modes](docs/previa/runtime-modes.md)
+- [Access management](docs/previa/access-management.md)
 - [Wave load tests](docs/previa/wave-load-tests.md)
 - [Release and install](docs/previa/release-install.md)
 - [MCP integration](docs/previa/mcp.md)

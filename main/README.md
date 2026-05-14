@@ -55,9 +55,21 @@ http://127.0.0.1:5588
 | `ADDRESS` | `0.0.0.0` | Bind address |
 | `PORT` | `5588` | Bind port |
 | `PREVIA_APP_ENABLED` | `false` | Enables the embedded React app on `/`, `/index`, and SPA routes outside reserved API/system paths |
+| `PREVIA_AUTH_ANONYMOUS` | `true` | Enables anonymous full access when true or unset; set to `false` for protected mode |
+| `PREVIA_ROOT_USERNAME` | unset | Environment root username required when protected mode is enabled |
+| `PREVIA_ROOT_PASSWORD` | unset | Environment root password required when protected mode is enabled |
+| `PREVIA_JWT_SECRET` | unset | JWT signing and API-token hashing secret required when protected mode is enabled |
+| `PREVIA_JWT_TTL_SECONDS` | `86400` | App JWT lifetime in seconds |
 | `MCP_ENABLED` | `false` | Habilita o endpoint MCP HTTP no `main` |
 | `MCP_PATH` | `/mcp` | Caminho HTTP do servidor MCP quando habilitado |
 | `RUST_LOG` | unset | Tracing filter |
+
+Por padrao, `PREVIA_AUTH_ANONYMOUS` fica efetivamente ativo e todas as rotas
+operam como o usuario `anonymous`, sem JWT ou API token. Quando
+`PREVIA_AUTH_ANONYMOUS=false`, o `main` exige autenticacao em todas as rotas
+protegidas; somente `GET /health`, `POST /api/v1/auth/login` e assets estaticos
+do app ficam publicos. Veja
+[`docs/previa/access-management.md`](../docs/previa/access-management.md).
 
 Quando `MCP_ENABLED=true`, o `main` expõe um servidor MCP HTTP em `POST /mcp` por padrão.
 Se precisar alterar o caminho, defina `MCP_PATH`.
@@ -78,6 +90,15 @@ Pipeline rule: every `step.url` must be an absolute URL (`http://` or `https://`
 - `GET /health`
 - `GET /info`
 - `GET /openapi.json`
+
+### Auth and Access
+
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`
+- `GET|POST /api/v1/users`
+- `PATCH|DELETE /api/v1/users/{userId}`
+- `GET|POST /api/v1/api-tokens`
+- `PATCH|DELETE /api/v1/api-tokens/{tokenId}`
 
 ### Embedded App
 

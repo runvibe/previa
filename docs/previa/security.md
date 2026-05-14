@@ -2,6 +2,36 @@
 
 This guide covers the most important security behaviors in local and remote Previa deployments.
 
+## Access Management
+
+Previa starts in anonymous full-access mode by default. This preserves local
+development behavior and does not require JWTs or API tokens.
+
+For shared, remote, or exposed runtimes, enable protected mode:
+
+```bash
+printf '%s' 'change-me' | previa up -d --protected --root-username root --root-password-stdin
+```
+
+Protected mode requires:
+
+- `PREVIA_AUTH_ANONYMOUS=false`
+- `PREVIA_ROOT_USERNAME`
+- `PREVIA_ROOT_PASSWORD`
+- `PREVIA_JWT_SECRET`
+
+Only `GET /health`, `POST /api/v1/auth/login`, and static app assets are public
+in protected mode. Browser users receive JWTs. CLI, MCP, CI, scripts, and
+direct API clients should use fixed API tokens.
+
+Recommendations:
+
+- use anonymous mode only for trusted local development
+- keep root credentials, JWT secrets, and raw API tokens out of source control
+- create named users for people and named API tokens for automation
+- grant the least role needed, especially for long-lived API tokens
+- revoke unused API tokens
+
 ## Main and Runner Authentication
 
 Use `RUNNER_AUTH_KEY` to secure communication between `previa-main` and `previa-runner`.
@@ -65,6 +95,7 @@ Recommendations:
 
 ## See Also
 
+- [Access management](./access-management.md)
 - [Main and runner authentication](./main-runner-auth.md)
 - [Remote runners](./remote-runners.md)
 - [MCP integration](./mcp.md)

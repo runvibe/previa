@@ -23,6 +23,20 @@ previa up -d .
 previa up -d ./previa-compose.yaml
 ```
 
+Protected:
+
+```bash
+printf '%s' 'change-me' | previa up -d --protected --root-username root --root-password-stdin
+printf '%s' 'change-me' | previa login --context default --username root --password-stdin
+previa whoami --context default
+```
+
+Explicit anonymous full access:
+
+```bash
+previa up -d --anonymous
+```
+
 ## Inspect
 
 ```bash
@@ -96,6 +110,15 @@ previa local runner list
 previa local runner add 10.0.0.12:55880 --name staging-a
 ```
 
+## Access Tokens
+
+```bash
+previa token create --context default --name ci --role operator
+previa token list --context default
+previa token revoke --context default <token-id>
+export PREVIA_API_TOKEN='pvk_...'
+```
+
 ## MCP
 
 Enable MCP on `previa-main` and connect your assistant to:
@@ -118,4 +141,5 @@ $PREVIA_HOME/stacks/<context>/run/state.json
 - [CLI commands](./cli-commands.md)
 - [Operations](./operations.md)
 - [Troubleshooting](./troubleshooting.md)
+- [Access management](./access-management.md)
 - [Main and runner authentication](./main-runner-auth.md)

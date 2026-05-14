@@ -16,7 +16,12 @@ previa help up
 
 Current commands:
 
+- `login`
+- `logout`
+- `whoami`
+- `token`
 - `init`
+- `local`
 - `up`
 - `mcp`
 - `runner`
@@ -65,6 +70,102 @@ previa local down
 `previa local ...` uses `./.previa` as the runtime home unless an explicit
 global `--home <PATH>` is provided.
 
+## `previa login`
+
+Authenticates to a protected `previa-main` and stores a fixed API token for CLI,
+MCP, and direct API usage.
+
+```text
+previa login (--context <CONTEXT> | --url <URL>) --username <USERNAME> --password-stdin
+```
+
+Important options:
+
+- `--context <CONTEXT>`: select a detached local context, default `default`
+- `--url <URL>`: authenticate to an explicit remote `previa-main` URL instead
+  of a local context
+- `--username <USERNAME>`: user or environment root username
+- `--password-stdin`: read the password from standard input
+
+Examples:
+
+```bash
+printf '%s' 'change-me' | previa login --context default --username root --password-stdin
+printf '%s' 'change-me' | previa login --url https://previa.example.com --username root --password-stdin
+previa whoami --context default
+```
+
+Notes:
+
+- `previa login` requests `clientKind=api_token`, not an app JWT
+- the token is stored under the selected context config directory, or under
+  `PREVIA_HOME/auth/` when `--url` is used
+- `PREVIA_API_TOKEN` takes precedence over the stored token when set
+- in anonymous mode, login is unnecessary and the server rejects login with a
+  conflict response
+
+## `previa logout`
+
+Removes a locally stored API token.
+
+```text
+previa logout [--context <CONTEXT> | --url <URL>]
+```
+
+Examples:
+
+```bash
+previa logout --context default
+previa logout --url https://previa.example.com
+```
+
+## `previa whoami`
+
+Shows the current authenticated principal for a protected context or URL.
+
+```text
+previa whoami [--context <CONTEXT> | --url <URL>]
+```
+
+Examples:
+
+```bash
+previa whoami --context default
+PREVIA_API_TOKEN='pvk_...' previa whoami --url https://previa.example.com
+```
+
+## `previa token`
+
+Manages fixed API tokens for CLI, MCP, CI, scripts, and direct API usage.
+
+```text
+previa token list [--context <CONTEXT> | --url <URL>] [--json]
+previa token create [--context <CONTEXT> | --url <URL>] --name <NAME> [--role <ROLE>]
+previa token revoke [--context <CONTEXT> | --url <URL>] <TOKEN_ID>
+previa token use [--context <CONTEXT> | --url <URL>] --token-env <ENV_NAME>
+```
+
+Supported roles are `root`, `admin`, `editor`, `operator`, and `viewer`.
+
+Examples:
+
+```bash
+previa token list --context default
+previa token list --context default --json
+previa token create --context default --name ci --role operator
+previa token create --url https://previa.example.com --name mcp --role editor
+previa token revoke --context default token_123
+previa token use --context default --token-env PREVIA_API_TOKEN
+```
+
+Notes:
+
+- `token create` prints the raw token only once; store it when it is created
+- `token use` stores an existing token from an environment variable in the same
+  local auth file used by `previa login`
+- listing, creating, and revoking tokens require a stored token or
+  `PREVIA_API_TOKEN`
+
 ## `previa local`
 
 Runs common Previa commands with a project-local runtime home.
@@ -77,6 +178,8 @@ Supported commands:
 
 - `up`
 - `push`
+- `import`
+- `export`
 - `runner`
 - `down`
 - `status`
@@ -250,6 +353,12 @@ Important options:
 - `--stack <STACK>`: required when using `--import`
 - `--dry-run`: prints the planned runtime without starting it
 - `-d, --detach`: starts the stack in detached mode
+- `--protected`: disables anonymous access and enables access management
+- `--anonymous`: explicitly keeps anonymous full access enabled
+- `--root-username <USERNAME>`: sets the environment root username for
+  protected mode, default `root`
+- `--root-password-stdin`: reads the environment root password from standard
+  input for protected mode
 - `--bin`: Linux-only, uses local binaries instead of container images
 - `--version <TAG>`: image tag for compose-backed runtimes, default is the current CLI version
 
@@ -264,6 +373,8 @@ previa up ./previa-compose.yaml
 previa up --context other -p 6688 -P 56880:56889 --runners 2
 previa up -d --attach-runner 10.0.0.12:55880
 previa up -d --import ./tests/e2e -r --stack app_e2e
+printf '%s' 'change-me' | previa up -d --protected --root-username root --root-password-stdin
+previa up -d --anonymous
 previa up --dry-run
 ```
 
@@ -277,6 +388,11 @@ Notes:
 - if a workspace build exists, an older copy in `PREVIA_HOME/bin` is ignored in favor of the workspace binary
 - when only local runners are used and `RUNNER_AUTH_KEY` is missing, `previa up` generates one automatically
 - when `--attach-runner` is used, `RUNNER_AUTH_KEY` is required
+- `--protected` persists `PREVIA_AUTH_ANONYMOUS=false`, `PREVIA_ROOT_USERNAME`,
+  `PREVIA_ROOT_PASSWORD`, and a generated `PREVIA_JWT_SECRET` in `main.env`
+- `--anonymous` persists `PREVIA_AUTH_ANONYMOUS=true` in `main.env`
+- `--protected` requires `--root-password-stdin` unless the selected context
+  already has `PREVIA_ROOT_PASSWORD` in `main.env`
 - on macOS and Windows, the control binary is supported but `previa up` does not expose `--bin`
 
 See also:
@@ -285,6 +401,7 @@ See also:
 - [Compose source](./compose.md)
 - [Pipeline import](./pipeline-import.md)
 - [Main and runner authentication](./main-runner-auth.md)
+- [Access management](./access-management.md)
 
 ## `previa runner`
 

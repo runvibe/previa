@@ -60,6 +60,10 @@ previa mcp install codex --context default --token-env PREVIA_API_TOKEN
 previa mcp print cursor --context default --token-env PREVIA_API_TOKEN
 ```
 
+In anonymous mode, MCP behaves like the rest of Previa: no bearer token is
+required and the effective role is `anonymous` with full access. In protected
+mode, MCP requests must include `Authorization: Bearer <api-token>`.
+
 Current target matrix for the Linux-first release:
 
 - `codex`
