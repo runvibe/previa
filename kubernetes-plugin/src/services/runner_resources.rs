@@ -106,14 +106,23 @@ pub fn reservation_labels(
     ])
 }
 
+pub fn reservation_selector_labels(reservation_id: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (LABEL_APP_NAME.to_owned(), APP_NAME.to_owned()),
+        (LABEL_COMPONENT.to_owned(), RUNNER_COMPONENT.to_owned()),
+        (LABEL_RESERVATION_ID.to_owned(), reservation_id.to_owned()),
+    ])
+}
+
 pub fn build_runner_statefulset(
     config: &PluginConfig,
     spec: &RunnerReservationSpec,
 ) -> StatefulSet {
     let name = reservation_resource_name(&spec.reservation_id);
     let labels = reservation_labels(&spec.reservation_id, RunnerLifecycleState::Reserved);
+    let selector_labels = reservation_selector_labels(&spec.reservation_id);
     let selector = LabelSelector {
-        match_labels: Some(labels.clone()),
+        match_labels: Some(selector_labels),
         ..Default::default()
     };
     let mut node_selector = BTreeMap::new();
@@ -204,6 +213,7 @@ pub fn build_runner_statefulset(
 pub fn build_runner_service(config: &PluginConfig, spec: &RunnerReservationSpec) -> Service {
     let name = reservation_resource_name(&spec.reservation_id);
     let labels = reservation_labels(&spec.reservation_id, RunnerLifecycleState::Reserved);
+    let selector_labels = reservation_selector_labels(&spec.reservation_id);
     Service {
         metadata: ObjectMeta {
             name: Some(name),
@@ -219,7 +229,7 @@ pub fn build_runner_service(config: &PluginConfig, spec: &RunnerReservationSpec)
                 target_port: Some(IntOrString::String("http".to_owned())),
                 ..Default::default()
             }]),
-            selector: Some(labels),
+            selector: Some(selector_labels),
             ..Default::default()
         }),
         ..Default::default()
@@ -232,6 +242,7 @@ pub fn build_runner_pdb(
 ) -> PodDisruptionBudget {
     let name = reservation_resource_name(&spec.reservation_id);
     let labels = reservation_labels(&spec.reservation_id, RunnerLifecycleState::Reserved);
+    let selector_labels = reservation_selector_labels(&spec.reservation_id);
     PodDisruptionBudget {
         metadata: ObjectMeta {
             name: Some(name),
@@ -242,7 +253,7 @@ pub fn build_runner_pdb(
         spec: Some(PodDisruptionBudgetSpec {
             min_available: Some(IntOrString::Int(spec.count as i32)),
             selector: Some(LabelSelector {
-                match_labels: Some(labels),
+                match_labels: Some(selector_labels),
                 ..Default::default()
             }),
             ..Default::default()
@@ -448,6 +459,125 @@ mod tests {
             runner_dns_name(&config, &spec, 0),
             "previa-runner-rrtest-0.previa-runner-rrtest.previa.svc.cluster.local"
         );
+    }
+
+    #[test]
+    fn runner_service_selector_does_not_include_lifecycle_state() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
+        let service = build_runner_service(&config, &spec);
+
+        let selector = service.spec.unwrap().selector.unwrap();
+
+        assert_eq!(
+            selector.get("app.kubernetes.io/name").map(String::as_str),
+            Some("previa")
+        );
+        assert_eq!(
+            selector
+                .get("app.kubernetes.io/component")
+                .map(String::as_str),
+            Some("runner")
+        );
+        assert_eq!(
+            selector
+                .get("previa.runvibe.com/reservation-id")
+                .map(String::as_str),
+            Some("rr_test")
+        );
+        assert!(
+            !selector.contains_key("previa.runvibe.com/state"),
+            "Service selector must not depend on mutable runner state"
+        );
+    }
+
+    #[test]
+    fn statefulset_selector_does_not_include_lifecycle_state() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
+        let statefulset = build_runner_statefulset(&config, &spec);
+
+        let selector = statefulset
+            .spec
+            .unwrap()
+            .selector
+            .match_labels
+            .expect("statefulset selector");
+
+        assert_eq!(
+            selector
+                .get("previa.runvibe.com/reservation-id")
+                .map(String::as_str),
+            Some("rr_test")
+        );
+        assert!(
+            !selector.contains_key("previa.runvibe.com/state"),
+            "StatefulSet selector must not depend on mutable runner state"
+        );
+    }
+
+    #[test]
+    fn pod_template_keeps_lifecycle_state_label_for_observability() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
+        let statefulset = build_runner_statefulset(&config, &spec);
+
+        let labels = statefulset
+            .spec
+            .unwrap()
+            .template
+            .metadata
+            .unwrap()
+            .labels
+            .expect("pod template labels");
+
+        assert_eq!(
+            labels.get("previa.runvibe.com/state").map(String::as_str),
+            Some("reserved")
+        );
+    }
+
+    #[test]
+    fn pdb_selector_does_not_include_lifecycle_state() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 2);
+        let pdb = build_runner_pdb(&config, &spec);
+
+        let selector = pdb
+            .spec
+            .unwrap()
+            .selector
+            .unwrap()
+            .match_labels
+            .expect("pdb selector");
+
+        assert_eq!(
+            selector
+                .get("previa.runvibe.com/reservation-id")
+                .map(String::as_str),
+            Some("rr_test")
+        );
+        assert!(
+            !selector.contains_key("previa.runvibe.com/state"),
+            "PDB selector must not depend on mutable runner state"
+        );
+    }
+
+    #[test]
+    fn service_selector_still_matches_running_runner_labels() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
+        let service = build_runner_service(&config, &spec);
+        let selector = service.spec.unwrap().selector.unwrap();
+        let running_labels = reservation_labels(&spec.reservation_id, RunnerLifecycleState::Running);
+
+        for (key, value) in selector {
+            assert_eq!(
+                running_labels.get(&key),
+                Some(&value),
+                "running runner labels must satisfy Service selector key {key}"
+            );
+        }
     }
 
     #[test]
