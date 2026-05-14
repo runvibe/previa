@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import { useAppHeader } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
 import {
   createApiToken,
   createUser,
@@ -94,10 +95,12 @@ export default function AccessManagementPage() {
   const [userToDelete, setUserToDelete] = useState<ManagedUser | null>(null);
   const [tokenToDelete, setTokenToDelete] = useState<ApiTokenRecord | null>(null);
   const [createDialog, setCreateDialog] = useState<"user" | "token" | null>(null);
+  const headerActions = useMemo(() => <ProjectSettingsDialog />, []);
 
   const headerConfig = useMemo(() => ({
+    headerActions,
     onBackToProjects: () => navigate("/"),
-  }), [navigate]);
+  }), [headerActions, navigate]);
   useAppHeader(headerConfig);
 
   const canManage = useMemo(
