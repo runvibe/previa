@@ -182,8 +182,13 @@ impl KubernetesRunnerApi for KubeRunnerApi {
         reservation_id: &str,
     ) -> Result<(), KubernetesError> {
         let name = reservation_resource_name(reservation_id);
-        let params = DeleteParams::default();
+        let params = DeleteParams::background();
+        let selector = format!("previa.runvibe.com/reservation-id={reservation_id}");
         let _ = self.statefulsets().delete(&name, &params).await;
+        let _ = self
+            .pods()
+            .delete_collection(&params, &ListParams::default().labels(&selector))
+            .await;
         let _ = self.services().delete(&name, &params).await;
         let _ = self.pdbs().delete(&name, &params).await;
         Ok(())
