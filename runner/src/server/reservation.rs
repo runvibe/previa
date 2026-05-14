@@ -144,6 +144,10 @@ impl ReservationState {
         }
     }
 
+    pub fn is_ready(&self) -> bool {
+        !self.inner.busy.load(Ordering::SeqCst)
+    }
+
     fn has_active_reservation_gate(&self) -> bool {
         self.inner.reservation_id.is_some()
             && self.inner.reservation_token.is_some()
@@ -165,4 +169,27 @@ fn header_value(headers: &HeaderMap, name: &'static str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reservation_gate_is_disabled_after_first_execution() {
+        let state =
+            ReservationState::reserved_for_test("rr_test", "rt_test", "2999-01-01T00:00:00Z");
+        let headers = HeaderMap::new();
+
+        assert_eq!(
+            state.validate_first_execution_headers(&headers),
+            Err(ReservationError::MissingHeaders)
+        );
+
+        state.mark_execution_started().await;
+        state.mark_execution_finished().await;
+
+        assert_eq!(state.validate_first_execution_headers(&headers), Ok(()));
+        assert!(state.is_ready());
+    }
 }

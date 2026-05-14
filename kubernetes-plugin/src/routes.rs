@@ -37,7 +37,17 @@ async fn create_reservation(
             .into_response();
     }
 
-    (StatusCode::ACCEPTED, Json(store.create(payload).await)).into_response()
+    match store.create(payload).await {
+        Ok(status) => (StatusCode::ACCEPTED, Json(status)).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "reservation_error".to_owned(),
+                message: err.to_string(),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 async fn get_reservation(
