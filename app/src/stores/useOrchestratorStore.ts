@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 import { getApiUrlFromBase, resolveApiBaseUrl } from "@/lib/api-base";
+import { clearAuthSession, getAuthToken } from "@/stores/useAuthStore";
 import type { OrchestratorContext } from "@/lib/orchestrator-url";
 
 export type { OrchestratorContext } from "@/lib/orchestrator-url";
@@ -81,9 +82,14 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => {
 
     fetchInfo: async () => {
       const base = resolveApiBaseUrl();
+      const token = getAuthToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       try {
-        const res = await fetch(`${base}/info`, { signal: timeoutSignal(8000) });
+        const res = await fetch(`${base}/info`, { headers, signal: timeoutSignal(8000) });
         if (!res.ok) {
+          if (res.status === 401) {
+            clearAuthSession();
+          }
           set({ info: null });
           showApiOfflineToast(base);
           return null;
