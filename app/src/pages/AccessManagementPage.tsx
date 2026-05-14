@@ -33,6 +33,14 @@ import { useAuthStore } from "@/stores/useAuthStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -85,6 +93,7 @@ export default function AccessManagementPage() {
   const [saving, setSaving] = useState(false);
   const [userToDelete, setUserToDelete] = useState<ManagedUser | null>(null);
   const [tokenToDelete, setTokenToDelete] = useState<ApiTokenRecord | null>(null);
+  const [createDialog, setCreateDialog] = useState<"user" | "token" | null>(null);
 
   const headerConfig = useMemo(() => ({
     onBackToProjects: () => navigate("/"),
@@ -129,6 +138,7 @@ export default function AccessManagementPage() {
       setUsers((items) => [user, ...items]);
       setUsername("");
       setPassword("");
+      setCreateDialog(null);
       toast.success("Usuario criado");
     } catch {
       setError("Nao foi possivel criar o usuario");
@@ -261,69 +271,6 @@ export default function AccessManagementPage() {
 
         {error ? <p className="rounded border border-destructive/30 px-3 py-2 text-sm text-destructive">{error}</p> : null}
 
-        {canManage ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <UserPlus className="h-4 w-4" />
-                  Novo usuario
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleCreateUser} className="grid gap-3 md:grid-cols-[1fr_1fr_11rem_auto] md:items-end">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="access-username">Login</Label>
-                    <Input id="access-username" value={username} onChange={(event) => setUsername(event.target.value)} required />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="access-password">Senha</Label>
-                    <Input id="access-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-                  </div>
-                  <RoleSelect id="access-user-role" value={userRole} onChange={setUserRole} />
-                  <Button type="submit" disabled={saving || !username.trim() || !password.trim()}>
-                    <Plus className="h-4 w-4" />
-                    Criar
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <KeyRound className="h-4 w-4" />
-                  Novo API token
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <form onSubmit={handleCreateToken} className="grid gap-3 md:grid-cols-[1fr_11rem_auto] md:items-end">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="access-token-name">Nome</Label>
-                    <Input id="access-token-name" value={tokenName} onChange={(event) => setTokenName(event.target.value)} required />
-                  </div>
-                  <RoleSelect id="access-token-role" value={tokenRole} onChange={setTokenRole} />
-                  <Button type="submit" disabled={saving || !tokenName.trim()}>
-                    <Plus className="h-4 w-4" />
-                    Criar
-                  </Button>
-                </form>
-                {createdToken ? (
-                  <div className="flex gap-2">
-                    <code className="min-w-0 flex-1 overflow-auto rounded-md bg-muted px-3 py-2 text-xs">
-                      {createdToken}
-                    </code>
-                    <Button type="button" variant="outline" onClick={handleCopyToken}>
-                      <Clipboard className="h-4 w-4" />
-                      Copiar
-                    </Button>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </div>
-        ) : null}
-
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -332,11 +279,17 @@ export default function AccessManagementPage() {
         ) : (
           <>
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ShieldCheck className="h-4 w-4" />
                   Usuarios
                 </CardTitle>
+                {canManage ? (
+                  <Button size="sm" onClick={() => setCreateDialog("user")}>
+                    <Plus className="h-4 w-4" />
+                    Novo usuario
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent className="p-0">
                 {users.length === 0 ? (
@@ -408,11 +361,20 @@ export default function AccessManagementPage() {
             </Card>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <KeyRound className="h-4 w-4" />
                   API tokens
                 </CardTitle>
+                {canManage ? (
+                  <Button size="sm" onClick={() => {
+                    setCreatedToken(null);
+                    setCreateDialog("token");
+                  }}>
+                    <Plus className="h-4 w-4" />
+                    Novo token
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent className="p-0">
                 {tokens.length === 0 ? (
@@ -487,6 +449,82 @@ export default function AccessManagementPage() {
           </>
         )}
       </div>
+
+      <Dialog open={createDialog === "user"} onOpenChange={(open) => setCreateDialog(open ? "user" : null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo usuario</DialogTitle>
+            <DialogDescription>Crie um acesso com login, senha e role de permissao.</DialogDescription>
+          </DialogHeader>
+          <form id="create-access-user-form" onSubmit={handleCreateUser} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="access-username">Login</Label>
+              <Input id="access-username" value={username} onChange={(event) => setUsername(event.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="access-password">Senha</Label>
+              <Input id="access-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+            </div>
+            <RoleSelect id="access-user-role" value={userRole} onChange={setUserRole} />
+          </form>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateDialog(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="create-access-user-form"
+              disabled={saving || !username.trim() || !password.trim()}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Criar usuario
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createDialog === "token"} onOpenChange={(open) => setCreateDialog(open ? "token" : null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo API token</DialogTitle>
+            <DialogDescription>Crie um token fixo para CLI, MCP ou acesso direto a API.</DialogDescription>
+          </DialogHeader>
+          <form id="create-access-token-form" onSubmit={handleCreateToken} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="access-token-name">Nome</Label>
+              <Input id="access-token-name" value={tokenName} onChange={(event) => setTokenName(event.target.value)} required />
+            </div>
+            <RoleSelect id="access-token-role" value={tokenRole} onChange={setTokenRole} />
+            {createdToken ? (
+              <div className="space-y-2 rounded-md border border-border/70 bg-muted/30 p-3">
+                <Label>Token criado</Label>
+                <div className="flex gap-2">
+                  <code className="min-w-0 flex-1 overflow-auto rounded-md bg-background px-3 py-2 text-xs">
+                    {createdToken}
+                  </code>
+                  <Button type="button" variant="outline" onClick={handleCopyToken}>
+                    <Clipboard className="h-4 w-4" />
+                    Copiar
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </form>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCreateDialog(null)}>
+              Fechar
+            </Button>
+            <Button
+              type="submit"
+              form="create-access-token-form"
+              disabled={saving || !tokenName.trim()}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Criar token
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!userToDelete}
