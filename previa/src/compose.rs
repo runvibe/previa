@@ -515,6 +515,7 @@ mod tests {
             attached_runners: vec!["http://10.0.0.10:55880".to_owned()],
             runner_auth_key: None,
             generated_runner_auth_key: None,
+            auth_config_changed: false,
             dry_run: false,
             detach: true,
         };

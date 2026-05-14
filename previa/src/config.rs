@@ -33,6 +33,7 @@ pub struct ResolvedUpConfig {
     pub attached_runners: Vec<String>,
     pub runner_auth_key: Option<String>,
     pub generated_runner_auth_key: Option<String>,
+    pub auth_config_changed: bool,
     pub dry_run: bool,
     pub detach: bool,
 }
@@ -138,6 +139,7 @@ impl ResolvedUpConfig {
             attached_runners: state.attached_runners.clone(),
             runner_auth_key: state.runner_auth_key.clone(),
             generated_runner_auth_key: None,
+            auth_config_changed: false,
             dry_run: false,
             detach: true,
         })
@@ -362,6 +364,9 @@ pub async fn resolve_up_config(
     main_env
         .entry("ORCHESTRATOR_DATABASE_URL".to_owned())
         .or_insert_with(|| sqlite_database_url(&stack_paths.orchestrator_db));
+
+    let auth_config_changed = apply_access_management_config(&mut main_env, &args)?;
+
     let mut effective_runner_auth_key = resolve_runner_auth_key(
         process_runner_auth_key(),
         compose_main_env.as_ref(),
@@ -431,9 +436,59 @@ pub async fn resolve_up_config(
         attached_runners,
         runner_auth_key: effective_runner_auth_key,
         generated_runner_auth_key,
+        auth_config_changed,
         dry_run: args.dry_run,
         detach: args.detach,
     })
+}
+
+fn apply_access_management_config(
+    main_env: &mut BTreeMap<String, String>,
+    args: &UpArgs,
+) -> Result<bool> {
+    if args.anonymous {
+        main_env.insert("PREVIA_AUTH_ANONYMOUS".to_owned(), "true".to_owned());
+        return Ok(true);
+    }
+    if !args.protected {
+        return Ok(false);
+    }
+
+    main_env.insert("PREVIA_AUTH_ANONYMOUS".to_owned(), "false".to_owned());
+    let root_username = args
+        .root_username
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| configured_env_value(main_env, "PREVIA_ROOT_USERNAME"))
+        .unwrap_or_else(|| "root".to_owned());
+    main_env.insert("PREVIA_ROOT_USERNAME".to_owned(), root_username);
+
+    let root_password = args
+        .root_password
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| configured_env_value(main_env, "PREVIA_ROOT_PASSWORD"))
+        .ok_or_else(|| {
+            anyhow!("--protected requires --root-password-stdin unless PREVIA_ROOT_PASSWORD already exists in main.env")
+        })?;
+    main_env.insert("PREVIA_ROOT_PASSWORD".to_owned(), root_password);
+
+    if configured_env_value(main_env, "PREVIA_JWT_SECRET").is_none() {
+        main_env.insert("PREVIA_JWT_SECRET".to_owned(), Uuid::new_v4().to_string());
+    }
+
+    Ok(true)
+}
+
+fn configured_env_value(env: &BTreeMap<String, String>, key: &str) -> Option<String> {
+    env.get(key)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn process_runner_auth_key() -> Option<String> {
@@ -695,6 +750,11 @@ mod tests {
             attach_runners: Vec::new(),
             dry_run: false,
             detach: false,
+            protected: false,
+            anonymous: false,
+            root_username: None,
+            root_password_stdin: false,
+            root_password: None,
             #[cfg(target_os = "linux")]
             bin: true,
             version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -881,6 +941,64 @@ mod tests {
             resolved.runner_auth_key.as_deref(),
             Some(generated.as_str())
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_up_config_persists_protected_auth_env() {
+        let (_temp, paths) = temp_paths();
+        let stack_paths = paths.stack("default");
+        let mut args = base_args();
+        set_bin(&mut args, false);
+        args.protected = true;
+        args.root_username = Some("admin".to_owned());
+        args.root_password = Some("secret".to_owned());
+
+        let resolved = resolve_up_config(&paths, &stack_paths, args)
+            .await
+            .expect("protected config resolves");
+
+        assert_eq!(
+            resolved
+                .main_env
+                .get("PREVIA_AUTH_ANONYMOUS")
+                .map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            resolved
+                .main_env
+                .get("PREVIA_ROOT_USERNAME")
+                .map(String::as_str),
+            Some("admin")
+        );
+        assert_eq!(
+            resolved
+                .main_env
+                .get("PREVIA_ROOT_PASSWORD")
+                .map(String::as_str),
+            Some("secret")
+        );
+        assert!(
+            resolved
+                .main_env
+                .get("PREVIA_JWT_SECRET")
+                .is_some_and(|value| !value.is_empty())
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_up_config_requires_root_password_for_new_protected_context() {
+        let (_temp, paths) = temp_paths();
+        let stack_paths = paths.stack("default");
+        let mut args = base_args();
+        set_bin(&mut args, false);
+        args.protected = true;
+
+        let error = resolve_up_config(&paths, &stack_paths, args)
+            .await
+            .expect_err("missing protected root password");
+
+        assert!(error.to_string().contains("--root-password-stdin"));
     }
 
     #[tokio::test]

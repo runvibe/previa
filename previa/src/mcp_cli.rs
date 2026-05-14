@@ -8,6 +8,7 @@ use reqwest::Client;
 use serde_json::{Map, Value, json};
 use toml_edit::{DocumentMut, Item, Table, value};
 
+use crate::auth::{auth_path_for_context, auth_path_for_url, resolve_token};
 use crate::browser::main_url;
 use crate::cli::{
     McpAction, McpArgs, McpInstallArgs, McpPrintArgs, McpScope, McpStatusArgs, McpTarget,
@@ -44,29 +45,59 @@ async fn install(paths: &PreviaPaths, http: &Client, args: McpInstallArgs) -> Re
     }
 
     let url = resolve_target_url(paths, &args.url, args.context.as_deref())?;
+    let auth = resolve_mcp_auth(
+        paths,
+        args.url.as_deref(),
+        args.context.as_deref(),
+        args.token_env.as_deref(),
+    )?;
     if !args.no_verify {
-        verify_mcp_endpoint(http, &url).await?;
+        verify_mcp_endpoint(http, &url, auth.verify_header.as_deref()).await?;
     }
 
     match args.target {
         McpTarget::Codex => {
             let path = codex_config_path(args.scope)?;
-            let outcome = install_codex(&path, &args.name, &url, args.force)?;
+            let outcome = install_codex(
+                &path,
+                &args.name,
+                &url,
+                auth.config_header.as_deref(),
+                args.force,
+            )?;
             print_install_result(args.target, &args.name, &url, &path, outcome);
         }
         McpTarget::Cursor => {
             let path = cursor_config_path(args.scope)?;
-            let outcome = install_json_client(&path, &args.name, &url, args.force)?;
+            let outcome = install_json_client(
+                &path,
+                &args.name,
+                &url,
+                auth.config_header.as_deref(),
+                args.force,
+            )?;
             print_install_result(args.target, &args.name, &url, &path, outcome);
         }
         McpTarget::CopilotVscode => {
             let path = copilot_vscode_config_path(args.scope)?;
-            let outcome = install_json_client(&path, &args.name, &url, args.force)?;
+            let outcome = install_json_client(
+                &path,
+                &args.name,
+                &url,
+                auth.config_header.as_deref(),
+                args.force,
+            )?;
             print_install_result(args.target, &args.name, &url, &path, outcome);
         }
         McpTarget::Warp => {
             let path = warp_config_path(paths, &args.name);
-            let outcome = install_json_client(&path, &args.name, &url, args.force)?;
+            let outcome = install_json_client(
+                &path,
+                &args.name,
+                &url,
+                auth.config_header.as_deref(),
+                args.force,
+            )?;
             print_install_result(args.target, &args.name, &url, &path, outcome);
         }
         McpTarget::ClaudeCode => {
@@ -96,16 +127,21 @@ async fn install(paths: &PreviaPaths, http: &Client, args: McpInstallArgs) -> Re
                 );
             }
 
-            run_claude_command([
-                "mcp",
-                "add",
-                "--scope",
-                scope,
-                "--transport",
-                "http",
-                args.name.as_str(),
-                url.as_str(),
-            ])?;
+            let mut command = vec![
+                "mcp".to_owned(),
+                "add".to_owned(),
+                "--scope".to_owned(),
+                scope.to_owned(),
+                "--transport".to_owned(),
+                "http".to_owned(),
+            ];
+            if let Some(header) = auth.config_header.as_deref() {
+                command.push("--header".to_owned());
+                command.push(format!("Authorization: {header}"));
+            }
+            command.push(args.name.clone());
+            command.push(url.clone());
+            run_claude_command_vec(&command)?;
             println!(
                 "installed MCP server '{}' for {}",
                 args.name,
@@ -176,27 +212,57 @@ async fn status(http: &Client, paths: &PreviaPaths, args: McpStatusArgs) -> Resu
         McpTarget::Codex => {
             let path = codex_config_path(args.scope)?;
             let status = status_codex(&path, &args.name)?;
-            print_status_report(http, args.target, args.scope, status).await?;
+            print_status_report(
+                http,
+                args.target,
+                args.scope,
+                apply_status_auth_override(status, args.token_env.as_deref())?,
+            )
+            .await?;
         }
         McpTarget::Cursor => {
             let path = cursor_config_path(args.scope)?;
             let status = status_json_client(&path, &args.name)?;
-            print_status_report(http, args.target, args.scope, status).await?;
+            print_status_report(
+                http,
+                args.target,
+                args.scope,
+                apply_status_auth_override(status, args.token_env.as_deref())?,
+            )
+            .await?;
         }
         McpTarget::CopilotVscode => {
             let path = copilot_vscode_config_path(args.scope)?;
             let status = status_json_client(&path, &args.name)?;
-            print_status_report(http, args.target, args.scope, status).await?;
+            print_status_report(
+                http,
+                args.target,
+                args.scope,
+                apply_status_auth_override(status, args.token_env.as_deref())?,
+            )
+            .await?;
         }
         McpTarget::Warp => {
             ensure_scope(args.target, args.scope, McpScope::Global)?;
             let path = warp_config_path(paths, &args.name);
             let status = status_json_client(&path, &args.name)?;
-            print_status_report(http, args.target, args.scope, status).await?;
+            print_status_report(
+                http,
+                args.target,
+                args.scope,
+                apply_status_auth_override(status, args.token_env.as_deref())?,
+            )
+            .await?;
         }
         McpTarget::ClaudeCode => {
             let status = claude_code_status_internal(args.scope, &args.name)?;
-            print_status_report(http, args.target, args.scope, status).await?;
+            print_status_report(
+                http,
+                args.target,
+                args.scope,
+                apply_status_auth_override(status, args.token_env.as_deref())?,
+            )
+            .await?;
         }
         McpTarget::ClaudeDesktop => {
             bail!(
@@ -211,6 +277,12 @@ async fn status(http: &Client, paths: &PreviaPaths, args: McpStatusArgs) -> Resu
 
 fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
     let url = resolve_target_url(paths, &args.url, args.context.as_deref())?;
+    let auth = resolve_mcp_auth(
+        paths,
+        args.url.as_deref(),
+        args.context.as_deref(),
+        args.token_env.as_deref(),
+    )?;
     match args.target {
         McpTarget::Codex => {
             let path = codex_config_path(args.scope)?;
@@ -219,6 +291,10 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
             println!("[mcp_servers.{}]", args.name);
             println!("enabled = true");
             println!("url = \"{url}\"");
+            if let Some(header) = auth.config_header.as_deref() {
+                println!("[mcp_servers.{}.headers]", args.name);
+                println!("Authorization = \"{header}\"");
+            }
         }
         McpTarget::Cursor => {
             let path = cursor_config_path(args.scope)?;
@@ -229,7 +305,8 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
                 serde_json::to_string_pretty(&json!({
                     "mcpServers": {
                         &args.name: {
-                            "url": url
+                            "url": url,
+                            "headers": auth.json_headers()
                         }
                     }
                 }))
@@ -245,7 +322,8 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
                 serde_json::to_string_pretty(&json!({
                     "mcpServers": {
                         &args.name: {
-                            "url": url
+                            "url": url,
+                            "headers": auth.json_headers()
                         }
                     }
                 }))
@@ -262,7 +340,8 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
                 serde_json::to_string_pretty(&json!({
                     "mcpServers": {
                         &args.name: {
-                            "url": url
+                            "url": url,
+                            "headers": auth.json_headers()
                         }
                     }
                 }))
@@ -273,12 +352,22 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
             println!("oz agent run --mcp {}", path.display());
         }
         McpTarget::ClaudeCode => {
-            println!(
-                "claude mcp add --scope {} --transport http {} {}",
-                claude_scope(args.scope),
-                args.name,
-                url
-            );
+            if let Some(header) = auth.config_header.as_deref() {
+                println!(
+                    "claude mcp add --scope {} --transport http --header \"Authorization: {}\" {} {}",
+                    claude_scope(args.scope),
+                    header,
+                    args.name,
+                    url
+                );
+            } else {
+                println!(
+                    "claude mcp add --scope {} --transport http {} {}",
+                    claude_scope(args.scope),
+                    args.name,
+                    url
+                );
+            }
         }
         McpTarget::ClaudeDesktop => {
             println!("Previa MCP URL:");
@@ -286,6 +375,9 @@ fn print(paths: &PreviaPaths, args: McpPrintArgs) -> Result<()> {
             println!();
             println!("Claude Desktop remote HTTP MCP install is manual-only in this version.");
             println!("Use the product's connector/manual flow and point it at the URL above.");
+            if let Some(header) = auth.config_header.as_deref() {
+                println!("Authorization header: {header}");
+            }
         }
     }
 
@@ -323,9 +415,12 @@ fn resolve_target_url(
     ))
 }
 
-async fn verify_mcp_endpoint(http: &Client, url: &str) -> Result<()> {
-    let response = http
-        .request(reqwest::Method::OPTIONS, url)
+async fn verify_mcp_endpoint(http: &Client, url: &str, authorization: Option<&str>) -> Result<()> {
+    let mut request = http.request(reqwest::Method::OPTIONS, url);
+    if let Some(authorization) = authorization {
+        request = request.header(reqwest::header::AUTHORIZATION, authorization);
+    }
+    let response = request
         .send()
         .await
         .with_context(|| format!("failed to reach MCP endpoint '{url}'"))?;
@@ -339,6 +434,74 @@ async fn verify_mcp_endpoint(http: &Client, url: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Default)]
+struct McpAuth {
+    config_header: Option<String>,
+    verify_header: Option<String>,
+}
+
+impl McpAuth {
+    fn json_headers(&self) -> Value {
+        match self.config_header.as_deref() {
+            Some(header) => json!({ "Authorization": header }),
+            None => json!({}),
+        }
+    }
+}
+
+fn resolve_mcp_auth(
+    paths: &PreviaPaths,
+    explicit_url: Option<&str>,
+    context: Option<&str>,
+    token_env: Option<&str>,
+) -> Result<McpAuth> {
+    if let Some(token_env) = token_env {
+        let token_env = token_env.trim();
+        if token_env.is_empty() {
+            bail!("--token-env cannot be empty");
+        }
+        return Ok(McpAuth {
+            config_header: Some(format!("Bearer ${{{token_env}}}")),
+            verify_header: std::env::var(token_env)
+                .ok()
+                .map(|token| token.trim().to_owned())
+                .filter(|token| !token.is_empty())
+                .map(|token| format!("Bearer {token}")),
+        });
+    }
+
+    let auth_path = if let Some(url) = explicit_url {
+        auth_path_for_url(paths, url)
+    } else {
+        auth_path_for_context(paths, context.unwrap_or(DEFAULT_CONTEXT))?
+    };
+    let token = resolve_token(&auth_path).ok();
+    Ok(McpAuth {
+        config_header: token.as_ref().map(|token| format!("Bearer {token}")),
+        verify_header: token.map(|token| format!("Bearer {token}")),
+    })
+}
+
+fn apply_status_auth_override(
+    mut report: StatusReport,
+    token_env: Option<&str>,
+) -> Result<StatusReport> {
+    let Some(token_env) = token_env else {
+        return Ok(report);
+    };
+    let token_env = token_env.trim();
+    if token_env.is_empty() {
+        bail!("--token-env cannot be empty");
+    }
+    report.authorization = std::env::var(token_env)
+        .ok()
+        .map(|token| token.trim().to_owned())
+        .filter(|token| !token.is_empty())
+        .map(|token| format!("Bearer {token}"))
+        .or_else(|| Some(format!("Bearer ${{{token_env}}}")));
+    Ok(report)
 }
 
 fn ensure_linux() -> Result<()> {
@@ -444,17 +607,27 @@ struct StatusReport {
     installed: bool,
     path: Option<PathBuf>,
     url: Option<String>,
+    authorization: Option<String>,
     enabled: Option<bool>,
     mode: &'static str,
 }
 
-fn install_codex(path: &Path, name: &str, url: &str, force: bool) -> Result<InstallOutcome> {
+fn install_codex(
+    path: &Path,
+    name: &str,
+    url: &str,
+    authorization: Option<&str>,
+    force: bool,
+) -> Result<InstallOutcome> {
     let mut document = read_toml_document(path)?;
 
     let existing_url = codex_entry_url(&document, name);
     let existing_enabled = codex_entry_enabled(&document, name);
     if let Some(current_url) = existing_url {
-        if current_url == url && existing_enabled.unwrap_or(false) {
+        if current_url == url
+            && existing_enabled.unwrap_or(false)
+            && codex_entry_authorization(&document, name).as_deref() == authorization
+        {
             return Ok(InstallOutcome::AlreadyInstalled);
         }
         if !force {
@@ -473,6 +646,11 @@ fn install_codex(path: &Path, name: &str, url: &str, force: bool) -> Result<Inst
     let mut entry = Table::new();
     entry["enabled"] = value(true);
     entry["url"] = value(url);
+    if let Some(authorization) = authorization {
+        let mut headers = Table::new();
+        headers["Authorization"] = value(authorization);
+        entry["headers"] = Item::Table(headers);
+    }
     document["mcp_servers"][name] = Item::Table(entry);
     write_toml_document(path, &document)?;
     Ok(InstallOutcome::Installed)
@@ -503,6 +681,7 @@ fn status_codex(path: &Path, name: &str) -> Result<StatusReport> {
             installed: false,
             path: Some(path.to_path_buf()),
             url: None,
+            authorization: None,
             enabled: None,
             mode: "file",
         });
@@ -513,12 +692,19 @@ fn status_codex(path: &Path, name: &str) -> Result<StatusReport> {
         installed: codex_entry_exists(&document, name),
         path: Some(path.to_path_buf()),
         url: codex_entry_url(&document, name),
+        authorization: codex_entry_authorization(&document, name),
         enabled: codex_entry_enabled(&document, name),
         mode: "file",
     })
 }
 
-fn install_json_client(path: &Path, name: &str, url: &str, force: bool) -> Result<InstallOutcome> {
+fn install_json_client(
+    path: &Path,
+    name: &str,
+    url: &str,
+    authorization: Option<&str>,
+    force: bool,
+) -> Result<InstallOutcome> {
     let mut root = read_json_document(path)?;
     let servers = ensure_json_servers(&mut root)?;
 
@@ -527,7 +713,12 @@ fn install_json_client(path: &Path, name: &str, url: &str, force: bool) -> Resul
             .get("url")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
-        if current_url.as_deref() == Some(url) {
+        let current_authorization = existing
+            .get("headers")
+            .and_then(Value::as_object)
+            .and_then(|headers| headers.get("Authorization"))
+            .and_then(Value::as_str);
+        if current_url.as_deref() == Some(url) && current_authorization == authorization {
             return Ok(InstallOutcome::AlreadyInstalled);
         }
         if !force {
@@ -539,7 +730,16 @@ fn install_json_client(path: &Path, name: &str, url: &str, force: bool) -> Resul
         }
     }
 
-    servers.insert(name.to_owned(), json!({ "url": url }));
+    let entry = match authorization {
+        Some(authorization) => json!({
+            "url": url,
+            "headers": {
+                "Authorization": authorization
+            }
+        }),
+        None => json!({ "url": url }),
+    };
+    servers.insert(name.to_owned(), entry);
     write_json_document(path, &Value::Object(root))?;
     Ok(InstallOutcome::Installed)
 }
@@ -574,6 +774,7 @@ fn status_json_client(path: &Path, name: &str) -> Result<StatusReport> {
             installed: false,
             path: Some(path.to_path_buf()),
             url: None,
+            authorization: None,
             enabled: None,
             mode: "file",
         });
@@ -587,11 +788,21 @@ fn status_json_client(path: &Path, name: &str) -> Result<StatusReport> {
         .and_then(|entry| entry.get("url"))
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
+    let authorization = root
+        .get("mcpServers")
+        .and_then(Value::as_object)
+        .and_then(|servers| servers.get(name))
+        .and_then(|entry| entry.get("headers"))
+        .and_then(Value::as_object)
+        .and_then(|headers| headers.get("Authorization"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
 
     Ok(StatusReport {
         installed: url.is_some(),
         path: Some(path.to_path_buf()),
         url,
+        authorization,
         enabled: None,
         mode: "file",
     })
@@ -605,6 +816,7 @@ fn claude_code_status_internal(scope: McpScope, name: &str) -> Result<StatusRepo
             installed: false,
             path: None,
             url: None,
+            authorization: None,
             enabled: None,
             mode: "claude-cli",
         });
@@ -615,6 +827,7 @@ fn claude_code_status_internal(scope: McpScope, name: &str) -> Result<StatusRepo
         installed: true,
         path: None,
         url: extract_first_url(&stdout),
+        authorization: None,
         enabled: None,
         mode: "claude-cli",
     })
@@ -636,9 +849,14 @@ async fn print_status_report(
     if let Some(enabled) = report.enabled {
         println!("enabled: {}", yes_no(enabled));
     }
+    if report.authorization.is_some() {
+        println!("authorization: configured");
+    }
     if let Some(url) = report.url.as_deref() {
         println!("url: {url}");
-        let live = verify_mcp_endpoint(http, url).await.is_ok();
+        let live = verify_mcp_endpoint(http, url, report.authorization.as_deref())
+            .await
+            .is_ok();
         println!("live: {}", if live { "reachable" } else { "unreachable" });
     }
     Ok(())
@@ -728,6 +946,14 @@ fn codex_entry_enabled(document: &DocumentMut, name: &str) -> Option<bool> {
         .and_then(|_| document["mcp_servers"][name]["enabled"].as_bool())
 }
 
+fn codex_entry_authorization(document: &DocumentMut, name: &str) -> Option<String> {
+    document.get("mcp_servers").and_then(|_| {
+        document["mcp_servers"][name]["headers"]["Authorization"]
+            .as_str()
+            .map(ToOwned::to_owned)
+    })
+}
+
 fn read_json_document(path: &Path) -> Result<Map<String, Value>> {
     if !path.exists() {
         return Ok(Map::new());
@@ -791,6 +1017,17 @@ fn run_claude_command<const N: usize>(args: [&str; N]) -> Result<std::process::O
     Ok(output)
 }
 
+fn run_claude_command_vec(args: &[String]) -> Result<std::process::Output> {
+    let output = Command::new("claude").args(args).output().with_context(
+        || "failed to run `claude`; make sure Claude Code is installed and on PATH",
+    )?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("`claude {}` failed: {}", args.join(" "), stderr.trim());
+    }
+    Ok(output)
+}
+
 fn run_claude_command_allow_failure<const N: usize>(
     args: [&str; N],
 ) -> Result<std::process::Output> {
@@ -809,4 +1046,50 @@ fn extract_first_url(input: &str) -> Option<String> {
         .map(|token| token.strip_prefix("url=").unwrap_or(token))
         .find(|token| token.starts_with("http://") || token.starts_with("https://"))
         .map(ToOwned::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{install_codex, install_json_client};
+
+    #[test]
+    fn codex_install_writes_authorization_header() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("config.toml");
+
+        install_codex(
+            &path,
+            "previa",
+            "http://127.0.0.1:5588/mcp",
+            Some("Bearer ${PREVIA_API_TOKEN}"),
+            false,
+        )
+        .expect("install codex");
+
+        let contents = std::fs::read_to_string(path).expect("read config");
+        assert!(contents.contains("url = \"http://127.0.0.1:5588/mcp\""));
+        assert!(contents.contains("Authorization = \"Bearer ${PREVIA_API_TOKEN}\""));
+    }
+
+    #[test]
+    fn json_install_writes_authorization_header() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("mcp.json");
+
+        install_json_client(
+            &path,
+            "previa",
+            "http://127.0.0.1:5588/mcp",
+            Some("Bearer ${PREVIA_API_TOKEN}"),
+            false,
+        )
+        .expect("install json client");
+
+        let contents = std::fs::read_to_string(path).expect("read config");
+        let payload: serde_json::Value = serde_json::from_str(&contents).expect("json");
+        assert_eq!(
+            payload["mcpServers"]["previa"]["headers"]["Authorization"],
+            "Bearer ${PREVIA_API_TOKEN}"
+        );
+    }
 }

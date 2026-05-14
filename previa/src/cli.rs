@@ -384,6 +384,8 @@ pub struct McpInstallArgs {
     pub scope: McpScope,
     #[arg(long = "name", value_name = "SERVER_NAME", default_value = "previa")]
     pub name: String,
+    #[arg(long = "token-env", value_name = "ENV_NAME")]
+    pub token_env: Option<String>,
     #[arg(long = "force")]
     pub force: bool,
     #[arg(long = "no-verify")]
@@ -410,6 +412,8 @@ pub struct McpStatusArgs {
     pub scope: McpScope,
     #[arg(long = "name", value_name = "SERVER_NAME", default_value = "previa")]
     pub name: String,
+    #[arg(long = "token-env", value_name = "ENV_NAME")]
+    pub token_env: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -425,6 +429,8 @@ pub struct McpPrintArgs {
     pub scope: McpScope,
     #[arg(long = "name", value_name = "SERVER_NAME", default_value = "previa")]
     pub name: String,
+    #[arg(long = "token-env", value_name = "ENV_NAME")]
+    pub token_env: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -524,6 +530,16 @@ pub struct UpArgs {
     pub dry_run: bool,
     #[arg(short = 'd', long)]
     pub detach: bool,
+    #[arg(long = "protected", conflicts_with = "anonymous")]
+    pub protected: bool,
+    #[arg(long = "anonymous", conflicts_with = "protected")]
+    pub anonymous: bool,
+    #[arg(long = "root-username", value_name = "USERNAME")]
+    pub root_username: Option<String>,
+    #[arg(long = "root-password-stdin")]
+    pub root_password_stdin: bool,
+    #[arg(skip = None)]
+    pub root_password: Option<String>,
     #[cfg(target_os = "linux")]
     #[arg(long = "bin")]
     pub bin: bool,
@@ -673,6 +689,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_protected_up_flags() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "up",
+            "--protected",
+            "--root-username",
+            "admin",
+            "--root-password-stdin",
+            "-d",
+        ])
+        .expect("parse protected up");
+
+        let Commands::Up(args) = cli.command else {
+            panic!("expected up command");
+        };
+        assert!(args.protected);
+        assert!(!args.anonymous);
+        assert_eq!(args.root_username.as_deref(), Some("admin"));
+        assert!(args.root_password_stdin);
+        assert!(args.detach);
+    }
+
+    #[test]
     fn parses_login_with_password_stdin() {
         let cli = Cli::try_parse_from([
             "previa",
@@ -740,6 +779,28 @@ mod tests {
         assert_eq!(args.context, "default");
         assert_eq!(args.name, "ci");
         assert_eq!(args.role, "operator");
+    }
+
+    #[test]
+    fn parses_mcp_install_with_token_env() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "mcp",
+            "install",
+            "codex",
+            "--token-env",
+            "PREVIA_API_TOKEN",
+            "--no-verify",
+        ])
+        .expect("parse mcp install");
+
+        let Commands::Mcp(args) = cli.command else {
+            panic!("expected mcp command");
+        };
+        let super::McpAction::Install(args) = args.action else {
+            panic!("expected mcp install");
+        };
+        assert_eq!(args.token_env.as_deref(), Some("PREVIA_API_TOKEN"));
     }
 
     #[test]

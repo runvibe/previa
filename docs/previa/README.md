@@ -16,6 +16,7 @@ This is the main documentation index for Previa as an operator-facing platform a
 - [Runtime modes](./runtime-modes.md)
 - [Home and contexts](./home-and-contexts.md)
 - [Main and runner authentication](./main-runner-auth.md)
+- [Access management](./access-management.md)
 - [Remote runners](./remote-runners.md)
 
 ## Authoring and Testing

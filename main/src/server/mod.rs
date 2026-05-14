@@ -713,6 +713,106 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
+    #[tokio::test]
+    async fn protected_deactivated_api_token_is_rejected() {
+        let auth = protected_auth();
+        let root_jwt = protected_root_jwt(&auth);
+        let app = test_app_with_auth(auth).await;
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/api-tokens")
+                    .header("authorization", format!("Bearer {root_jwt}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"ci","role":"viewer"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        let token = payload["token"].as_str().expect("api token");
+        let token_id = payload["record"]["id"].as_str().expect("token id");
+
+        let disabled = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::PATCH)
+                    .uri(format!("/api/v1/api-tokens/{token_id}"))
+                    .header("authorization", format!("Bearer {root_jwt}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"active":false}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(disabled.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/info")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn protected_expired_api_token_is_rejected() {
+        let auth = protected_auth();
+        let root_jwt = protected_root_jwt(&auth);
+        let app = test_app_with_auth(auth).await;
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/api-tokens")
+                    .header("authorization", format!("Bearer {root_jwt}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"name":"old-ci","role":"viewer","expiresAt":"2000-01-01T00:00:00Z"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        let token = payload["token"].as_str().expect("api token");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/info")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
     async fn initialize_mcp_session(app: &axum::Router) -> String {
         let initialize = app
             .clone()

@@ -20,7 +20,7 @@ mod runner_cli;
 mod runtime;
 mod selectors;
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -307,10 +307,13 @@ async fn cmd_pull(args: PullArgs) -> Result<()> {
     pull_images(args.target, &args.version).await
 }
 
-async fn cmd_up(paths: &PreviaPaths, http: &Client, args: UpArgs) -> Result<()> {
+async fn cmd_up(paths: &PreviaPaths, http: &Client, mut args: UpArgs) -> Result<()> {
     let import_config = resolve_import_config(&args)?;
     let stack_name = parse_stack_name(&args.context)?;
     let stack_paths = paths.stack(&stack_name);
+    if args.protected && args.root_password_stdin {
+        args.root_password = Some(read_stdin_secret("root password")?);
+    }
     let mut resolved = resolve_up_config(paths, &stack_paths, args).await?;
 
     if resolved.dry_run {
@@ -323,7 +326,7 @@ async fn cmd_up(paths: &PreviaPaths, http: &Client, args: UpArgs) -> Result<()> 
 
     let _lock = acquire_lock(&stack_paths)?;
     ensure_context_not_running(&stack_paths).await?;
-    persist_generated_runner_auth_key(&stack_paths, &resolved)?;
+    persist_generated_runtime_secrets(&stack_paths, &resolved)?;
 
     match resolved.backend {
         RuntimeBackend::Compose => {
@@ -805,23 +808,49 @@ async fn ensure_context_not_running(stack_paths: &StackPaths) -> Result<()> {
     Ok(())
 }
 
-fn persist_generated_runner_auth_key(
+fn persist_generated_runtime_secrets(
     stack_paths: &StackPaths,
     resolved: &ResolvedUpConfig,
 ) -> Result<()> {
-    let Some(generated_key) = resolved.generated_runner_auth_key.as_ref() else {
-        return Ok(());
-    };
+    if let Some(generated_key) = resolved.generated_runner_auth_key.as_ref() {
+        let mut main_env = read_env_file(&stack_paths.main_env)?;
+        main_env.insert("RUNNER_AUTH_KEY".to_owned(), generated_key.clone());
+        write_env_file(&stack_paths.main_env, &main_env)?;
 
-    let mut main_env = read_env_file(&stack_paths.main_env)?;
-    main_env.insert("RUNNER_AUTH_KEY".to_owned(), generated_key.clone());
-    write_env_file(&stack_paths.main_env, &main_env)?;
+        let mut runner_env = read_env_file(&stack_paths.runner_env)?;
+        runner_env.insert("RUNNER_AUTH_KEY".to_owned(), generated_key.clone());
+        write_env_file(&stack_paths.runner_env, &runner_env)?;
+    }
 
-    let mut runner_env = read_env_file(&stack_paths.runner_env)?;
-    runner_env.insert("RUNNER_AUTH_KEY".to_owned(), generated_key.clone());
-    write_env_file(&stack_paths.runner_env, &runner_env)?;
+    if resolved.auth_config_changed {
+        let mut main_env = read_env_file(&stack_paths.main_env)?;
+        for key in [
+            "PREVIA_AUTH_ANONYMOUS",
+            "PREVIA_ROOT_USERNAME",
+            "PREVIA_ROOT_PASSWORD",
+            "PREVIA_JWT_SECRET",
+            "PREVIA_JWT_TTL_SECONDS",
+        ] {
+            if let Some(value) = resolved.main_env.get(key) {
+                main_env.insert(key.to_owned(), value.clone());
+            }
+        }
+        write_env_file(&stack_paths.main_env, &main_env)?;
+    }
 
     Ok(())
+}
+
+fn read_stdin_secret(label: &str) -> Result<String> {
+    let mut value = String::new();
+    io::stdin()
+        .read_to_string(&mut value)
+        .with_context(|| format!("failed to read {label} from stdin"))?;
+    let value = value.trim_end_matches(['\n', '\r']).to_owned();
+    if value.trim().is_empty() {
+        bail!("{label} cannot be empty");
+    }
+    Ok(value)
 }
 
 fn running_context_message(state: &DetachedRuntimeState) -> String {

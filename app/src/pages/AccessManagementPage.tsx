@@ -4,8 +4,12 @@ import { KeyRound, ShieldCheck, UserPlus } from "lucide-react";
 import {
   createApiToken,
   createUser,
+  deleteApiToken,
+  deleteUser,
   listApiTokens,
   listUsers,
+  updateApiToken,
+  updateUser,
   type AccessRole,
   type ApiTokenRecord,
   type ManagedUser,
@@ -80,6 +84,51 @@ export default function AccessManagementPage() {
     }
   }
 
+  async function handleToggleUser(user: ManagedUser) {
+    setError(null);
+    try {
+      const updated = await updateUser(user.id, { active: !user.active });
+      setUsers((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch {
+      setError("Nao foi possivel atualizar o usuario");
+    }
+  }
+
+  async function handleDeleteUser(user: ManagedUser) {
+    setError(null);
+    try {
+      await deleteUser(user.id);
+      setUsers((items) => items.filter((item) => item.id !== user.id));
+    } catch {
+      setError("Nao foi possivel remover o usuario");
+    }
+  }
+
+  async function handleToggleToken(token: ApiTokenRecord) {
+    setError(null);
+    try {
+      const updated = await updateApiToken(token.id, !token.active);
+      setTokens((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch {
+      setError("Nao foi possivel atualizar o token");
+    }
+  }
+
+  async function handleDeleteToken(token: ApiTokenRecord) {
+    setError(null);
+    try {
+      await deleteApiToken(token.id);
+      setTokens((items) => items.filter((item) => item.id !== token.id));
+    } catch {
+      setError("Nao foi possivel revogar o token");
+    }
+  }
+
+  async function handleCopyToken() {
+    if (!createdToken) return;
+    await navigator.clipboard?.writeText(createdToken);
+  }
+
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-auto px-6 py-5">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -130,9 +179,14 @@ export default function AccessManagementPage() {
               <RoleSelect id="access-token-role" value={tokenRole} onChange={setTokenRole} />
               <Button type="submit" size="sm">Criar token</Button>
               {createdToken ? (
-                <code className="block overflow-auto rounded bg-muted px-3 py-2 text-xs">
-                  {createdToken}
-                </code>
+                <div className="flex gap-2">
+                  <code className="min-w-0 flex-1 overflow-auto rounded bg-muted px-3 py-2 text-xs">
+                    {createdToken}
+                  </code>
+                  <Button type="button" variant="outline" size="sm" onClick={handleCopyToken}>
+                    Copiar
+                  </Button>
+                </div>
               ) : null}
             </form>
           </div>
@@ -142,13 +196,43 @@ export default function AccessManagementPage() {
           <Panel title="Usuarios" icon={<ShieldCheck className="h-4 w-4" />}>
             {loading ? <p className="text-sm text-muted-foreground">Carregando...</p> : null}
             {users.map((user) => (
-              <AccessRow key={user.id} label={user.username} role={user.role} active={user.active} />
+              <AccessRow
+                key={user.id}
+                label={user.username}
+                role={user.role}
+                active={user.active}
+                actions={canManage ? (
+                  <>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleToggleUser(user)}>
+                      {user.active ? "Desativar" : "Ativar"}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => handleDeleteUser(user)}>
+                      Remover
+                    </Button>
+                  </>
+                ) : null}
+              />
             ))}
           </Panel>
           <Panel title="Tokens" icon={<KeyRound className="h-4 w-4" />}>
             {loading ? <p className="text-sm text-muted-foreground">Carregando...</p> : null}
             {tokens.map((token) => (
-              <AccessRow key={token.id} label={`${token.name} - ${token.tokenPrefix}`} role={token.role} active={token.active} />
+              <AccessRow
+                key={token.id}
+                label={`${token.name} - ${token.tokenPrefix}`}
+                role={token.role}
+                active={token.active}
+                actions={canManage ? (
+                  <>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleToggleToken(token)}>
+                      {token.active ? "Desativar" : "Ativar"}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => handleDeleteToken(token)}>
+                      Revogar
+                    </Button>
+                  </>
+                ) : null}
+              />
             ))}
           </Panel>
         </section>
@@ -197,13 +281,24 @@ function Panel({ title, icon, children }: { title: string; icon: ReactNode; chil
   );
 }
 
-function AccessRow({ label, role, active }: { label: string; role: AccessRole; active: boolean }) {
+function AccessRow({
+  label,
+  role,
+  active,
+  actions,
+}: {
+  label: string;
+  role: AccessRole;
+  active: boolean;
+  actions?: ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded border px-3 py-2 text-sm">
       <span className="min-w-0 truncate">{label}</span>
       <span className="flex shrink-0 items-center gap-2">
         <Badge variant="secondary">{role}</Badge>
         <Badge variant={active ? "default" : "outline"}>{active ? "ativo" : "inativo"}</Badge>
+        {actions}
       </span>
     </div>
   );

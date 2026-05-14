@@ -67,6 +67,29 @@ export async function createUser(input: {
   return response.json();
 }
 
+export async function updateUser(
+  userId: string,
+  input: Partial<{
+    username: string;
+    password: string;
+    role: AccessRole;
+    active: boolean;
+  }>,
+): Promise<ManagedUser> {
+  const response = await authFetch(`/api/v1/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return response.json();
+}
+
+export async function deleteUser(userId: string): Promise<void> {
+  await authFetch(`/api/v1/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function listApiTokens(): Promise<ApiTokenRecord[]> {
   const response = await authFetch("/api/v1/api-tokens");
   return response.json();
@@ -82,6 +105,21 @@ export async function createApiToken(input: {
     body: JSON.stringify(input),
   });
   return response.json();
+}
+
+export async function updateApiToken(tokenId: string, active: boolean): Promise<ApiTokenRecord> {
+  const response = await authFetch(`/api/v1/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ active }),
+  });
+  return response.json();
+}
+
+export async function deleteApiToken(tokenId: string): Promise<void> {
+  await authFetch(`/api/v1/api-tokens/${encodeURIComponent(tokenId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser> {

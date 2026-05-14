@@ -50,6 +50,16 @@ previa mcp print claude-code --context default
 previa mcp uninstall cursor --scope project
 ```
 
+Protected contexts need an API token. If you already ran
+`previa login --context default`, `previa mcp install` reuses the saved token.
+You can also reference an environment variable instead of writing the raw token
+to client config:
+
+```bash
+previa mcp install codex --context default --token-env PREVIA_API_TOKEN
+previa mcp print cursor --context default --token-env PREVIA_API_TOKEN
+```
+
 Current target matrix for the Linux-first release:
 
 - `codex`
@@ -81,6 +91,9 @@ Current target matrix for the Linux-first release:
 [mcp_servers.previa]
 enabled = true
 url = "http://localhost:5588/mcp"
+
+[mcp_servers.previa.headers]
+Authorization = "Bearer ${PREVIA_API_TOKEN}"
 ```
 
 On the same machine, `localhost` is usually the right host even if `previa-main` is bound to `0.0.0.0`.
