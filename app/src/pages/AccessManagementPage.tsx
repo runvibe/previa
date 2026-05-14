@@ -1,14 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Activity,
   Check,
   CircleHelp,
   Clipboard,
   KeyRound,
   Loader2,
   Plus,
-  RefreshCw,
   ShieldCheck,
   Trash2,
   UserPlus,
@@ -245,18 +243,8 @@ export default function AccessManagementPage() {
           <div>
             <h2 className="text-xl font-bold sm:text-2xl">Acesso</h2>
             <p className="text-sm text-muted-foreground">
-              {currentUser?.username ?? "anonymous"} - {currentUser?.role ?? "viewer"}
+              Logado como {currentUser?.username ?? "anonymous"}
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={cn("capitalize", statusClass(canManage))}>
-              <Activity className="h-3 w-3" />
-              {canManage ? "gestao ativa" : "somente leitura"}
-            </Badge>
-            <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Atualizar
-            </Button>
           </div>
         </div>
 
