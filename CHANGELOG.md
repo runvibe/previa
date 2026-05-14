@@ -2,6 +2,43 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.23] - 2026-05-14
+
+### Documentation
+- Plan kubernetes runner stabilization (acec8e3)
+- Clarify runner access permissions (b65bf45)
+- Add api token access design (5eba102)
+- Define access management auth design (f897603)
+
+### Maintenance
+- Update release metadata for v1.0.0-alpha.22 (3e12182)
+
+### Other Changes
+- Prevent users from changing own role (b7e3534)
+- Simplify access page header (7f7cfa6)
+- Bump alpha version to 1.0.0-alpha.23 (5e0719a)
+- Add access type help tooltips (b15f982)
+- Move access creation into dialogs (a96335e)
+- Polish access management layout (b6b5f74)
+- Complete protected access workflows (4ad2d16)
+- Add access management auth (b0d21b7)
+- Clarify runner throttle label (d80285f)
+- Send global load target RPS from UI (2997b10)
+- Optimize kubernetes plugin image workflow (37e385b)
+- Publish kubernetes plugin image via CI (64161fa)
+- Implement kubernetes runner reservations (7bc8c08)
+- Implement runner reservation foundation (fc65bac)
+- Resolve runner reservation spec divergences (172b113)
+- Decide AWS Karpenter v0 scope (871277e)
+- Define AWS-first runner provisioning scope (bb1d286)
+- Require Karpenter for dynamic runner provisioning (c57bfa9)
+- Clarify portable runner node provisioning (2de2daf)
+- Document Kubernetes runner reservations (71e1c17)
+- Document wave load tests (ad96b8f)
+- Add Previa Codex plugin scaffold (85ccc82)
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.22...v1.0.0-alpha.23
+
 ## [v1.0.0-alpha.22] - 2026-05-11
 
 ### Features
