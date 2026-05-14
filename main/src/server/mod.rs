@@ -682,6 +682,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn protected_database_user_cannot_change_own_role() {
+        let auth = protected_auth();
+        let root_token = protected_root_jwt(&auth);
+        let app = test_app_with_auth(auth).await;
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/users")
+                    .header("authorization", format!("Bearer {root_token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"admin","password":"admin-secret","role":"admin","active":true}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = to_bytes(created.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let user = serde_json::from_slice::<Value>(&body).expect("json");
+        let user_id = user["id"].as_str().expect("user id");
+
+        let login = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/v1/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"username":"admin","password":"admin-secret","clientKind":"app"}"#,
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("login response");
+        assert_eq!(login.status(), StatusCode::OK);
+        let body = to_bytes(login.into_body(), usize::MAX).await.expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        let admin_token = payload["token"].as_str().expect("admin jwt");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::PATCH)
+                    .uri(format!("/api/v1/users/{user_id}"))
+                    .header("authorization", format!("Bearer {admin_token}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"role":"viewer"}"#))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let payload = serde_json::from_slice::<Value>(&body).expect("json");
+        assert_eq!(payload["message"], "cannot change own role");
+    }
+
+    #[tokio::test]
     async fn protected_editor_cannot_manage_api_tokens() {
         let auth = protected_auth();
         let token = auth
