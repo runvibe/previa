@@ -8,6 +8,7 @@ on:
       - Cargo.lock
       - Cargo.toml
       - Dockerfile.kubernetes-plugin
+      - Dockerfile.runner
       - Dockerfile.artifact
       - docs/previa/kubernetes-plugin.md
       - kubernetes-plugin/**
@@ -20,6 +21,7 @@ on:
       - Cargo.lock
       - Cargo.toml
       - Dockerfile.kubernetes-plugin
+      - Dockerfile.runner
       - Dockerfile.artifact
       - docs/previa/kubernetes-plugin.md
       - kubernetes-plugin/**
@@ -184,3 +186,49 @@ jobs:
             ARTIFACT_ROOT=artifacts
           cache-from: type=gha,scope=kubernetes-plugin
           cache-to: type=gha,mode=max,scope=kubernetes-plugin
+
+  validation_images:
+    name: Publish validation images
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push plugin validation image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.kubernetes-plugin
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/runvibe/previa-kubernetes-plugin:validation-${{ github.sha }}
+          cache-from: type=gha,scope=kubernetes-plugin-validation-arm64
+          cache-to: type=gha,mode=max,scope=kubernetes-plugin-validation-arm64
+
+      - name: Build and push runner validation image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.runner
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/runvibe/previa-runner:validation-${{ github.sha }}
+          cache-from: type=gha,scope=previa-runner-validation-arm64
+          cache-to: type=gha,mode=max,scope=previa-runner-validation-arm64

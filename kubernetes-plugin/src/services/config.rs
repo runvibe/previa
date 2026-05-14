@@ -8,6 +8,8 @@ pub enum CapacityMode {
 pub struct PluginConfig {
     pub namespace: String,
     pub runner_image: String,
+    pub runner_command: String,
+    pub runner_install_enabled: bool,
     pub runner_port: u16,
     pub service_name: String,
     pub reservation_ttl_seconds: i64,
@@ -18,8 +20,16 @@ pub struct PluginConfig {
     pub runner_cpu_limit: String,
     pub runner_memory_limit: String,
     pub node_pool: Option<String>,
+    pub tolerations: Vec<RunnerTolerationConfig>,
     pub capacity_mode: CapacityMode,
     pub static_runner_endpoints: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerTolerationConfig {
+    pub key: String,
+    pub value: Option<String>,
+    pub effect: Option<String>,
 }
 
 impl PluginConfig {
@@ -51,6 +61,12 @@ impl PluginConfig {
                 "PREVIA_RUNNER_IMAGE",
                 "gcr.io/distroless/cc-debian12:nonroot",
             ),
+            runner_command: string_value(
+                &values,
+                "PREVIA_RUNNER_COMMAND",
+                "/opt/previa/previa-runner",
+            ),
+            runner_install_enabled: bool_value(&values, "PREVIA_RUNNER_INSTALL_ENABLED", true),
             runner_port: u16_value(&values, "PREVIA_RUNNER_PORT", 7373),
             service_name: string_value(&values, "PREVIA_RUNNER_SERVICE_NAME", "previa-runner"),
             reservation_ttl_seconds: i64_value(&values, "PREVIA_RESERVATION_TTL_SECONDS", 300),
@@ -61,6 +77,7 @@ impl PluginConfig {
             runner_cpu_limit: string_value(&values, "PREVIA_RUNNER_CPU_LIMIT", "1"),
             runner_memory_limit: string_value(&values, "PREVIA_RUNNER_MEMORY_LIMIT", "1Gi"),
             node_pool: optional_string(&values, "PREVIA_KARPENTER_NODE_POOL"),
+            tolerations: parse_tolerations(values.get("PREVIA_RUNNER_TOLERATIONS")),
             capacity_mode,
             static_runner_endpoints,
         }
@@ -125,6 +142,21 @@ fn u16_value(values: &std::collections::HashMap<String, String>, key: &str, defa
         .unwrap_or(default)
 }
 
+fn bool_value(
+    values: &std::collections::HashMap<String, String>,
+    key: &str,
+    default: bool,
+) -> bool {
+    optional_string(values, key)
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
+}
+
 fn split_csv(value: Option<&String>) -> Vec<String> {
     value
         .map(|value| {
@@ -136,6 +168,31 @@ fn split_csv(value: Option<&String>) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_tolerations(value: Option<&String>) -> Vec<RunnerTolerationConfig> {
+    split_csv(value)
+        .into_iter()
+        .filter_map(|entry| {
+            let (key_value, effect) = entry
+                .split_once(':')
+                .map(|(left, right)| (left, Some(right.to_owned())))
+                .unwrap_or((entry.as_str(), None));
+            let (key, value) = key_value
+                .split_once('=')
+                .map(|(key, value)| (key, Some(value.to_owned())))
+                .unwrap_or((key_value, None));
+            let key = key.trim();
+            if key.is_empty() {
+                return None;
+            }
+            Some(RunnerTolerationConfig {
+                key: key.to_owned(),
+                value: value.map(|value| value.trim().to_owned()),
+                effect: effect.map(|effect| effect.trim().to_owned()),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -156,6 +213,8 @@ mod tests {
         assert_eq!(config.reservation_ttl_seconds, 300);
         assert_eq!(config.idle_ttl_seconds, 300);
         assert_eq!(config.runner_port, 7373);
+        assert_eq!(config.runner_command, "/opt/previa/previa-runner");
+        assert!(config.runner_install_enabled);
         assert_eq!(config.provision_timeout_seconds, 300);
         assert_eq!(config.capacity_mode, CapacityMode::Kubernetes);
     }
@@ -173,5 +232,25 @@ mod tests {
             config.static_runner_endpoints,
             vec!["http://127.0.0.1:17373"]
         );
+    }
+
+    #[test]
+    fn packaged_runner_image_and_tolerations_are_configurable() {
+        let config = PluginConfig::from_pairs([
+            ("PREVIA_RUNNER_IMAGE", "ghcr.io/runvibe/previa-runner:test"),
+            ("PREVIA_RUNNER_COMMAND", "/app/previa-runner"),
+            ("PREVIA_RUNNER_INSTALL_ENABLED", "false"),
+            (
+                "PREVIA_RUNNER_TOLERATIONS",
+                "workload.cloudvibe.dev/previa=arm:NoSchedule",
+            ),
+        ]);
+
+        assert_eq!(config.runner_command, "/app/previa-runner");
+        assert!(!config.runner_install_enabled);
+        assert_eq!(config.tolerations.len(), 1);
+        assert_eq!(config.tolerations[0].key, "workload.cloudvibe.dev/previa");
+        assert_eq!(config.tolerations[0].value.as_deref(), Some("arm"));
+        assert_eq!(config.tolerations[0].effect.as_deref(), Some("NoSchedule"));
     }
 }

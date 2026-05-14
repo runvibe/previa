@@ -4,7 +4,8 @@ use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetSpec};
 use k8s_openapi::api::core::v1::{
     Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, HTTPGetAction,
     PodAffinityTerm, PodAntiAffinity, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-    ResourceRequirements, SecurityContext, Service, ServicePort, ServiceSpec, Volume, VolumeMount,
+    ResourceRequirements, SecurityContext, Service, ServicePort, ServiceSpec, Toleration, Volume,
+    VolumeMount,
 };
 use k8s_openapi::api::policy::v1::{PodDisruptionBudget, PodDisruptionBudgetSpec};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
@@ -113,6 +114,18 @@ pub fn build_runner_statefulset(
     if let Some(node_pool) = config.node_pool.as_deref() {
         node_selector.insert("karpenter.sh/nodepool".to_owned(), node_pool.to_owned());
     }
+    let mut volumes = vec![Volume {
+        name: "tmp".to_owned(),
+        empty_dir: Some(EmptyDirVolumeSource::default()),
+        ..Default::default()
+    }];
+    if config.runner_install_enabled {
+        volumes.push(Volume {
+            name: "previa-bin".to_owned(),
+            empty_dir: Some(EmptyDirVolumeSource::default()),
+            ..Default::default()
+        });
+    }
 
     StatefulSet {
         metadata: ObjectMeta {
@@ -146,25 +159,33 @@ pub fn build_runner_statefulset(
                     }),
                     automount_service_account_token: Some(false),
                     containers: vec![runner_container(config, spec)],
-                    init_containers: Some(vec![install_runner_container()]),
+                    init_containers: config
+                        .runner_install_enabled
+                        .then(|| vec![install_runner_container()]),
                     node_selector: (!node_selector.is_empty()).then_some(node_selector),
                     security_context: Some(PodSecurityContext {
                         fs_group: Some(65532),
                         fs_group_change_policy: Some("OnRootMismatch".to_owned()),
                         ..Default::default()
                     }),
-                    volumes: Some(vec![
-                        Volume {
-                            name: "previa-bin".to_owned(),
-                            empty_dir: Some(EmptyDirVolumeSource::default()),
-                            ..Default::default()
-                        },
-                        Volume {
-                            name: "tmp".to_owned(),
-                            empty_dir: Some(EmptyDirVolumeSource::default()),
-                            ..Default::default()
-                        },
-                    ]),
+                    tolerations: (!config.tolerations.is_empty()).then(|| {
+                        config
+                            .tolerations
+                            .iter()
+                            .map(|item| Toleration {
+                                key: Some(item.key.clone()),
+                                operator: Some(if item.value.is_some() {
+                                    "Equal".to_owned()
+                                } else {
+                                    "Exists".to_owned()
+                                }),
+                                value: item.value.clone(),
+                                effect: item.effect.clone(),
+                                ..Default::default()
+                            })
+                            .collect()
+                    }),
+                    volumes: Some(volumes),
                     ..Default::default()
                 }),
             },
@@ -264,7 +285,7 @@ fn runner_container(config: &PluginConfig, spec: &RunnerReservationSpec) -> Cont
         name: "previa-runner".to_owned(),
         image: Some(config.runner_image.clone()),
         image_pull_policy: Some("IfNotPresent".to_owned()),
-        command: Some(vec!["/opt/previa/previa-runner".to_owned()]),
+        command: Some(vec![config.runner_command.clone()]),
         env: Some(env),
         ports: Some(vec![ContainerPort {
             container_port: config.runner_port as i32,
@@ -285,21 +306,26 @@ fn runner_container(config: &PluginConfig, spec: &RunnerReservationSpec) -> Cont
             ..Default::default()
         }),
         security_context: Some(container_security_context(true)),
-        volume_mounts: Some(vec![
-            VolumeMount {
-                mount_path: "/opt/previa".to_owned(),
-                name: "previa-bin".to_owned(),
-                read_only: Some(true),
-                ..Default::default()
-            },
-            VolumeMount {
-                mount_path: "/tmp".to_owned(),
-                name: "tmp".to_owned(),
-                ..Default::default()
-            },
-        ]),
+        volume_mounts: Some(runner_volume_mounts(config)),
         ..Default::default()
     }
+}
+
+fn runner_volume_mounts(config: &PluginConfig) -> Vec<VolumeMount> {
+    let mut mounts = vec![VolumeMount {
+        mount_path: "/tmp".to_owned(),
+        name: "tmp".to_owned(),
+        ..Default::default()
+    }];
+    if config.runner_install_enabled {
+        mounts.push(VolumeMount {
+            mount_path: "/opt/previa".to_owned(),
+            name: "previa-bin".to_owned(),
+            read_only: Some(true),
+            ..Default::default()
+        });
+    }
+    mounts
 }
 
 fn install_runner_container() -> Container {
@@ -441,6 +467,43 @@ mod tests {
         assert_eq!(
             container.liveness_probe.as_ref().unwrap().failure_threshold,
             Some(5)
+        );
+    }
+
+    #[test]
+    fn supports_packaged_runner_image_without_install_container() {
+        let config = PluginConfig::from_pairs([
+            ("PREVIA_RUNNER_IMAGE", "ghcr.io/runvibe/previa-runner:test"),
+            ("PREVIA_RUNNER_COMMAND", "/app/previa-runner"),
+            ("PREVIA_RUNNER_INSTALL_ENABLED", "false"),
+            ("PREVIA_KARPENTER_NODE_POOL", "previa-arm-nodepool"),
+            (
+                "PREVIA_RUNNER_TOLERATIONS",
+                "workload.cloudvibe.dev/previa=arm:NoSchedule",
+            ),
+        ]);
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
+        let statefulset = build_runner_statefulset(&config, &spec);
+        let pod_spec = statefulset.spec.unwrap().template.spec.unwrap();
+        let container = &pod_spec.containers[0];
+
+        assert!(pod_spec.init_containers.is_none());
+        assert_eq!(
+            pod_spec.node_selector.unwrap().get("karpenter.sh/nodepool"),
+            Some(&"previa-arm-nodepool".to_owned())
+        );
+        assert_eq!(
+            pod_spec.tolerations.unwrap()[0].key.as_deref(),
+            Some("workload.cloudvibe.dev/previa")
+        );
+        assert_eq!(container.command.as_ref().unwrap()[0], "/app/previa-runner");
+        assert!(
+            container
+                .volume_mounts
+                .as_ref()
+                .unwrap()
+                .iter()
+                .all(|mount| mount.name != "previa-bin")
         );
     }
 }
