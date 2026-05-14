@@ -1155,7 +1155,7 @@ async fn wait_for_ready_reservation(
             });
         }
         if matches!(status.status.as_str(), "failed" | "cancelled" | "expired") {
-            return Err(format!("runner reservation ended as {}", status.status));
+            return Err(format_reservation_terminal_message(&status));
         }
         if cancel.is_cancelled() {
             let _ = capacity.client.cancel(&reservation_id).await;
@@ -1189,6 +1189,23 @@ async fn wait_for_ready_reservation(
         )
         .await;
     }
+}
+
+fn format_reservation_terminal_message(status: &KubernetesReservationStatus) -> String {
+    format!(
+        "runner reservation ended as {}{}{}",
+        status.status,
+        status
+            .reason
+            .as_deref()
+            .map(|reason| format!(" ({reason})"))
+            .unwrap_or_default(),
+        status
+            .message
+            .as_deref()
+            .map(|message| format!(": {message}"))
+            .unwrap_or_default(),
+    )
 }
 
 async fn persist_runner_reservation_status(

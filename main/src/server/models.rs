@@ -143,6 +143,18 @@ pub struct KubernetesReservationStatus {
     pub requested_runners: usize,
     pub ready_runners: usize,
     #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub first_execution_started_at: Option<String>,
+    #[serde(default)]
+    pub idle_since: Option<String>,
+    #[serde(default)]
     pub reservation_token: Option<String>,
     #[serde(default)]
     pub expires_at: Option<String>,

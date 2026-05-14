@@ -46,7 +46,30 @@ pub fn determine_load_history_status(
     if consolidated.is_some_and(|item| item.total_error > 0) {
         return "error".to_owned();
     }
+    if consolidated.is_some_and(load_capacity_is_saturated) {
+        return "saturated".to_owned();
+    }
+    if consolidated.is_some_and(load_capacity_is_under_target) {
+        return "under_target".to_owned();
+    }
     "success".to_owned()
+}
+
+fn load_capacity_is_saturated(metrics: &ConsolidatedLoadMetrics) -> bool {
+    metrics.sender_lagged_starts.unwrap_or(0) > 0
+        || metrics.dispatcher_lagged_starts.unwrap_or(0) > 0
+        || metrics.runtime_lagged_starts.unwrap_or(0) > 0
+        || metrics.sender_queue_depth.unwrap_or(0) > 0
+}
+
+fn load_capacity_is_under_target(metrics: &ConsolidatedLoadMetrics) -> bool {
+    let missed = metrics.missed_starts.unwrap_or(0);
+    let poor_curve = metrics.curve_adherence.is_some_and(|value| value < 95.0);
+    let below_target = metrics
+        .target_rps_limit
+        .is_some_and(|target| target > 0.0 && metrics.rps < target * 0.95);
+
+    (missed > 0 || poor_curve) && below_target
 }
 
 pub async fn capture_e2e_history_event(
@@ -158,5 +181,89 @@ pub fn format_assert_failure_message(step_data: &Value, failed_assertions: &[Val
             failed_assertions.len(),
             details
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_consolidated_metrics() -> ConsolidatedLoadMetrics {
+        ConsolidatedLoadMetrics {
+            total_started: Some(1_000),
+            total_sent: 1_000,
+            total_success: 1_000,
+            total_error: 0,
+            http_started: Some(1_000),
+            http_completed: Some(1_000),
+            dispatch_submitted: None,
+            dispatch_started: None,
+            http_send_returned: None,
+            response_body_completed: None,
+            dependency_limited_starts: None,
+            dispatcher_lagged_starts: None,
+            runtime_lagged_starts: None,
+            sender_lagged_starts: None,
+            sender_queue_depth: None,
+            sender_start_lag_avg_ms: None,
+            sender_start_lag_p95_ms: None,
+            sender_start_lag_p99_ms: None,
+            sender_start_lag_max_ms: None,
+            http_send_duration_avg_ms: None,
+            http_send_duration_p95_ms: None,
+            http_send_duration_p99_ms: None,
+            response_observation_duration_avg_ms: None,
+            response_observation_duration_p95_ms: None,
+            response_observation_duration_p99_ms: None,
+            scheduler_lag_ms: None,
+            scheduler_lagged_starts: None,
+            slot_enqueued: None,
+            request_prepared: None,
+            request_enqueued: None,
+            send_task_spawned: None,
+            send_started: None,
+            rps: 100.0,
+            target_intensity: None,
+            target_rps_limit: Some(100.0),
+            in_flight: None,
+            runner_max_rps: None,
+            tick_ms: None,
+            scheduled_starts: Some(1_000),
+            missed_starts: None,
+            ready_requests: None,
+            active_pipelines: None,
+            outstanding_requests: None,
+            curve_adherence: Some(100.0),
+            avg_latency: 10,
+            p95: 20,
+            p99: 30,
+            start_time: 0,
+            elapsed_ms: 1_000,
+            nodes_reporting: 1,
+            lifecycle_buckets: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn load_status_is_under_target_when_curve_adherence_is_low() {
+        let mut metrics = test_consolidated_metrics();
+        metrics.rps = 400.0;
+        metrics.target_rps_limit = Some(2_500.0);
+        metrics.curve_adherence = Some(50.0);
+        metrics.missed_starts = Some(10_000);
+
+        let status = determine_load_history_status(false, Some(&metrics), true);
+
+        assert_eq!(status, "under_target");
+    }
+
+    #[test]
+    fn load_status_is_saturated_when_sender_lagged() {
+        let mut metrics = test_consolidated_metrics();
+        metrics.sender_lagged_starts = Some(1);
+
+        let status = determine_load_history_status(false, Some(&metrics), true);
+
+        assert_eq!(status, "saturated");
     }
 }

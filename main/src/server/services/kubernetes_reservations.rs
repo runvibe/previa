@@ -108,4 +108,29 @@ mod tests {
         assert_eq!(status.reservation_token.as_deref(), Some("secret"));
         assert_eq!(status.runners.len(), 1);
     }
+
+    #[test]
+    fn reservation_status_deserializes_failed_reason() {
+        let payload = serde_json::json!({
+            "reservationId": "rr_1",
+            "status": "failed",
+            "requestedRunners": 3,
+            "readyRunners": 0,
+            "reason": "provisionTimeout",
+            "message": "timed out waiting for runner pods",
+            "createdAt": "2026-05-12T18:35:00Z",
+            "updatedAt": "2026-05-12T18:40:00Z",
+            "runners": []
+        });
+
+        let status: KubernetesReservationStatus = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(status.status, "failed");
+        assert_eq!(status.reason.as_deref(), Some("provisionTimeout"));
+        assert_eq!(
+            status.message.as_deref(),
+            Some("timed out waiting for runner pods")
+        );
+        assert_eq!(status.created_at.as_deref(), Some("2026-05-12T18:35:00Z"));
+    }
 }

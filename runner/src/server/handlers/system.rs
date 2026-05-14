@@ -39,6 +39,14 @@ pub async fn health() -> StatusCode {
     StatusCode::OK
 }
 
+pub async fn ready(State(state): State<AppState>) -> StatusCode {
+    if state.reservation.is_ready() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/info",
@@ -73,4 +81,43 @@ pub async fn info_runtime(State(state): State<AppState>) -> Response {
     runtime.last_finished_at = reservation.last_finished_at;
 
     Json(runtime).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::state::AppState;
+
+    #[tokio::test]
+    async fn ready_reports_ok_when_runner_is_idle() {
+        let status = ready(State(AppState::default())).await;
+
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn ready_reports_unavailable_while_runner_busy() {
+        let state = AppState::default();
+        state.reservation.mark_execution_started().await;
+
+        let status = ready(State(state)).await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn info_includes_busy_and_execution_counters() {
+        let state = AppState::default();
+        state.reservation.mark_execution_started().await;
+        state.reservation.mark_execution_finished().await;
+
+        let response = info_runtime(State(state)).await;
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("json payload");
+
+        assert_eq!(payload["startedExecutionCount"], 1);
+        assert_eq!(payload["busy"], false);
+    }
 }

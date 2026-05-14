@@ -2,6 +2,16 @@ name: Kubernetes Plugin
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/kubernetes-plugin.yaml
+      - Cargo.lock
+      - Cargo.toml
+      - Dockerfile.kubernetes-plugin
+      - Dockerfile.artifact
+      - docs/previa/kubernetes-plugin.md
+      - kubernetes-plugin/**
+      - runner/**
   push:
     branches:
       - main
@@ -11,6 +21,7 @@ on:
       - Cargo.toml
       - Dockerfile.kubernetes-plugin
       - Dockerfile.artifact
+      - docs/previa/kubernetes-plugin.md
       - kubernetes-plugin/**
       - runner/**
 
@@ -47,6 +58,9 @@ jobs:
 
       - name: Build plugin crate
         run: cargo build --release -p previa-kubernetes-plugin
+
+      - name: Build plugin image
+        run: docker build -f Dockerfile.kubernetes-plugin -t ghcr.io/runvibe/previa-kubernetes-plugin:ci .
 
   linux_binaries:
     name: Build Linux binary (${{ matrix.arch }})
@@ -119,6 +133,7 @@ jobs:
 
   image:
     name: Build and publish image
+    if: github.event_name != 'pull_request'
     needs: linux_binaries
     runs-on: ubuntu-latest
     steps:
