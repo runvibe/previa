@@ -80,6 +80,9 @@ pub async fn update_user(
     Json(payload): Json<UserUpdateRequest>,
 ) -> Response {
     if let Some(role) = payload.role {
+        if principal.subject == user_id {
+            return forbidden("cannot change own role");
+        }
         if !principal.role.can_create_role(role) {
             return forbidden("cannot assign requested role");
         }
