@@ -200,6 +200,7 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("runner-0")).toBeInTheDocument();
     expect(screen.getByText("runner-1")).toBeInTheDocument();
     expect(screen.getByText("http://previa-runner-reserve-0.previa-runner-reserve.previa.svc.cluster.local:7373")).toBeInTheDocument();
+    expect(screen.getByTestId("load-results-runner-endpoints-scroll")).toHaveClass("max-h-[21rem]", "overflow-y-auto");
   });
 
   it("shows runner resource charts when a single runtime sample exists", () => {

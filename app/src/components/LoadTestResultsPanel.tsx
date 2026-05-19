@@ -243,34 +243,36 @@ function NodeSummaryPanel({ nodesInfo }: { nodesInfo: NonNullable<LoadTestResult
 
       {hasEndpoints && (
         <CollapsibleContent className="space-y-2">
-          <div className="grid gap-2 md:grid-cols-2">
-            {nodesInfo.nodeNames.map((endpoint, index) => {
-              const copied = copiedEndpoint === endpoint;
-              return (
-                <div key={`${endpoint}-${index}`} className="rounded-lg border border-border/60 bg-background/35 p-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold">{runnerDisplayName(endpoint, index)}</p>
-                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{compactEndpoint(endpoint)}</p>
+          <div className="max-h-[21rem] overflow-y-auto overscroll-contain pr-1" data-testid="load-results-runner-endpoints-scroll">
+            <div className="grid gap-2 md:grid-cols-2">
+              {nodesInfo.nodeNames.map((endpoint, index) => {
+                const copied = copiedEndpoint === endpoint;
+                return (
+                  <div key={`${endpoint}-${index}`} className="rounded-lg border border-border/60 bg-background/35 p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold">{runnerDisplayName(endpoint, index)}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{compactEndpoint(endpoint)}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => copyEndpoint(endpoint)}
+                        title={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
+                        aria-label={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                      </Button>
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => copyEndpoint(endpoint)}
-                      title={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
-                      aria-label={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-                    </Button>
+                    <p className="mt-2 break-all rounded-md bg-muted/30 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                      {endpoint}
+                    </p>
                   </div>
-                  <p className="mt-2 break-all rounded-md bg-muted/30 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
-                    {endpoint}
-                  </p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </CollapsibleContent>
       )}
