@@ -138,6 +138,37 @@ describe("remote execution snapshot parsing", () => {
     expect(snapshot?.errors).toEqual(["boom"]);
   });
 
+  it("parses load execution snapshots with top-level runner context", () => {
+    const snapshot = parseLoadExecutionSnapshot({
+      executionId: "exec-top-level",
+      status: "running",
+      nodesFound: 1,
+      usedNodesTotal: 1,
+      usedNodes: ["http://runner.local"],
+      consolidated: {
+        totalSent: 30,
+        totalSuccess: 29,
+        totalError: 1,
+        rps: 10,
+        startTime: 1000,
+        elapsedMs: 2000,
+      },
+    });
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.nodesInfo).toEqual({
+      nodesUsed: 1,
+      nodesFound: 1,
+      nodeNames: ["http://runner.local"],
+    });
+    expect(snapshot?.metrics).toMatchObject({
+      totalSent: 30,
+      totalSuccess: 29,
+      totalError: 1,
+      rps: 10,
+    });
+  });
+
   it("falls back to aggregating line metrics when consolidated data is absent", () => {
     const snapshot = parseLoadExecutionSnapshot({
       executionId: "exec-3",
@@ -372,6 +403,7 @@ describe("remote load execution requests", () => {
   it("opens the execution event stream after an async load start response", async () => {
     const onSnapshot = vi.fn();
     const onError = vi.fn();
+    const onExecutionStarted = vi.fn();
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/executions/exec-async")) {
@@ -417,6 +449,7 @@ describe("remote load execution requests", () => {
         onMetricsUpdate: vi.fn(),
         onComplete: vi.fn(),
         onError,
+        onExecutionStarted,
         onSnapshot,
       },
       "project-1",
@@ -439,6 +472,7 @@ describe("remote load execution requests", () => {
         metrics: expect.objectContaining({ totalSent: 12, totalSuccess: 11 }),
       }));
     });
+    expect(onExecutionStarted).toHaveBeenCalledWith("exec-async");
     expect(onError).not.toHaveBeenCalled();
 
     controller.disconnect();

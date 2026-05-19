@@ -86,6 +86,18 @@ interface LoadTestHistoryState {
 // Internal controller ref
 let _loadController: RemoteLoadTestController | null = null;
 
+function patchActiveRun(
+  state: LoadTestHistoryState,
+  patch: Partial<LoadTestRunRecord>,
+): LoadTestRunRecord[] {
+  if (!state.activeRunId) return state.runs;
+  return state.runs.map((run) =>
+    run.id === state.activeRunId
+      ? { ...run, ...patch }
+      : run,
+  );
+}
+
 export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) => ({
   runs: [],
   activeRunId: null,
@@ -180,16 +192,34 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         urls: Object.fromEntries(group.entries.map((entry) => [entry.name, entry.url])),
       }));
       const controller = runRemoteLoadTest(executionBackendUrl, pipeline, cfg, {
+        onExecutionStarted: (executionId) => {
+          set((s) => {
+            const nextId = `running-${executionId}`;
+            return {
+              activeRunId: nextId,
+              runs: s.runs.map((run) =>
+                run.id === syntheticId
+                  ? { ...run, id: nextId, executionId }
+                  : run,
+              ),
+            };
+          });
+        },
         onSnapshot: (snapshot) => {
           const s = get();
           const isProvisioning = snapshot.state === "provisioning";
-          set({
+          set((current) => ({
             liveMetrics: snapshot.metrics,
             liveState: snapshot.state,
             nodesInfo: snapshot.nodesInfo,
             provisioningStatus: isProvisioning ? s.provisioningStatus : null,
             provisioningStartedAt: isProvisioning ? (s.provisioningStartedAt ?? Date.now()) : null,
-          });
+            runs: patchActiveRun(current, {
+              metrics: snapshot.metrics,
+              state: snapshot.state,
+              executionId: snapshot.executionId ?? undefined,
+            }),
+          }));
           if (!s.viewingHistoricRun) {
             set({
               metrics: snapshot.metrics,
@@ -200,12 +230,16 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         onMetricsUpdate: (m) => {
           const snapshot = { ...m };
           const s = get();
-          set({
+          set((current) => ({
             liveMetrics: snapshot,
             liveState: "running",
             provisioningStatus: null,
             provisioningStartedAt: null,
-          });
+            runs: patchActiveRun(current, {
+              metrics: snapshot,
+              state: "running",
+            }),
+          }));
           if (!s.viewingHistoricRun) {
             set({ metrics: snapshot, state: "running" });
           }
@@ -213,12 +247,16 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         onComplete: (m) => {
           const snapshot = { ...m };
           const s = get();
-          set({
+          set((current) => ({
             liveMetrics: snapshot,
             liveState: "completed",
             provisioningStatus: null,
             provisioningStartedAt: null,
-          });
+            runs: patchActiveRun(current, {
+              metrics: snapshot,
+              state: "completed",
+            }),
+          }));
           if (!s.viewingHistoricRun) {
             set({ metrics: snapshot, state: "completed" });
           }
@@ -228,11 +266,15 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
           console.error("Remote load test error:", err);
           toast.error(err || i18n.t("store.loadTestRemoteError"));
           const s = get();
-          set({
+          set((current) => ({
             liveState: "cancelled",
             provisioningStatus: null,
             provisioningStartedAt: null,
-          });
+            runs: patchActiveRun(current, {
+              metrics: s.liveMetrics,
+              state: "cancelled",
+            }),
+          }));
           if (!s.viewingHistoricRun) {
             set({ state: "cancelled" });
           }
@@ -240,10 +282,11 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         },
         onProvisioningUpdate: (status) => {
           const s = get();
-          set({
+          set((current) => ({
             provisioningStatus: status,
             liveState: "provisioning",
-          });
+            runs: patchActiveRun(current, { state: "provisioning" }),
+          }));
           if (!s.viewingHistoricRun) {
             set({ state: "provisioning" });
           }
@@ -460,13 +503,18 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       onSnapshot: (snapshot) => {
         const s = get();
         const isProvisioning = snapshot.state === "provisioning";
-        set({
+        set((current) => ({
           liveMetrics: snapshot.metrics,
           liveState: snapshot.state,
           nodesInfo: snapshot.nodesInfo,
           provisioningStatus: isProvisioning ? s.provisioningStatus : null,
           provisioningStartedAt: isProvisioning ? (s.provisioningStartedAt ?? Date.now()) : null,
-        });
+          runs: patchActiveRun(current, {
+            metrics: snapshot.metrics,
+            state: snapshot.state,
+            executionId: snapshot.executionId ?? executionId,
+          }),
+        }));
         if (!s.viewingHistoricRun) {
           set({
             metrics: snapshot.metrics,
@@ -477,7 +525,16 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       onMetricsUpdate: (m) => {
         const snapshot = { ...m };
         const s = get();
-        set({ liveMetrics: snapshot, provisioningStatus: null, provisioningStartedAt: null });
+        set((current) => ({
+          liveMetrics: snapshot,
+          provisioningStatus: null,
+          provisioningStartedAt: null,
+          runs: patchActiveRun(current, {
+            metrics: snapshot,
+            state: "running",
+            executionId,
+          }),
+        }));
         if (!s.viewingHistoricRun) {
           set({ metrics: snapshot });
         }
@@ -485,12 +542,17 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       onComplete: (m) => {
         const snapshot = { ...m };
         const s = get();
-        set({
+        set((current) => ({
           liveMetrics: snapshot,
           liveState: "completed",
           provisioningStatus: null,
           provisioningStartedAt: null,
-        });
+          runs: patchActiveRun(current, {
+            metrics: snapshot,
+            state: "completed",
+            executionId,
+          }),
+        }));
         if (!s.viewingHistoricRun) {
           set({ metrics: snapshot, state: "completed" });
         }
@@ -504,11 +566,16 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       onError: (err) => {
         console.error("Reconnect load test error:", err);
         const s = get();
-        set({
+        set((current) => ({
           liveState: "cancelled",
           provisioningStatus: null,
           provisioningStartedAt: null,
-        });
+          runs: patchActiveRun(current, {
+            metrics: s.liveMetrics,
+            state: "cancelled",
+            executionId,
+          }),
+        }));
         if (!s.viewingHistoricRun) {
           set({ state: "cancelled" });
         }

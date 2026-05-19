@@ -777,13 +777,14 @@ export function parseLoadExecutionSnapshot(value: unknown): RemoteLoadExecutionS
   if (value.kind !== undefined && value.kind !== "load") return null;
 
   const status = pickString(value.status) ?? "running";
+  const context = isSseObject(value.context) ? value.context : value;
 
   return {
     executionId: pickString(value.executionId) ?? null,
     status,
     state: mapLoadSnapshotStatus(status),
     metrics: buildLoadMetricsFromSnapshot(value),
-    nodesInfo: extractNodesInfo(value.context),
+    nodesInfo: extractNodesInfo(context),
     errors: Array.isArray(value.errors)
       ? value.errors.filter((item): item is string => typeof item === "string")
       : [],
@@ -1156,6 +1157,7 @@ export interface RemoteLoadTestCallbacks {
   onMetricsUpdate: (metrics: LoadTestMetrics) => void;
   onComplete: (metrics: LoadTestMetrics) => void;
   onError: (error: string) => void;
+  onExecutionStarted?: (executionId: string) => void;
   onNodesInfo?: (info: RemoteNodesInfo) => void;
   onSnapshot?: (snapshot: RemoteLoadExecutionSnapshot) => void;
   onProvisioningUpdate?: (status: LoadProvisioningStatus) => void;
@@ -1663,6 +1665,7 @@ export function runRemoteLoadTest(
           streamCallbacks.onError("Load test accepted without an execution id");
           return;
         }
+        streamCallbacks.onExecutionStarted?.(executionId);
         streamController = reconnectToLoadExecution(backendUrl, projectId, executionId, streamCallbacks);
         return;
       }
@@ -1705,6 +1708,9 @@ export function runRemoteLoadTest(
             switch (event) {
               case "execution:init":
                 executionId = envelope.executionId ?? envelope.payload?.executionId ?? null;
+                if (executionId) {
+                  streamCallbacks.onExecutionStarted?.(executionId);
+                }
                 break;
               case "execution:status":
               case "execution:snapshot": {
