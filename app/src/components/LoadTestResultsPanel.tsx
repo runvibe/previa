@@ -1,7 +1,11 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge, AlertTriangle, ListChecks } from "lucide-react";
+import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Gauge, AlertTriangle, ListChecks, ChevronDown, Copy, Check } from "lucide-react";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { buildLifecycleChartData, type LifecycleSeriesTone } from "@/lib/load-lifecycle-chart";
 import { buildRpsChartData, buildWaveSecondMarkers, formatPlannedRequests } from "@/lib/load-rps-chart";
@@ -161,6 +165,119 @@ function resolveWaveRunnerCount(
   return 1;
 }
 
+function compactEndpoint(endpoint: string) {
+  try {
+    const parsed = new URL(endpoint);
+    return parsed.hostname;
+  } catch {
+    return endpoint;
+  }
+}
+
+function runnerDisplayName(endpoint: string, index: number) {
+  const host = compactEndpoint(endpoint);
+  const podName = host.split(".")[0] ?? host;
+  const ordinal = podName.match(/-(\d+)$/)?.[1];
+  if (ordinal !== undefined) return `runner-${ordinal}`;
+  return `runner-${index + 1}`;
+}
+
+function NodeSummaryPanel({ nodesInfo }: { nodesInfo: NonNullable<LoadTestResultsPanelProps["nodesInfo"]> }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
+  const hasEndpoints = nodesInfo.nodeNames.length > 0;
+  const availabilityLabel =
+    nodesInfo.nodesFound > 0
+      ? t("loadTestResults.nodesOf", { count: nodesInfo.nodesFound, suffix: nodesInfo.nodesFound !== 1 ? "is" : "l" })
+      : t("loadTestResults.dynamicReservation", { defaultValue: "dynamic reservation" });
+
+  const copyEndpoint = async (endpoint: string) => {
+    try {
+      await navigator.clipboard.writeText(endpoint);
+      setCopiedEndpoint(endpoint);
+      window.setTimeout(() => setCopiedEndpoint((current) => current === endpoint ? null : current), 1500);
+    } catch {
+      setCopiedEndpoint(null);
+    }
+  };
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="glass rounded-lg p-3 space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
+            <Server className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold">
+                {t(nodesInfo.nodesUsed === 1 ? "loadTestResults.nodes" : "loadTestResults.nodes_plural", { count: nodesInfo.nodesUsed })}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{availabilityLabel}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                {t("loadTestResults.runnersUsed", { count: nodesInfo.nodesUsed, defaultValue: "{{count}} runners used" })}
+              </Badge>
+              {hasEndpoints && (
+                <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                  {t("loadTestResults.endpointsCount", { count: nodesInfo.nodeNames.length, defaultValue: "{{count}} endpoints" })}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {hasEndpoints && (
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 justify-between gap-2 px-2 text-[11px] sm:justify-center">
+              {open
+                ? t("loadTestResults.hideEndpoints", { defaultValue: "Hide endpoints" })
+                : t("loadTestResults.showEndpoints", { defaultValue: "Show endpoints" })}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+            </Button>
+          </CollapsibleTrigger>
+        )}
+      </div>
+
+      {hasEndpoints && (
+        <CollapsibleContent className="space-y-2">
+          <div className="grid gap-2 md:grid-cols-2">
+            {nodesInfo.nodeNames.map((endpoint, index) => {
+              const copied = copiedEndpoint === endpoint;
+              return (
+                <div key={`${endpoint}-${index}`} className="rounded-lg border border-border/60 bg-background/35 p-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold">{runnerDisplayName(endpoint, index)}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{compactEndpoint(endpoint)}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => copyEndpoint(endpoint)}
+                      title={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
+                      aria-label={t("loadTestResults.copyEndpoint", { defaultValue: "Copy endpoint" })}
+                    >
+                      {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                  <p className="mt-2 break-all rounded-md bg-muted/30 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                    {endpoint}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  );
+}
+
 interface LoadTestResultsPanelProps {
   metrics: LoadTestMetrics;
   state: LoadTestState;
@@ -235,28 +352,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
     <div className="space-y-4 p-1">
       <ResultsSection title={t("loadTestResults.sectionOutcome")} testId="load-results-outcome">
         {nodesInfo && nodesInfo.nodesUsed > 0 && (
-          <div className="glass rounded-lg p-3 flex items-center gap-3">
-            <Server className="h-4 w-4 text-primary shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold">
-                  {t(nodesInfo.nodesUsed === 1 ? "loadTestResults.nodes" : "loadTestResults.nodes_plural", { count: nodesInfo.nodesUsed })}
-                </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {t("loadTestResults.nodesOf", { count: nodesInfo.nodesFound, suffix: nodesInfo.nodesFound !== 1 ? "is" : "l" })}
-                </span>
-              </div>
-              {nodesInfo.nodeNames.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {nodesInfo.nodeNames.map((name) => (
-                    <span key={name} className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                      {name}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <NodeSummaryPanel nodesInfo={nodesInfo} />
         )}
 
         {totalRequests > 0 && (

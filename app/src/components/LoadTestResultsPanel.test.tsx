@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -170,6 +170,36 @@ describe("LoadTestResultsPanel", () => {
     render(<LoadTestResultsPanel metrics={emptyMetrics} state="completed" totalRequests={0} />);
 
     expect(screen.queryByTestId("load-results-runner-infra")).not.toBeInTheDocument();
+  });
+
+  it("keeps runner endpoints collapsed behind a compact summary", () => {
+    renderWithTooltipProvider(
+      <LoadTestResultsPanel
+        metrics={emptyMetrics}
+        state="completed"
+        totalRequests={0}
+        nodesInfo={{
+          nodesUsed: 6,
+          nodesFound: 0,
+          nodeNames: [
+            "http://previa-runner-reserve-0.previa-runner-reserve.previa.svc.cluster.local:7373",
+            "http://previa-runner-reserve-1.previa-runner-reserve.previa.svc.cluster.local:7373",
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("loadTestResults.nodes_plural")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.dynamicReservation")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.runnersUsed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /loadTestResults.showEndpoints/ })).toBeInTheDocument();
+    expect(screen.queryByText("runner-0")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /loadTestResults.showEndpoints/ }));
+
+    expect(screen.getByText("runner-0")).toBeInTheDocument();
+    expect(screen.getByText("runner-1")).toBeInTheDocument();
+    expect(screen.getByText("http://previa-runner-reserve-0.previa-runner-reserve.previa.svc.cluster.local:7373")).toBeInTheDocument();
   });
 
   it("shows runner resource charts when a single runtime sample exists", () => {
