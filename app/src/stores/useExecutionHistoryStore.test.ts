@@ -4,12 +4,13 @@ import type { Pipeline, StepExecutionResult } from "@/types/pipeline";
 
 const mocks = vi.hoisted(() => ({
   runRemoteIntegrationFromStep: vi.fn(),
+  reconnectToE2eExecution: vi.fn(),
 }));
 
 vi.mock("@/lib/remote-executor", () => ({
   runRemoteIntegrationTest: vi.fn(),
   runRemoteIntegrationFromStep: mocks.runRemoteIntegrationFromStep,
-  reconnectToE2eExecution: vi.fn(),
+  reconnectToE2eExecution: mocks.reconnectToE2eExecution,
 }));
 
 vi.mock("@/lib/api-client", () => ({
@@ -68,6 +69,7 @@ const pipeline: Pipeline = {
 describe("useExecutionHistoryStore rerunFromStep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     useExecutionHistoryStore.setState({
       runs: [],
       latestStatuses: {},
@@ -133,5 +135,41 @@ describe("useExecutionHistoryStore rerunFromStep", () => {
     const results = useExecutionHistoryStore.getState().results;
     expect(results.login).toEqual(loginResult);
     expect(results.protected.response?.body).toEqual({ ok: true });
+  });
+
+  it("clears stale execution hints when reconnecting to an execution that no longer exists", async () => {
+    window.sessionStorage.setItem(
+      "previa:active-execution:project-1:pipeline-1",
+      "exec-stale",
+    );
+
+    mocks.reconnectToE2eExecution.mockImplementation(
+      (_backend, _projectId, _executionId, callbacks) => {
+        queueMicrotask(() => {
+          callbacks.onError(
+            'HTTP 404: {"error":"not_found","message":"execution not found for project"}',
+          );
+        });
+        return { cancel: vi.fn(), disconnect: vi.fn() };
+      },
+    );
+
+    useExecutionHistoryStore.getState().reconnectExecution(
+      "exec-stale",
+      "project-1",
+      "http://127.0.0.1:5610",
+      pipeline,
+      0,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const state = useExecutionHistoryStore.getState();
+    expect(window.sessionStorage.getItem("previa:active-execution:project-1:pipeline-1")).toBeNull();
+    expect(state.running).toBe(false);
+    expect(state.results).toEqual({});
+    expect(state.activeRunId).toBeNull();
+    expect(state.runs).toEqual([]);
+    expect(state.latestStatuses).toEqual({});
   });
 });

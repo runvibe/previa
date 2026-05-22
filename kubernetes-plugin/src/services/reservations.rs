@@ -472,11 +472,7 @@ impl ReservationStore {
                         "failed to rearm idle runner"
                     );
                     let mut runners = self.runners.write().await;
-                    if let Some(runner) = runners.get_mut(&candidate.0) {
-                        runner.state = RunnerLifecycleState::IdleReusable;
-                        runner.logical_reservation_id = None;
-                        runner.idle_since = Some(Utc::now());
-                    }
+                    runners.remove(&candidate.0);
                 }
             }
         }
@@ -634,6 +630,7 @@ mod tests {
         info: Mutex<RunnerInfo>,
         rearmed: Mutex<Vec<String>>,
         released: Mutex<Vec<String>>,
+        fail_rearm: Mutex<bool>,
     }
 
     impl FakeRunnerHealthApi {
@@ -647,6 +644,10 @@ mod tests {
 
         fn released_count(&self) -> usize {
             self.released.lock().unwrap().len()
+        }
+
+        fn fail_rearm(&self) {
+            *self.fail_rearm.lock().unwrap() = true;
         }
     }
 
@@ -667,6 +668,9 @@ mod tests {
             _expires_at: Option<&str>,
         ) -> Result<(), RunnerHealthError> {
             self.rearmed.lock().unwrap().push(endpoint.to_owned());
+            if *self.fail_rearm.lock().unwrap() {
+                return Err(RunnerHealthError::Unavailable("runner gone".to_owned()));
+            }
             *self.info.lock().unwrap() = RunnerInfo::default();
             Ok(())
         }
@@ -1022,6 +1026,42 @@ mod tests {
         assert_eq!(ready.status, ReservationStatusKind::Ready);
         assert_eq!(ready.ready_runners, 3);
         assert_eq!(ready.runners.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn failed_idle_rearm_is_skipped_and_missing_runner_is_created() {
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_runner_health(health.clone());
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let _ = store.reconcile_once(&first.reservation_id).await.unwrap();
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+        health.fail_rearm();
+
+        let second = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            store.create(test_request(1)),
+        )
+        .await
+        .expect("reservation creation should not loop forever")
+        .expect("reservation should be created");
+
+        assert_eq!(second.status, ReservationStatusKind::Provisioning);
+        assert_eq!(second.ready_runners, 0);
+        assert_eq!(health.rearmed_count(), 1);
+        assert_eq!(api.applied.lock().unwrap().last().unwrap().count, 1);
     }
 
     #[tokio::test]

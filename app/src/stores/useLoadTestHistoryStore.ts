@@ -98,6 +98,29 @@ function patchActiveRun(
   );
 }
 
+function isStaleExecutionError(error: unknown): boolean {
+  if (typeof error !== "string") return false;
+  return error.includes("HTTP 404") && error.includes("execution not found for project");
+}
+
+function resetUnstartedRunState(state: LoadTestHistoryState, syntheticId: string) {
+  const syntheticIds = new Set([syntheticId]);
+  if (state.activeRunId) {
+    syntheticIds.add(state.activeRunId);
+  }
+  return {
+    state: "idle" as const,
+    liveState: "idle" as const,
+    metrics: emptyMetrics,
+    liveMetrics: emptyMetrics,
+    activeRunId: null,
+    nodesInfo: null,
+    provisioningStatus: null,
+    provisioningStartedAt: null,
+    runs: state.runs.filter((run) => !syntheticIds.has(run.id)),
+  };
+}
+
 export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) => ({
   runs: [],
   activeRunId: null,
@@ -186,6 +209,9 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
 
     {
       const collectedNodeNames = new Set<string>();
+      let activeExecutionId: string | null = null;
+      let receivedMetrics = false;
+      let ignoreTerminalEvents = false;
       const runtimeSpecs = specs?.map(s => ({ slug: s.slug, servers: s.servers }));
       const runtimeEnvGroups = envGroups?.map((group) => ({
         slug: group.slug,
@@ -193,6 +219,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       }));
       const controller = runRemoteLoadTest(executionBackendUrl, pipeline, cfg, {
         onExecutionStarted: (executionId) => {
+          activeExecutionId = executionId;
           set((s) => {
             const nextId = `running-${executionId}`;
             return {
@@ -228,6 +255,8 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
           }
         },
         onMetricsUpdate: (m) => {
+          if (ignoreTerminalEvents) return;
+          receivedMetrics = true;
           const snapshot = { ...m };
           const s = get();
           set((current) => ({
@@ -245,6 +274,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
           }
         },
         onComplete: (m) => {
+          if (ignoreTerminalEvents) return;
           const snapshot = { ...m };
           const s = get();
           set((current) => ({
@@ -265,6 +295,12 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         onError: (err) => {
           console.error("Remote load test error:", err);
           toast.error(err || i18n.t("store.loadTestRemoteError"));
+          if (!activeExecutionId || !receivedMetrics) {
+            ignoreTerminalEvents = true;
+            _loadController = null;
+            set((state) => resetUnstartedRunState(state, syntheticId));
+            return;
+          }
           const s = get();
           set((current) => ({
             liveState: "cancelled",
@@ -565,6 +601,11 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       },
       onError: (err) => {
         console.error("Reconnect load test error:", err);
+        if (isStaleExecutionError(err)) {
+          _loadController = null;
+          set((state) => resetUnstartedRunState(state, syntheticId));
+          return;
+        }
         const s = get();
         set((current) => ({
           liveState: "cancelled",

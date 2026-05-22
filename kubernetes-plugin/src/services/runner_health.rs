@@ -19,6 +19,9 @@ pub struct RunnerInfo {
 pub enum RunnerHealthError {
     #[error("runner info request failed: {0}")]
     Request(#[from] reqwest::Error),
+    #[cfg(test)]
+    #[error("runner unavailable: {0}")]
+    Unavailable(String),
 }
 
 #[async_trait]
