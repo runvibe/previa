@@ -114,6 +114,13 @@ pub fn reservation_selector_labels(reservation_id: &str) -> BTreeMap<String, Str
     ])
 }
 
+fn runner_selector_labels() -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (LABEL_APP_NAME.to_owned(), APP_NAME.to_owned()),
+        (LABEL_COMPONENT.to_owned(), RUNNER_COMPONENT.to_owned()),
+    ])
+}
+
 pub fn build_runner_statefulset(
     config: &PluginConfig,
     spec: &RunnerReservationSpec,
@@ -128,6 +135,40 @@ pub fn build_runner_statefulset(
     let mut node_selector = BTreeMap::new();
     if let Some(node_pool) = config.node_pool.as_deref() {
         node_selector.insert("karpenter.sh/nodepool".to_owned(), node_pool.to_owned());
+    }
+    if config.runner_exclusive_nodes {
+        node_selector.insert(
+            config.runner_exclusive_node_label_key.clone(),
+            config.runner_exclusive_node_label_value.clone(),
+        );
+    }
+    let mut tolerations = config
+        .tolerations
+        .iter()
+        .map(|item| Toleration {
+            key: Some(item.key.clone()),
+            operator: Some(if item.value.is_some() {
+                "Equal".to_owned()
+            } else {
+                "Exists".to_owned()
+            }),
+            value: item.value.clone(),
+            effect: item.effect.clone(),
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
+    if config.runner_exclusive_nodes {
+        tolerations.push(Toleration {
+            key: Some(config.runner_exclusive_taint_key.clone()),
+            operator: Some(if config.runner_exclusive_taint_value.is_some() {
+                "Equal".to_owned()
+            } else {
+                "Exists".to_owned()
+            }),
+            value: config.runner_exclusive_taint_value.clone(),
+            effect: Some(config.runner_exclusive_taint_effect.clone()),
+            ..Default::default()
+        });
     }
     let mut volumes = vec![Volume {
         name: "tmp".to_owned(),
@@ -164,7 +205,10 @@ pub fn build_runner_statefulset(
                         pod_anti_affinity: Some(PodAntiAffinity {
                             required_during_scheduling_ignored_during_execution: Some(vec![
                                 PodAffinityTerm {
-                                    label_selector: Some(selector),
+                                    label_selector: Some(LabelSelector {
+                                        match_labels: Some(runner_selector_labels()),
+                                        ..Default::default()
+                                    }),
                                     topology_key: "kubernetes.io/hostname".to_owned(),
                                     ..Default::default()
                                 },
@@ -184,23 +228,7 @@ pub fn build_runner_statefulset(
                         fs_group_change_policy: Some("OnRootMismatch".to_owned()),
                         ..Default::default()
                     }),
-                    tolerations: (!config.tolerations.is_empty()).then(|| {
-                        config
-                            .tolerations
-                            .iter()
-                            .map(|item| Toleration {
-                                key: Some(item.key.clone()),
-                                operator: Some(if item.value.is_some() {
-                                    "Equal".to_owned()
-                                } else {
-                                    "Exists".to_owned()
-                                }),
-                                value: item.value.clone(),
-                                effect: item.effect.clone(),
-                                ..Default::default()
-                            })
-                            .collect()
-                    }),
+                    tolerations: (!tolerations.is_empty()).then_some(tolerations),
                     volumes: Some(volumes),
                     ..Default::default()
                 }),
@@ -457,6 +485,66 @@ mod tests {
     }
 
     #[test]
+    fn reserved_runners_require_exclusive_runner_nodes() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 2);
+        let statefulset = build_runner_statefulset(&config, &spec);
+        let pod_spec = statefulset.spec.unwrap().template.spec.unwrap();
+
+        assert_eq!(
+            pod_spec
+                .node_selector
+                .as_ref()
+                .and_then(|selector| selector.get("previa.runvibe.com/node-role")),
+            Some(&"runner".to_owned())
+        );
+        let tolerations = pod_spec.tolerations.expect("runner-only toleration");
+        assert!(
+            tolerations.iter().any(|toleration| {
+                toleration.key.as_deref() == Some("previa.runvibe.com/runner-only")
+                    && toleration.value.as_deref() == Some("true")
+                    && toleration.effect.as_deref() == Some("NoSchedule")
+            }),
+            "runner pods must tolerate the dedicated runner node taint"
+        );
+    }
+
+    #[test]
+    fn anti_affinity_is_global_across_all_previa_runners() {
+        let config = PluginConfig::test_default();
+        let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 2);
+        let statefulset = build_runner_statefulset(&config, &spec);
+        let pod_spec = statefulset.spec.unwrap().template.spec.unwrap();
+        let anti_affinity = pod_spec
+            .affinity
+            .unwrap()
+            .pod_anti_affinity
+            .unwrap()
+            .required_during_scheduling_ignored_during_execution
+            .unwrap();
+        let labels = anti_affinity[0]
+            .label_selector
+            .as_ref()
+            .unwrap()
+            .match_labels
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(
+            labels.get("app.kubernetes.io/name"),
+            Some(&"previa".to_owned())
+        );
+        assert_eq!(
+            labels.get("app.kubernetes.io/component"),
+            Some(&"runner".to_owned())
+        );
+        assert!(
+            !labels.contains_key("previa.runvibe.com/reservation-id"),
+            "anti-affinity must also separate runners from different reservations"
+        );
+    }
+
+    #[test]
     fn builds_headless_service_for_stable_runner_dns() {
         let config = PluginConfig::test_default();
         let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 2);
@@ -509,10 +597,7 @@ mod tests {
         let service = build_runner_service(&config, &spec);
 
         assert_eq!(
-            service
-                .spec
-                .unwrap()
-                .publish_not_ready_addresses,
+            service.spec.unwrap().publish_not_ready_addresses,
             Some(true)
         );
     }
@@ -595,7 +680,8 @@ mod tests {
         let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
         let service = build_runner_service(&config, &spec);
         let selector = service.spec.unwrap().selector.unwrap();
-        let running_labels = reservation_labels(&spec.reservation_id, RunnerLifecycleState::Running);
+        let running_labels =
+            reservation_labels(&spec.reservation_id, RunnerLifecycleState::Running);
 
         for (key, value) in selector {
             assert_eq!(

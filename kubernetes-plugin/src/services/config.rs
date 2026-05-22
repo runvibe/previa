@@ -22,6 +22,12 @@ pub struct PluginConfig {
     pub runner_memory_limit: String,
     pub node_pool: Option<String>,
     pub tolerations: Vec<RunnerTolerationConfig>,
+    pub runner_exclusive_nodes: bool,
+    pub runner_exclusive_node_label_key: String,
+    pub runner_exclusive_node_label_value: String,
+    pub runner_exclusive_taint_key: String,
+    pub runner_exclusive_taint_value: Option<String>,
+    pub runner_exclusive_taint_effect: String,
     pub capacity_mode: CapacityMode,
     pub static_runner_endpoints: Vec<String>,
 }
@@ -84,6 +90,32 @@ impl PluginConfig {
             runner_memory_limit: string_value(&values, "PREVIA_RUNNER_MEMORY_LIMIT", "1Gi"),
             node_pool: optional_string(&values, "PREVIA_KARPENTER_NODE_POOL"),
             tolerations: parse_tolerations(values.get("PREVIA_RUNNER_TOLERATIONS")),
+            runner_exclusive_nodes: bool_value(&values, "PREVIA_RUNNER_EXCLUSIVE_NODES", true),
+            runner_exclusive_node_label_key: string_value(
+                &values,
+                "PREVIA_RUNNER_EXCLUSIVE_NODE_LABEL_KEY",
+                "previa.runvibe.com/node-role",
+            ),
+            runner_exclusive_node_label_value: string_value(
+                &values,
+                "PREVIA_RUNNER_EXCLUSIVE_NODE_LABEL_VALUE",
+                "runner",
+            ),
+            runner_exclusive_taint_key: string_value(
+                &values,
+                "PREVIA_RUNNER_EXCLUSIVE_TAINT_KEY",
+                "previa.runvibe.com/runner-only",
+            ),
+            runner_exclusive_taint_value: optional_string(
+                &values,
+                "PREVIA_RUNNER_EXCLUSIVE_TAINT_VALUE",
+            )
+            .or_else(|| Some("true".to_owned())),
+            runner_exclusive_taint_effect: string_value(
+                &values,
+                "PREVIA_RUNNER_EXCLUSIVE_TAINT_EFFECT",
+                "NoSchedule",
+            ),
             capacity_mode,
             static_runner_endpoints,
         }
@@ -271,5 +303,26 @@ mod tests {
         assert_eq!(config.tolerations[0].key, "workload.cloudvibe.dev/previa");
         assert_eq!(config.tolerations[0].value.as_deref(), Some("arm"));
         assert_eq!(config.tolerations[0].effect.as_deref(), Some("NoSchedule"));
+    }
+
+    #[test]
+    fn runner_exclusive_nodes_default_to_dedicated_runner_label_and_taint() {
+        let config = PluginConfig::from_pairs([
+            ("PREVIA_RUNNER_NAMESPACE", "previa"),
+            ("PREVIA_RUNNER_IMAGE", "runner:test"),
+        ]);
+
+        assert!(config.runner_exclusive_nodes);
+        assert_eq!(
+            config.runner_exclusive_node_label_key,
+            "previa.runvibe.com/node-role"
+        );
+        assert_eq!(config.runner_exclusive_node_label_value, "runner");
+        assert_eq!(
+            config.runner_exclusive_taint_key,
+            "previa.runvibe.com/runner-only"
+        );
+        assert_eq!(config.runner_exclusive_taint_value.as_deref(), Some("true"));
+        assert_eq!(config.runner_exclusive_taint_effect, "NoSchedule");
     }
 }

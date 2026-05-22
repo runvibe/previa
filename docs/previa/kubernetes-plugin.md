@@ -24,6 +24,8 @@ AWS EKS + Karpenter
 Required operational behavior:
 
 - runner pods must use required pod anti-affinity on `kubernetes.io/hostname`;
+- runner pods must require dedicated runner nodes and tolerate the runner-only
+  taint; non-runner workloads must not tolerate that taint;
 - every reservation gets a StatefulSet, a headless Service, and a PodDisruptionBudget;
 - runner pods must be reachable from Previa main through the returned endpoint;
 - Karpenter must be allowed to create nodes matching the configured runner NodePool;
@@ -45,6 +47,12 @@ PREVIA_RUNNER_CPU_REQUEST=100m
 PREVIA_RUNNER_MEMORY_REQUEST=128Mi
 PREVIA_RUNNER_CPU_LIMIT=500m
 PREVIA_RUNNER_MEMORY_LIMIT=512Mi
+PREVIA_RUNNER_EXCLUSIVE_NODES=true
+PREVIA_RUNNER_EXCLUSIVE_NODE_LABEL_KEY=previa.runvibe.com/node-role
+PREVIA_RUNNER_EXCLUSIVE_NODE_LABEL_VALUE=runner
+PREVIA_RUNNER_EXCLUSIVE_TAINT_KEY=previa.runvibe.com/runner-only
+PREVIA_RUNNER_EXCLUSIVE_TAINT_VALUE=true
+PREVIA_RUNNER_EXCLUSIVE_TAINT_EFFECT=NoSchedule
 PREVIA_RECONCILE_INTERVAL_MS=1000
 ```
 
@@ -65,7 +73,12 @@ spec:
     metadata:
       labels:
         previa.runvibe.com/runner-pool: small
+        previa.runvibe.com/node-role: runner
     spec:
+      taints:
+        - key: previa.runvibe.com/runner-only
+          value: "true"
+          effect: NoSchedule
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -142,3 +155,6 @@ kubectl get nodeclaim -A
 ```
 
 The reservation should have the requested number of ready runner pods, each on a different node, with a PDB for the reservation.
+Each node should have the runner node label and runner-only taint, and no
+application workload should be scheduled there besides the runner pod and normal
+cluster/system DaemonSet pods.
