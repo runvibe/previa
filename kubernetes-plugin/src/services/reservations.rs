@@ -25,6 +25,7 @@ pub enum ReservationStoreError {
 #[derive(Clone)]
 pub struct ReservationStore {
     inner: Arc<RwLock<HashMap<String, ReservationRecord>>>,
+    runners: Arc<RwLock<HashMap<String, PhysicalRunnerRecord>>>,
     config: PluginConfig,
     kubernetes: Option<Arc<dyn KubernetesRunnerApi>>,
     runner_health: Option<Arc<dyn RunnerHealthApi>>,
@@ -38,10 +39,21 @@ struct ReservationRecord {
     token: String,
 }
 
+#[derive(Clone)]
+struct PhysicalRunnerRecord {
+    id: String,
+    endpoint: String,
+    physical_reservation_id: String,
+    logical_reservation_id: Option<String>,
+    state: RunnerLifecycleState,
+    idle_since: Option<DateTime<Utc>>,
+}
+
 impl Default for ReservationStore {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
+            runners: Arc::new(RwLock::new(HashMap::new())),
             config: PluginConfig::from_pairs(std::iter::empty::<(&str, &str)>()),
             kubernetes: None,
             runner_health: None,
@@ -56,6 +68,7 @@ impl ReservationStore {
     ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
+            runners: Arc::new(RwLock::new(HashMap::new())),
             config,
             kubernetes,
             runner_health: None,
@@ -118,16 +131,35 @@ impl ReservationStore {
                 }
             }
             CapacityMode::Kubernetes => {
-                if let Some(api) = self.kubernetes.as_ref() {
-                    api.apply_reservation_resources(
-                        &RunnerReservationSpec::new(
-                            reservation_id.clone(),
-                            token.clone(),
-                            request.count,
-                        )
-                        .with_expires_at(expires_at.clone()),
+                let reused = self
+                    .claim_idle_runners(
+                        &reservation_id,
+                        &token,
+                        expires_at.as_deref(),
+                        request.count,
                     )
-                    .await?;
+                    .await;
+                status.ready_runners = reused.len();
+                status.runners = reused;
+                let remaining = request.count.saturating_sub(status.ready_runners);
+                if remaining == 0 && request.count > 0 {
+                    status.status = ReservationStatusKind::Ready;
+                    status.ready_runners = request.count;
+                    status.reservation_token = Some(token.clone());
+                    status.expires_at = expires_at.clone();
+                }
+                if let Some(api) = self.kubernetes.as_ref() {
+                    if remaining > 0 {
+                        api.apply_reservation_resources(
+                            &RunnerReservationSpec::new(
+                                reservation_id.clone(),
+                                token.clone(),
+                                remaining,
+                            )
+                            .with_expires_at(expires_at.clone()),
+                        )
+                        .await?;
+                    }
                 }
             }
         }
@@ -181,7 +213,22 @@ impl ReservationStore {
         if self.config.capacity_mode == CapacityMode::Kubernetes {
             if let Some(api) = self.kubernetes.as_ref() {
                 let pods = api.list_ready_runner_pods(reservation_id).await?;
-                if pods.len() >= record.request.count {
+                self.register_physical_runner_pods(reservation_id, &pods)
+                    .await;
+                let mut runners = record.status.runners.clone();
+                for pod in pods {
+                    if runners
+                        .iter()
+                        .any(|runner| runner.endpoint == pod.endpoint || runner.id == pod.name)
+                    {
+                        continue;
+                    }
+                    runners.push(ReservationRunner {
+                        id: pod.name,
+                        endpoint: pod.endpoint,
+                    });
+                }
+                if runners.len() >= record.request.count {
                     record.status.status = ReservationStatusKind::Ready;
                     record.status.ready_runners = record.request.count;
                     record.status.reservation_token = Some(record.token.clone());
@@ -190,14 +237,12 @@ impl ReservationStore {
                             + Duration::seconds(self.config.reservation_ttl_seconds))
                         .to_rfc3339(),
                     );
-                    record.status.runners = pods
-                        .into_iter()
-                        .take(record.request.count)
-                        .map(|pod| ReservationRunner {
-                            id: pod.name,
-                            endpoint: pod.endpoint,
-                        })
-                        .collect();
+                    record.status.runners =
+                        runners.into_iter().take(record.request.count).collect();
+                    record.status.updated_at = Utc::now().to_rfc3339();
+                } else if !runners.is_empty() {
+                    record.status.ready_runners = runners.len();
+                    record.status.runners = runners;
                     record.status.updated_at = Utc::now().to_rfc3339();
                 }
             }
@@ -248,6 +293,7 @@ impl ReservationStore {
         };
         record.status.status = ReservationStatusKind::Cancelled;
         drop(lock);
+        self.release_runners_for_reservation(reservation_id).await;
         if let Some(api) = self.kubernetes.as_ref() {
             if let Err(error) = api.delete_reservation_resources(reservation_id).await {
                 warn!(%reservation_id, %error, "failed to delete cancelled reservation resources");
@@ -279,6 +325,7 @@ impl ReservationStore {
             ReservationStatusKind::Ready
                 | ReservationStatusKind::Running
                 | ReservationStatusKind::Idle
+                | ReservationStatusKind::IdleReusable
         ) {
             return Ok(());
         }
@@ -333,8 +380,8 @@ impl ReservationStore {
                 record.status.idle_since = None;
                 desired_state_label = Some(RunnerLifecycleState::Running);
             } else if all_idle_after_start {
-                record.status.status = ReservationStatusKind::Idle;
-                desired_state_label = Some(RunnerLifecycleState::Idle);
+                record.status.status = ReservationStatusKind::IdleReusable;
+                desired_state_label = Some(RunnerLifecycleState::IdleReusable);
                 if record.status.idle_since.is_none() {
                     record.status.idle_since = Some(Utc::now().to_rfc3339());
                 }
@@ -352,8 +399,13 @@ impl ReservationStore {
             record.status.updated_at = Utc::now().to_rfc3339();
         }
 
+        if let Some(state) = desired_state_label.clone() {
+            self.update_runner_records_for_lifecycle(reservation_id, state)
+                .await;
+        }
+
         if delete {
-            self.delete_and_mark(reservation_id, ReservationStatusKind::Terminating)
+            self.delete_idle_reservation_if_unleased(reservation_id)
                 .await;
         } else if let (Some(api), Some(state)) = (self.kubernetes.as_ref(), desired_state_label) {
             let _ = api.update_runner_state_label(reservation_id, state).await;
@@ -362,8 +414,173 @@ impl ReservationStore {
     }
 
     async fn expire_and_delete(&self, reservation_id: &str) {
+        self.release_runners_for_reservation(reservation_id).await;
         self.delete_and_mark(reservation_id, ReservationStatusKind::Expired)
             .await;
+    }
+
+    async fn claim_idle_runners(
+        &self,
+        reservation_id: &str,
+        reservation_token: &str,
+        expires_at: Option<&str>,
+        count: usize,
+    ) -> Vec<ReservationRunner> {
+        let Some(runner_health) = self.runner_health.as_ref() else {
+            return Vec::new();
+        };
+        let mut claimed = Vec::new();
+        while claimed.len() < count {
+            let candidate = {
+                let mut runners = self.runners.write().await;
+                let Some((key, runner)) = runners
+                    .iter_mut()
+                    .find(|(_, runner)| {
+                        runner.state == RunnerLifecycleState::IdleReusable
+                            && runner.logical_reservation_id.is_none()
+                    })
+                    .map(|(key, runner)| {
+                        runner.state = RunnerLifecycleState::Reserved;
+                        runner.logical_reservation_id = Some(reservation_id.to_owned());
+                        runner.idle_since = None;
+                        (key.clone(), runner.clone())
+                    })
+                else {
+                    break;
+                };
+                (key, runner)
+            };
+
+            match runner_health
+                .rearm_runner(
+                    &candidate.1.endpoint,
+                    reservation_id,
+                    reservation_token,
+                    expires_at,
+                )
+                .await
+            {
+                Ok(()) => claimed.push(ReservationRunner {
+                    id: candidate.1.id,
+                    endpoint: candidate.1.endpoint,
+                }),
+                Err(error) => {
+                    warn!(
+                        reservation_id,
+                        endpoint = %candidate.1.endpoint,
+                        %error,
+                        "failed to rearm idle runner"
+                    );
+                    let mut runners = self.runners.write().await;
+                    if let Some(runner) = runners.get_mut(&candidate.0) {
+                        runner.state = RunnerLifecycleState::IdleReusable;
+                        runner.logical_reservation_id = None;
+                        runner.idle_since = Some(Utc::now());
+                    }
+                }
+            }
+        }
+        claimed
+    }
+
+    async fn register_physical_runner_pods(
+        &self,
+        reservation_id: &str,
+        pods: &[crate::services::kubernetes::RunnerPod],
+    ) {
+        let mut runners = self.runners.write().await;
+        for pod in pods {
+            runners
+                .entry(pod.endpoint.clone())
+                .or_insert_with(|| PhysicalRunnerRecord {
+                    id: pod.name.clone(),
+                    endpoint: pod.endpoint.clone(),
+                    physical_reservation_id: reservation_id.to_owned(),
+                    logical_reservation_id: Some(reservation_id.to_owned()),
+                    state: RunnerLifecycleState::Reserved,
+                    idle_since: None,
+                });
+        }
+    }
+
+    async fn update_runner_records_for_lifecycle(
+        &self,
+        reservation_id: &str,
+        state: RunnerLifecycleState,
+    ) {
+        let mut runners = self.runners.write().await;
+        for runner in runners.values_mut() {
+            if runner.logical_reservation_id.as_deref() != Some(reservation_id) {
+                continue;
+            }
+            runner.state = state.clone();
+            if state == RunnerLifecycleState::IdleReusable {
+                runner.logical_reservation_id = None;
+                runner.idle_since = Some(Utc::now());
+            } else {
+                runner.idle_since = None;
+            }
+        }
+    }
+
+    async fn release_runners_for_reservation(&self, reservation_id: &str) {
+        let runners = {
+            self.runners
+                .read()
+                .await
+                .values()
+                .filter(|runner| runner.logical_reservation_id.as_deref() == Some(reservation_id))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let Some(runner_health) = self.runner_health.as_ref() else {
+            return;
+        };
+        for runner in runners {
+            if let Err(error) = runner_health.release_runner(&runner.endpoint).await {
+                warn!(
+                    reservation_id,
+                    endpoint = %runner.endpoint,
+                    %error,
+                    "failed to release runner reservation"
+                );
+            }
+            let mut lock = self.runners.write().await;
+            if let Some(record) = lock.get_mut(&runner.endpoint) {
+                record.logical_reservation_id = None;
+                record.state = RunnerLifecycleState::IdleReusable;
+                record.idle_since = Some(Utc::now());
+            }
+        }
+    }
+
+    async fn delete_idle_reservation_if_unleased(&self, reservation_id: &str) {
+        if !self
+            .physical_reservation_idle_ttl_expired(reservation_id)
+            .await
+        {
+            return;
+        }
+        self.delete_and_mark(reservation_id, ReservationStatusKind::Terminating)
+            .await;
+    }
+
+    async fn physical_reservation_idle_ttl_expired(&self, reservation_id: &str) -> bool {
+        let runners = self.runners.read().await;
+        let physical = runners
+            .values()
+            .filter(|runner| runner.physical_reservation_id == reservation_id)
+            .collect::<Vec<_>>();
+        if physical.is_empty() {
+            return false;
+        }
+        physical.iter().all(|runner| {
+            runner.logical_reservation_id.is_none()
+                && runner.state == RunnerLifecycleState::IdleReusable
+                && runner.idle_since.is_some_and(|idle_since| {
+                    Utc::now() >= idle_since + Duration::seconds(self.config.idle_ttl_seconds)
+                })
+        })
     }
 
     async fn delete_and_mark(&self, reservation_id: &str, status: ReservationStatusKind) {
@@ -385,6 +602,10 @@ impl ReservationStore {
                 warn!(%reservation_id, %error, "failed to delete reservation resources");
             }
         }
+        self.runners
+            .write()
+            .await
+            .retain(|_, runner| runner.physical_reservation_id != reservation_id);
     }
 }
 
@@ -411,11 +632,21 @@ mod tests {
     #[derive(Default)]
     struct FakeRunnerHealthApi {
         info: Mutex<RunnerInfo>,
+        rearmed: Mutex<Vec<String>>,
+        released: Mutex<Vec<String>>,
     }
 
     impl FakeRunnerHealthApi {
         fn set_info(&self, info: RunnerInfo) {
             *self.info.lock().unwrap() = info;
+        }
+
+        fn rearmed_count(&self) -> usize {
+            self.rearmed.lock().unwrap().len()
+        }
+
+        fn released_count(&self) -> usize {
+            self.released.lock().unwrap().len()
         }
     }
 
@@ -426,6 +657,23 @@ mod tests {
             _endpoint: &str,
         ) -> Result<RunnerInfo, RunnerHealthError> {
             Ok(self.info.lock().unwrap().clone())
+        }
+
+        async fn rearm_runner(
+            &self,
+            endpoint: &str,
+            _reservation_id: &str,
+            _reservation_token: &str,
+            _expires_at: Option<&str>,
+        ) -> Result<(), RunnerHealthError> {
+            self.rearmed.lock().unwrap().push(endpoint.to_owned());
+            *self.info.lock().unwrap() = RunnerInfo::default();
+            Ok(())
+        }
+
+        async fn release_runner(&self, endpoint: &str) -> Result<(), RunnerHealthError> {
+            self.released.lock().unwrap().push(endpoint.to_owned());
+            Ok(())
         }
     }
 
@@ -539,13 +787,13 @@ mod tests {
         let status = store.create(test_request(2)).await.unwrap();
         api.set_ready(vec![
             RunnerPod {
-                name: "runner-0".to_owned(),
+                name: "new-runner-0".to_owned(),
                 ordinal: 0,
                 pod_ip: "10.20.0.10".to_owned(),
                 endpoint: "http://runner-0:7373".to_owned(),
             },
             RunnerPod {
-                name: "runner-1".to_owned(),
+                name: "new-runner-1".to_owned(),
                 ordinal: 1,
                 pod_ip: "10.20.0.11".to_owned(),
                 endpoint: "http://runner-1:7373".to_owned(),
@@ -673,6 +921,10 @@ mod tests {
             ..Default::default()
         });
         store.reconcile_all_once().await;
+        assert_eq!(
+            store.get(&status.reservation_id).await.unwrap().status,
+            ReservationStatusKind::IdleReusable
+        );
 
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         store.reconcile_all_once().await;
@@ -681,6 +933,158 @@ mod tests {
         assert_eq!(
             store.get(&status.reservation_id).await.unwrap().status,
             ReservationStatusKind::Terminating
+        );
+    }
+
+    #[tokio::test]
+    async fn new_reservation_reuses_idle_runner_without_creating_more_kubernetes_resources() {
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_runner_health(health.clone());
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let ready = store
+            .reconcile_once(&first.reservation_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ready.status, ReservationStatusKind::Ready);
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+
+        let second = store.create(test_request(1)).await.unwrap();
+
+        assert_eq!(second.status, ReservationStatusKind::Ready);
+        assert_eq!(second.ready_runners, 1);
+        assert_eq!(second.runners[0].endpoint, "http://runner-0:7373");
+        assert_eq!(api.applied_count(), 1);
+        assert_eq!(health.rearmed_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn new_reservation_reuses_idle_runners_and_creates_only_missing_delta() {
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_runner_health(health.clone());
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let _ = store.reconcile_once(&first.reservation_id).await.unwrap();
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+
+        let second = store.create(test_request(3)).await.unwrap();
+
+        assert_eq!(second.status, ReservationStatusKind::Provisioning);
+        assert_eq!(second.ready_runners, 1);
+        assert_eq!(api.applied.lock().unwrap().last().unwrap().count, 2);
+        assert_eq!(health.rearmed_count(), 1);
+        api.set_ready(vec![
+            RunnerPod {
+                name: "new-runner-0".to_owned(),
+                ordinal: 0,
+                pod_ip: "10.20.0.20".to_owned(),
+                endpoint: "http://new-runner-0:7373".to_owned(),
+            },
+            RunnerPod {
+                name: "new-runner-1".to_owned(),
+                ordinal: 1,
+                pod_ip: "10.20.0.21".to_owned(),
+                endpoint: "http://new-runner-1:7373".to_owned(),
+            },
+        ]);
+
+        let ready = store
+            .reconcile_once(&second.reservation_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(ready.status, ReservationStatusKind::Ready);
+        assert_eq!(ready.ready_runners, 3);
+        assert_eq!(ready.runners.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn cancelling_reused_reservation_releases_runner_for_next_reuse() {
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_runner_health(health.clone());
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let _ = store.reconcile_once(&first.reservation_id).await.unwrap();
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+        let second = store.create(test_request(1)).await.unwrap();
+
+        assert!(store.cancel(&second.reservation_id).await);
+        let third = store.create(test_request(1)).await.unwrap();
+
+        assert_eq!(health.released_count(), 1);
+        assert_eq!(health.rearmed_count(), 2);
+        assert_eq!(third.status, ReservationStatusKind::Ready);
+        assert_eq!(third.runners[0].endpoint, "http://runner-0:7373");
+    }
+
+    #[tokio::test]
+    async fn original_physical_resources_are_not_deleted_while_reused_runner_is_leased() {
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let config = PluginConfig::test_default().with_idle_ttl_seconds(1);
+        let store =
+            ReservationStore::for_test(api.clone(), config).with_runner_health(health.clone());
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let _ = store.reconcile_once(&first.reservation_id).await.unwrap();
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+        let second = store.create(test_request(1)).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        store.reconcile_all_once().await;
+
+        assert!(!api.deleted(&first.reservation_id));
+        assert_eq!(
+            store.get(&second.reservation_id).await.unwrap().status,
+            ReservationStatusKind::Ready
         );
     }
 }
