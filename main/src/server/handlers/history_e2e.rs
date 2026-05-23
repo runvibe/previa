@@ -1,11 +1,15 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, http::StatusCode};
 use sqlx::QueryBuilder;
 
+use crate::server::auth::Principal;
 use crate::server::db::{list_e2e_history_records, load_e2e_history_record_by_id, project_exists};
-use crate::server::errors::{internal_error_response, not_found_response};
+use crate::server::errors::{forbidden_response, internal_error_response, not_found_response};
 use crate::server::models::{E2eHistoryRecord, ErrorResponse, HistoryQuery};
+use crate::server::services::pipeline_access::{
+    PipelineAccess, can_access_optional_pipeline, is_admin,
+};
 use crate::server::state::AppState;
 
 #[utoipa::path(
@@ -33,11 +37,34 @@ use crate::server::state::AppState;
 )]
 pub async fn list_e2e_history(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
     match list_e2e_history_records(&state.db, &project_id, query).await {
-        Ok(records) => Json(records).into_response(),
+        Ok(records) => {
+            let mut visible = Vec::new();
+            for record in records {
+                match can_access_optional_pipeline(
+                    &state.db,
+                    &project_id,
+                    record.pipeline_id.as_deref(),
+                    &principal,
+                    PipelineAccess::Read,
+                )
+                .await
+                {
+                    Ok(true) => visible.push(record),
+                    Ok(false) => {}
+                    Err(err) => {
+                        return internal_error_response(format!(
+                            "failed to authorize history: {err}"
+                        ));
+                    }
+                }
+            }
+            Json(visible).into_response()
+        }
         Err(err) => return internal_error_response(format!("failed to query history: {err}")),
     }
 }
@@ -57,6 +84,7 @@ pub async fn list_e2e_history(
 )]
 pub async fn delete_e2e_history(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
@@ -66,10 +94,37 @@ pub async fn delete_e2e_history(
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
     }
 
+    let pipeline_index_filter = query.pipeline_index;
+    if pipeline_index_filter.is_none() && !is_admin(&principal) {
+        return forbidden_response("pipeline filter is required to delete history");
+    }
+
+    let records = match list_e2e_history_records(&state.db, &project_id, query).await {
+        Ok(records) => records,
+        Err(err) => return internal_error_response(format!("failed to query history: {err}")),
+    };
+    for record in records {
+        match can_access_optional_pipeline(
+            &state.db,
+            &project_id,
+            record.pipeline_id.as_deref(),
+            &principal,
+            PipelineAccess::Write,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return forbidden_response("pipeline history access denied"),
+            Err(err) => {
+                return internal_error_response(format!("failed to authorize history: {err}"));
+            }
+        }
+    }
+
     let mut qb =
         QueryBuilder::<sqlx::Any>::new("DELETE FROM integration_history WHERE project_id = ");
     qb.push_bind(&project_id);
-    if let Some(pipeline_index) = query.pipeline_index {
+    if let Some(pipeline_index) = pipeline_index_filter {
         qb.push(" AND pipeline_index = ").push_bind(pipeline_index);
     }
 
@@ -101,6 +156,7 @@ pub async fn delete_e2e_history(
 )]
 pub async fn get_e2e_test_by_id(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, test_id)): Path<(String, String)>,
 ) -> Response {
     let record = match load_e2e_history_record_by_id(&state.db, &project_id, &test_id).await {
@@ -113,6 +169,19 @@ pub async fn get_e2e_test_by_id(
     let Some(record) = record else {
         return not_found_response("e2e test not found");
     };
+    match can_access_optional_pipeline(
+        &state.db,
+        &project_id,
+        record.pipeline_id.as_deref(),
+        &principal,
+        PipelineAccess::Read,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return not_found_response("e2e test not found"),
+        Err(err) => return internal_error_response(format!("failed to authorize history: {err}")),
+    }
 
     Json(record).into_response()
 }
@@ -132,12 +201,36 @@ pub async fn get_e2e_test_by_id(
 )]
 pub async fn delete_e2e_test_by_id(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, test_id)): Path<(String, String)>,
 ) -> Response {
     match project_exists(&state.db, &project_id).await {
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    let record = match load_e2e_history_record_by_id(&state.db, &project_id, &test_id).await {
+        Ok(record) => record,
+        Err(err) => {
+            return internal_error_response(format!("failed to query e2e history: {err}"));
+        }
+    };
+    let Some(record) = record else {
+        return not_found_response("e2e test not found");
+    };
+    match can_access_optional_pipeline(
+        &state.db,
+        &project_id,
+        record.pipeline_id.as_deref(),
+        &principal,
+        PipelineAccess::Write,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("pipeline history access denied"),
+        Err(err) => return internal_error_response(format!("failed to authorize history: {err}")),
     }
 
     match sqlx::query(

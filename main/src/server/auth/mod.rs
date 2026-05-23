@@ -27,6 +27,25 @@ pub enum PrincipalSource {
     Env,
     Database,
     ApiToken,
+    Anonymous,
+}
+
+pub fn anonymous_principal() -> Principal {
+    Principal {
+        subject: "anonymous".to_owned(),
+        username: "anonymous".to_owned(),
+        role: Role::Anonymous,
+        source: PrincipalSource::Anonymous,
+    }
+}
+
+pub fn anonymous_full_access_principal() -> Principal {
+    Principal {
+        subject: "anonymous".to_owned(),
+        username: "anonymous".to_owned(),
+        role: Role::Anonymous,
+        source: PrincipalSource::Env,
+    }
 }
 
 impl AuthRuntime {

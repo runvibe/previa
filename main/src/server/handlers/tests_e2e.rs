@@ -1,9 +1,10 @@
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, HeaderValue, header};
 use axum::response::Response;
 
+use crate::server::auth::Principal;
 use crate::server::db::load_project_pipeline_for_execution;
 use crate::server::errors::{
     bad_request_message_response, bad_request_response, internal_error_response,
@@ -16,6 +17,7 @@ use crate::server::models::{
     E2eTestRequest, ErrorResponse, OrchestratorSseEventData, ProjectE2eRerunFromStepRequest,
     ProjectE2eTestRequest,
 };
+use crate::server::services::pipeline_access::{PipelineAccess, can_access_pipeline};
 use crate::server::state::AppState;
 
 pub async fn run_e2e_test_internal(
@@ -86,6 +88,7 @@ pub async fn run_e2e_test_internal(
 )]
 pub async fn run_e2e_test_for_project(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
     headers: HeaderMap,
     payload: Result<Json<ProjectE2eTestRequest>, JsonRejection>,
@@ -97,6 +100,25 @@ pub async fn run_e2e_test_for_project(
 
     let (pipeline, pipeline_index) = match (payload.pipeline_id.clone(), payload.pipeline) {
         (Some(pipeline_id), _) if !pipeline_id.trim().is_empty() => {
+            match can_access_pipeline(
+                &state.db,
+                &project_id,
+                &pipeline_id,
+                &principal,
+                PipelineAccess::Write,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    return bad_request_message_response("pipelineId not found for project");
+                }
+                Err(err) => {
+                    return internal_error_response(format!(
+                        "failed to authorize pipeline for execution: {err}"
+                    ));
+                }
+            }
             match load_project_pipeline_for_execution(&state.db, &project_id, &pipeline_id).await {
                 Ok(Some((pipeline, position))) => (pipeline, Some(position)),
                 Ok(None) => {
@@ -167,6 +189,7 @@ pub async fn run_e2e_test_for_project(
 )]
 pub async fn run_e2e_rerun_from_step_for_project(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
     headers: HeaderMap,
     payload: Result<Json<ProjectE2eRerunFromStepRequest>, JsonRejection>,
@@ -178,6 +201,25 @@ pub async fn run_e2e_rerun_from_step_for_project(
 
     let (pipeline, pipeline_index) = match (payload.pipeline_id.clone(), payload.pipeline) {
         (Some(pipeline_id), _) if !pipeline_id.trim().is_empty() => {
+            match can_access_pipeline(
+                &state.db,
+                &project_id,
+                &pipeline_id,
+                &principal,
+                PipelineAccess::Write,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    return bad_request_message_response("pipelineId not found for project");
+                }
+                Err(err) => {
+                    return internal_error_response(format!(
+                        "failed to authorize pipeline for execution: {err}"
+                    ));
+                }
+            }
             match load_project_pipeline_for_execution(&state.db, &project_id, &pipeline_id).await {
                 Ok(Some((pipeline, position))) => (pipeline, Some(position)),
                 Ok(None) => {

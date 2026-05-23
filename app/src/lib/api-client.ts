@@ -55,6 +55,27 @@ export interface PipelineInput {
   steps: ApiPipelineStep[];
 }
 
+export type PipelineVisibility = "private" | "public";
+export type PipelineShareAccessLevel = "editor";
+
+export interface PipelineShareRecord {
+  id: string;
+  pipelineId: string;
+  userId: string;
+  username: string;
+  accessLevel: PipelineShareAccessLevel;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PipelineSharingRecord {
+  pipelineId: string;
+  ownerUserId: string;
+  ownerUsername: string;
+  visibility: PipelineVisibility;
+  shares: PipelineShareRecord[];
+}
+
 export interface ProjectUpsertRequest {
   name: string;
   description?: string | null;
@@ -562,6 +583,42 @@ export async function deletePipeline(baseUrl: string, projectId: string, pipelin
   console.log("[DEBUG][api] DELETE /pipelines START", { projectId, pipelineId, timestamp: Date.now() });
   await request<void>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}`, { method: "DELETE" });
   console.log("[DEBUG][api] DELETE /pipelines END", { projectId, pipelineId, timestamp: Date.now() });
+}
+
+export async function getPipelineSharing(baseUrl: string, projectId: string, pipelineId: string): Promise<PipelineSharingRecord> {
+  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares`);
+}
+
+export async function sharePipelineWithUser(
+  baseUrl: string,
+  projectId: string,
+  pipelineId: string,
+  payload: { userId: string; username: string; accessLevel?: PipelineShareAccessLevel },
+): Promise<PipelineSharingRecord> {
+  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessLevel: "editor", ...payload }),
+  });
+}
+
+export async function revokePipelineShare(baseUrl: string, projectId: string, pipelineId: string, userId: string): Promise<void> {
+  await request<void>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updatePipelineVisibility(
+  baseUrl: string,
+  projectId: string,
+  pipelineId: string,
+  visibility: PipelineVisibility,
+): Promise<PipelineSharingRecord> {
+  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/visibility`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visibility }),
+  });
 }
 
 // ============ Specs ============

@@ -154,6 +154,16 @@ pub async fn upsert_project_with_pipelines(
     project_id: String,
     payload: ProjectUpsertRequest,
 ) -> Result<ProjectRecord, sqlx::Error> {
+    upsert_project_with_pipelines_for_owner(db, project_id, payload, "anonymous", "anonymous").await
+}
+
+pub async fn upsert_project_with_pipelines_for_owner(
+    db: &DbPool,
+    project_id: String,
+    payload: ProjectUpsertRequest,
+    owner_user_id: &str,
+    owner_username: &str,
+) -> Result<ProjectRecord, sqlx::Error> {
     let now_iso = now_iso();
     let now_ms_i64 = now_ms() as i64;
     let mut tx = db.begin().await?;
@@ -218,8 +228,9 @@ pub async fn upsert_project_with_pipelines(
 
         db.query(
             "INSERT INTO pipelines (
-                id, project_id, position, name, description, created_at, updated_at, pipeline_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                id, project_id, position, name, description, created_at, updated_at,
+                pipeline_json, owner_user_id, owner_username, visibility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private')",
         )
         .bind(pipeline_id)
         .bind(&project_id)
@@ -229,6 +240,8 @@ pub async fn upsert_project_with_pipelines(
         .bind(&now_iso)
         .bind(&updated_at)
         .bind(serde_json::to_string(&pipeline).unwrap_or_else(|_| "{}".to_owned()))
+        .bind(owner_user_id)
+        .bind(owner_username)
         .execute(&mut *tx)
         .await?;
     }
@@ -272,8 +285,9 @@ pub async fn create_project_with_pipelines(
 
         db.query(
             "INSERT INTO pipelines (
-                id, project_id, position, name, description, created_at, updated_at, pipeline_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                id, project_id, position, name, description, created_at, updated_at,
+                pipeline_json, owner_user_id, owner_username, visibility
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'anonymous', 'anonymous', 'private')",
         )
         .bind(pipeline_id)
         .bind(&project_id)

@@ -5,6 +5,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTranslation } from "react-i18next";
 import { useAppHeader } from "@/components/AppShell";
 import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
+import { PipelineSharingDialog } from "@/components/PipelineSharingDialog";
 import PipelineCreatorPage from "@/pages/PipelineCreatorPage";
 import RouteEditorPage from "@/pages/RouteEditorPage";
 import TestExecutionPage from "@/pages/TestExecutionPage";
@@ -61,6 +62,7 @@ export default function ProjectFlowPage() {
   const [aiAutoTab, setAiAutoTab] = useState<"integration" | "loadtest" | null>(null);
   const [newPipelineTemplate, setNewPipelineTemplate] = useState<Pipeline | null>(null);
   const [editingPipelineIndex, setEditingPipelineIndex] = useState<number | null>(null);
+  const [sharingPipelineIndex, setSharingPipelineIndex] = useState<number | null>(null);
   const [mobileView, setMobileView] = useState<"app" | "chat">("app");
 
   const [chatMounted, setChatMounted] = useState(!chatCollapsed && aiAssistantAvailable);
@@ -281,6 +283,14 @@ export default function ProjectFlowPage() {
     toast.success(t("pipeline.duplicated"));
   };
 
+  const handleSharePipeline = useCallback((index: number) => {
+    if (!getApiUrl()) {
+      toast.error("Compartilhamento requer backend remoto");
+      return;
+    }
+    setSharingPipelineIndex(index);
+  }, []);
+
   const handleEditPipeline = async (index: number) => {
     if (!project) return;
     const p = project.pipelines[index];
@@ -475,6 +485,7 @@ export default function ProjectFlowPage() {
             `Analyze Step: ${step.name}`
           );
         } : undefined}
+        onSharePipeline={backendUrl ? handleSharePipeline : undefined}
       />
     );
   })();
@@ -489,11 +500,24 @@ export default function ProjectFlowPage() {
     />
   ) : null;
 
+  const sharingDialog = (
+    <PipelineSharingDialog
+      open={sharingPipelineIndex !== null}
+      baseUrl={backendUrl}
+      projectId={project.id}
+      pipeline={sharingPipelineIndex !== null ? project.pipelines[sharingPipelineIndex] ?? null : null}
+      onOpenChange={(open) => {
+        if (!open) setSharingPipelineIndex(null);
+      }}
+    />
+  );
+
   return isMobile ? (
     <>
       <main className="flex h-full min-h-0 flex-1 overflow-hidden">
         {mobileView === "chat" && aiAssistantAvailable ? chatPanel : leftContent}
       </main>
+      {sharingDialog}
       {aiAssistantAvailable && (
         <div className="glass h-12 border-t border-border flex shrink-0 z-50">
           <button
@@ -520,37 +544,40 @@ export default function ProjectFlowPage() {
       )}
     </>
   ) : (
-    <main className={cn("relative flex h-full min-h-0 flex-1 overflow-hidden", chatPosition === "left" && "flex-row-reverse")}>
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ease-out">
-        {leftContent}
-      </div>
-
-      {aiAssistantAvailable && chatMounted && (
-        <div
-          className={cn(
-            "flex h-full min-h-0 shrink-0 overflow-hidden border-border transition-[width] duration-300 ease-out",
-            (isClosing || isOpening) ? "w-0" : "w-[350px]"
-          )}
-        >
-          <div className="flex h-full min-h-0 w-[350px]">
-            {chatPanel}
-          </div>
+    <>
+      <main className={cn("relative flex h-full min-h-0 flex-1 overflow-hidden", chatPosition === "left" && "flex-row-reverse")}>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden transition-all duration-300 ease-out">
+          {leftContent}
         </div>
-      )}
 
-      {aiAssistantAvailable && chatCollapsed && !chatMounted && (
-        <Button
-          onClick={toggleChatCollapsed}
-          size="icon"
-          className={cn(
-            "fixed bottom-6 z-50 h-12 w-12 rounded-full shadow-lg animate-scale-in",
-            chatPosition === "right" ? "right-6" : "left-6"
-          )}
-          title="Open chat"
-        >
-          <MessageSquare className="h-5 w-5" />
-        </Button>
-      )}
-    </main>
+        {aiAssistantAvailable && chatMounted && (
+          <div
+            className={cn(
+              "flex h-full min-h-0 shrink-0 overflow-hidden border-border transition-[width] duration-300 ease-out",
+              (isClosing || isOpening) ? "w-0" : "w-[350px]"
+            )}
+          >
+            <div className="flex h-full min-h-0 w-[350px]">
+              {chatPanel}
+            </div>
+          </div>
+        )}
+
+        {aiAssistantAvailable && chatCollapsed && !chatMounted && (
+          <Button
+            onClick={toggleChatCollapsed}
+            size="icon"
+            className={cn(
+              "fixed bottom-6 z-50 h-12 w-12 rounded-full shadow-lg animate-scale-in",
+              chatPosition === "right" ? "right-6" : "left-6"
+            )}
+            title="Open chat"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </Button>
+        )}
+      </main>
+      {sharingDialog}
+    </>
   );
 }

@@ -1,11 +1,12 @@
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
+use crate::server::auth::Principal;
 use crate::server::db::{
-    list_project_records, load_project_record, upsert_project_metadata,
-    upsert_project_with_pipelines,
+    list_project_records, load_pipelines_for_project_accessible, load_project_record,
+    upsert_project_metadata, upsert_project_with_pipelines_for_owner,
 };
 use crate::server::errors::{internal_error_response, not_found_response};
 use crate::server::models::{
@@ -67,10 +68,29 @@ pub async fn list_projects(
 )]
 pub async fn get_project(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
 ) -> Response {
     match load_project_record(&state.db, &project_id).await {
-        Ok(Some(project)) => Json(project).into_response(),
+        Ok(Some(project)) => {
+            match load_pipelines_for_project_accessible(&state.db, &project_id, &principal).await {
+                Ok(pipelines)
+                    if !pipelines.is_empty()
+                        || matches!(
+                            principal.role,
+                            crate::server::auth::permissions::Role::Root
+                                | crate::server::auth::permissions::Role::Admin
+                                | crate::server::auth::permissions::Role::Editor
+                                | crate::server::auth::permissions::Role::Operator
+                                | crate::server::auth::permissions::Role::Viewer
+                        ) =>
+                {
+                    Json(project).into_response()
+                }
+                Ok(_) => not_found_response("project not found"),
+                Err(err) => internal_error_response(format!("failed to authorize project: {err}")),
+            }
+        }
         Ok(None) => not_found_response("project not found"),
         Err(err) => internal_error_response(format!("failed to load project: {err}")),
     }
@@ -95,6 +115,7 @@ pub async fn get_project(
 )]
 pub async fn create_project(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Json(payload): Json<ProjectUpsertRequest>,
 ) -> Response {
     if payload.name.trim().is_empty() {
@@ -109,7 +130,15 @@ pub async fn create_project(
     }
 
     let project_id = new_uuid_v7();
-    match upsert_project_with_pipelines(&state.db, project_id, payload).await {
+    match upsert_project_with_pipelines_for_owner(
+        &state.db,
+        project_id,
+        payload,
+        &principal.subject,
+        &principal.username,
+    )
+    .await
+    {
         Ok(project) => (StatusCode::CREATED, Json(project)).into_response(),
         Err(err) => internal_error_response(format!("failed to create project: {err}")),
     }

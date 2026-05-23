@@ -25,8 +25,9 @@ use crate::server::handlers::history_load::{
     delete_load_history, delete_load_test_by_id, get_load_test_by_id, list_load_history,
 };
 use crate::server::handlers::pipelines::{
-    create_project_pipeline, delete_project_pipeline, get_project_pipeline, list_project_pipelines,
-    upsert_project_pipeline,
+    create_project_pipeline, delete_project_pipeline, delete_project_pipeline_share,
+    get_project_pipeline, get_project_pipeline_shares, list_project_pipelines,
+    update_project_pipeline_visibility, upsert_project_pipeline, upsert_project_pipeline_share,
 };
 use crate::server::handlers::projects::{
     create_project, delete_project, get_project, list_projects, upsert_project,
@@ -173,6 +174,18 @@ pub fn build_app_with_config(
             get(get_project_pipeline)
                 .put(upsert_project_pipeline)
                 .delete(delete_project_pipeline),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/pipelines/{pipelineId}/shares",
+            get(get_project_pipeline_shares).post(upsert_project_pipeline_share),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/pipelines/{pipelineId}/shares/{userId}",
+            axum::routing::delete(delete_project_pipeline_share),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/pipelines/{pipelineId}/visibility",
+            put(update_project_pipeline_visibility),
         )
         .route(
             "/api/v1/projects/{projectId}/pipelines/{pipelineId}/runner-reservation/latest",

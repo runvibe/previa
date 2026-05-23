@@ -55,6 +55,7 @@ interface TestExecutionPageProps {
   onCreateAIPipeline?: () => void;
   onEditPipeline?: (index: number) => void;
   onDuplicatePipeline?: (index: number) => void;
+  onSharePipeline?: (index: number) => void;
   onImportSpec?: (content: string) => void;
   onEditSpec?: (specId?: string) => void;
   onDeleteSpec?: (specId: string) => void;
@@ -77,7 +78,7 @@ type BatchState = "idle" | "running" | "paused";
 /* ── Sidebar content (shared between desktop panel & mobile sheet) ── */
 function SidebarContent({
   spec, specs, envGroups, pipelines, selectedIndex, pipelineStatuses, running, isBatchActive, batchState,
-  batchProgress, batchTotal, onEditSpec, onDeleteSpec, onCreatePipeline, onCreateAIPipeline, onSelect, onEdit, onDuplicate, onDelete,
+  batchProgress, batchTotal, onEditSpec, onDeleteSpec, onCreatePipeline, onCreateAIPipeline, onSelect, onEdit, onDuplicate, onShare, onDelete,
   onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup,
   handleRunAll, handleBatchPause, handleBatchResume, handleBatchCancel, executionBackendUrl,
   dragTargetIndex, onDragStart, onDragOver, onDrop,
@@ -94,7 +95,7 @@ function SidebarContent({
   onDeleteEnvGroup?: (id: string) => Promise<void>;
   onCreatePipeline: () => void; onCreateAIPipeline?: () => void;
   onSelect: (i: number, event?: React.MouseEvent) => void; onEdit?: (i: number) => void;
-  onDuplicate?: (i: number) => void; onDelete: (i: number) => void;
+  onDuplicate?: (i: number) => void; onShare?: (i: number) => void; onDelete: (i: number) => void;
   handleRunAll: () => void; handleBatchPause: () => void;
   handleBatchResume: () => void; handleBatchCancel: () => void;
   executionBackendUrl?: string;
@@ -236,6 +237,7 @@ function SidebarContent({
               onSelect={onSelect}
               onEdit={onEdit}
               onDuplicate={onDuplicate}
+              onShare={onShare}
               onDelete={(i) => setDeleteTarget({ type: "pipeline", idOrIndex: i, name: pipelines[i]?.name ?? "" })}
               onDragStart={onDragStart}
               onDragOver={onDragOver}
@@ -267,7 +269,7 @@ function SidebarContent({
   );
 }
 
-export default function TestExecutionPage({ pipelines, spec, specs, envGroups = [], projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onImportSpec, onEditSpec, onDeleteSpec, onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup, selectedPipelineId, initialSelectedIndex, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
+export default function TestExecutionPage({ pipelines, spec, specs, envGroups = [], projectId, onDeletePipeline, onCreatePipeline, onCreateAIPipeline, onEditPipeline, onDuplicatePipeline, onSharePipeline, onImportSpec, onEditSpec, onDeleteSpec, onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup, selectedPipelineId, initialSelectedIndex, onSelectPipeline, initialTab, onTabChange, executionBackendUrl, autoRunPipelineId, autoSelectTab, onAnalyzeStepWithAI }: TestExecutionPageProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const stepViewMode = useStepViewStore((s) => s.mode);
@@ -1093,7 +1095,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
     spec, specs, envGroups, pipelines: orderedPipelines, selectedIndex, pipelineStatuses: effectivePipelineStatuses, running, isBatchActive, batchState,
     batchProgress, batchTotal, onEditSpec, onDeleteSpec, onCreatePipeline, onCreateAIPipeline,
     onCreateEnvGroup, onUpdateEnvGroup, onDeleteEnvGroup,
-    onSelect: handleSelectPipeline, onEdit: onEditPipeline, onDuplicate: onDuplicatePipeline, onDelete: onDeletePipeline,
+    onSelect: handleSelectPipeline, onEdit: onEditPipeline, onDuplicate: onDuplicatePipeline, onShare: onSharePipeline, onDelete: onDeletePipeline,
     handleRunAll, handleBatchPause, handleBatchResume, handleBatchCancel, executionBackendUrl,
     dragTargetIndex, onDragStart: handleDragStart, onDragOver: handleDragOver, onDrop: handleDrop,
     selectedForBatch, onToggleBatchCheck: handleToggleBatchCheck, onToggleAllBatchCheck: handleToggleAllBatchCheck,

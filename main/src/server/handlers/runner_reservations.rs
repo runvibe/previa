@@ -1,12 +1,14 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 
+use crate::server::auth::Principal;
 use crate::server::db::{
     load_latest_runner_reservation_for_pipeline, load_project_pipeline_record,
 };
 use crate::server::models::{ErrorResponse, RunnerReservationRecord};
+use crate::server::services::pipeline_access::{PipelineAccess, can_access_pipeline};
 use crate::server::state::AppState;
 
 #[utoipa::path(
@@ -24,6 +26,7 @@ use crate::server::state::AppState;
 )]
 pub async fn get_latest_runner_reservation_for_pipeline(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, pipeline_id)): Path<(String, String)>,
 ) -> impl IntoResponse {
     let pipeline = match load_project_pipeline_record(&state.db, &project_id, &pipeline_id).await {
@@ -35,6 +38,22 @@ pub async fn get_latest_runner_reservation_for_pipeline(
 
     if pipeline.is_none() {
         return not_found("pipeline not found").into_response();
+    }
+
+    match can_access_pipeline(
+        &state.db,
+        &project_id,
+        &pipeline_id,
+        &principal,
+        PipelineAccess::Read,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return not_found("pipeline not found").into_response(),
+        Err(err) => {
+            return internal_error(format!("failed to authorize pipeline: {err}")).into_response();
+        }
     }
 
     match load_latest_runner_reservation_for_pipeline(&state.db, &pipeline_id).await {

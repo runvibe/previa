@@ -1,14 +1,15 @@
 use crate::server::db::DbPool;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use sqlx::Row;
 use tokio::sync::mpsc;
 
+use crate::server::auth::Principal;
 use crate::server::errors::{
-    bad_request_message_response, internal_error_response, not_found_response,
+    bad_request_message_response, forbidden_response, internal_error_response, not_found_response,
 };
 use crate::server::execution::{
     build_e2e_snapshot_payload, build_load_snapshot_payload, spawn_broadcast_bridge,
@@ -17,6 +18,7 @@ use crate::server::execution::{
 use crate::server::models::{
     CancelExecutionResponse, ErrorResponse, OrchestratorSseEventData, SseMessage,
 };
+use crate::server::services::pipeline_access::{PipelineAccess, can_access_optional_pipeline};
 use crate::server::state::{AppState, ExecutionKind};
 
 #[derive(Debug)]
@@ -232,6 +234,56 @@ async fn load_finished_execution_snapshot_by_id(
     load_finished_execution_snapshot(db, &project_id, execution_id).await
 }
 
+async fn load_finished_execution_pipeline_ref(
+    db: &DbPool,
+    project_id: &str,
+    execution_id: &str,
+) -> Result<Option<Option<String>>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT pipeline_id, finished_at_ms FROM integration_history WHERE project_id = ? AND execution_id = ?
+        UNION ALL
+        SELECT pipeline_id, finished_at_ms FROM load_history WHERE project_id = ? AND execution_id = ?
+        ORDER BY finished_at_ms DESC
+        LIMIT 1",
+    )
+    .bind(project_id)
+    .bind(execution_id)
+    .bind(project_id)
+    .bind(execution_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|row| {
+        row.try_get::<Option<String>, _>("pipeline_id")
+            .ok()
+            .flatten()
+    }))
+}
+
+async fn load_finished_execution_project_pipeline_ref(
+    db: &DbPool,
+    execution_id: &str,
+) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT project_id, pipeline_id, finished_at_ms FROM integration_history WHERE execution_id = ?
+        UNION ALL
+        SELECT project_id, pipeline_id, finished_at_ms FROM load_history WHERE execution_id = ?
+        ORDER BY finished_at_ms DESC
+        LIMIT 1",
+    )
+    .bind(execution_id)
+    .bind(execution_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|row| {
+        (
+            row.try_get::<String, _>("project_id").unwrap_or_default(),
+            row.try_get::<Option<String>, _>("pipeline_id")
+                .ok()
+                .flatten(),
+        )
+    }))
+}
+
 async fn stream_active_execution(
     execution: std::sync::Arc<crate::server::state::ExecutionCtx>,
 ) -> Response {
@@ -285,6 +337,7 @@ async fn stream_active_execution(
 )]
 pub async fn stream_execution(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, execution_id)): Path<(String, String)>,
 ) -> Response {
     let project_id = project_id.trim().to_owned();
@@ -305,8 +358,46 @@ pub async fn stream_execution(
         if execution.project_id != project_id {
             return not_found_response("execution not found for project");
         }
+        match can_access_optional_pipeline(
+            &state.db,
+            &project_id,
+            execution.pipeline_id.as_deref(),
+            &principal,
+            PipelineAccess::Read,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return not_found_response("execution not found for project"),
+            Err(err) => {
+                return internal_error_response(format!("failed to authorize execution: {err}"));
+            }
+        }
 
         return stream_active_execution(execution).await;
+    }
+
+    let pipeline_id =
+        match load_finished_execution_pipeline_ref(&state.db, &project_id, &execution_id).await {
+            Ok(pipeline_id) => pipeline_id,
+            Err(err) => {
+                return internal_error_response(format!("failed to load execution history: {err}"));
+            }
+        };
+    match can_access_optional_pipeline(
+        &state.db,
+        &project_id,
+        pipeline_id.as_ref().and_then(|value| value.as_deref()),
+        &principal,
+        PipelineAccess::Read,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return not_found_response("execution not found for project"),
+        Err(err) => {
+            return internal_error_response(format!("failed to authorize execution: {err}"));
+        }
     }
 
     let snapshot =
@@ -366,6 +457,7 @@ pub async fn stream_execution(
 )]
 pub async fn stream_execution_events(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(execution_id): Path<String>,
 ) -> Response {
     let execution_id = execution_id.trim().to_owned();
@@ -378,7 +470,48 @@ pub async fn stream_execution_events(
         executions.get(&execution_id).cloned()
     };
     if let Some(execution) = execution {
+        match can_access_optional_pipeline(
+            &state.db,
+            &execution.project_id,
+            execution.pipeline_id.as_deref(),
+            &principal,
+            PipelineAccess::Read,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return not_found_response("execution not found"),
+            Err(err) => {
+                return internal_error_response(format!("failed to authorize execution: {err}"));
+            }
+        }
         return stream_active_execution(execution).await;
+    }
+
+    let execution_ref =
+        match load_finished_execution_project_pipeline_ref(&state.db, &execution_id).await {
+            Ok(value) => value,
+            Err(err) => {
+                return internal_error_response(format!("failed to load execution history: {err}"));
+            }
+        };
+    let Some((project_id, pipeline_id)) = execution_ref else {
+        return not_found_response("execution not found");
+    };
+    match can_access_optional_pipeline(
+        &state.db,
+        &project_id,
+        pipeline_id.as_deref(),
+        &principal,
+        PipelineAccess::Read,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return not_found_response("execution not found"),
+        Err(err) => {
+            return internal_error_response(format!("failed to authorize execution: {err}"));
+        }
     }
 
     let snapshot = match load_finished_execution_snapshot_by_id(&state.db, &execution_id).await {
@@ -435,6 +568,7 @@ pub async fn stream_execution_events(
 )]
 pub async fn cancel_execution(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(execution_id): Path<String>,
 ) -> Response {
     let execution_id = execution_id.trim().to_owned();
@@ -450,6 +584,21 @@ pub async fn cancel_execution(
     let Some(execution) = execution else {
         return not_found_response("execution not found or already finished");
     };
+    match can_access_optional_pipeline(
+        &state.db,
+        &execution.project_id,
+        execution.pipeline_id.as_deref(),
+        &principal,
+        PipelineAccess::Write,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("execution access denied"),
+        Err(err) => {
+            return internal_error_response(format!("failed to authorize execution: {err}"));
+        }
+    }
 
     let already_cancelled = execution.cancel.is_cancelled();
     execution.cancel.cancel();

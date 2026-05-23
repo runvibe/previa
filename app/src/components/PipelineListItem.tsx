@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2, XCircle, Pencil, X, Copy, GripVertical, Clock3 } from "lucide-react";
+import { CheckCircle2, XCircle, Pencil, X, Copy, GripVertical, Clock3, Share2 } from "lucide-react";
 import { DotsLoader } from "@/components/DotsLoader";
 import { SidebarItemActionBar } from "@/components/SidebarItemActionBar";
 import type { Pipeline } from "@/types/pipeline";
@@ -13,6 +13,7 @@ interface PipelineListItemProps {
   onSelect: (index: number, event?: React.MouseEvent) => void;
   onEdit?: (index: number) => void;
   onDuplicate?: (index: number) => void;
+  onShare?: (index: number) => void;
   onDelete: (index: number) => void;
   onDragStart?: (index: number) => void;
   onDragOver?: (index: number) => void;
@@ -22,7 +23,7 @@ interface PipelineListItemProps {
   onToggleCheck?: (index: number) => void;
 }
 
-export function PipelineListItem({ pipeline, index, isSelected, status, onSelect, onEdit, onDuplicate, onDelete, onDragStart, onDragOver, onDrop, isDragTarget, isChecked, onToggleCheck }: PipelineListItemProps) {
+export function PipelineListItem({ pipeline, index, isSelected, status, onSelect, onEdit, onDuplicate, onShare, onDelete, onDragStart, onDragOver, onDrop, isDragTarget, isChecked, onToggleCheck }: PipelineListItemProps) {
   const { t } = useTranslation();
 
   return (
@@ -79,6 +80,7 @@ export function PipelineListItem({ pipeline, index, isSelected, status, onSelect
         actions={[
           ...(onEdit ? [{ label: t("pipeline.editPipeline"), icon: <Pencil className="h-3 w-3" />, onClick: () => onEdit(index) }] : []),
           ...(onDuplicate ? [{ label: t("pipeline.duplicatePipeline"), icon: <Copy className="h-3 w-3" />, onClick: () => onDuplicate(index) }] : []),
+          ...(onShare ? [{ label: "Compartilhar", icon: <Share2 className="h-3 w-3" />, onClick: () => onShare(index) }] : []),
           { label: t("common.delete"), icon: <X className="h-3 w-3" />, onClick: () => onDelete(index) },
         ]}
       />

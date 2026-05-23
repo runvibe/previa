@@ -220,6 +220,7 @@ pub async fn me(
             PrincipalSource::Env => AuthPrincipalSource::Env,
             PrincipalSource::Database => AuthPrincipalSource::Database,
             PrincipalSource::ApiToken => AuthPrincipalSource::ApiToken,
+            PrincipalSource::Anonymous => AuthPrincipalSource::Anonymous,
         },
     })
     .into_response()

@@ -9,7 +9,9 @@ use crate::server::auth::config::AuthMode;
 use chrono::{DateTime, Utc};
 
 use crate::server::auth::permissions::Permission;
-use crate::server::auth::{Principal, PrincipalSource};
+use crate::server::auth::{
+    Principal, PrincipalSource, anonymous_full_access_principal, anonymous_principal,
+};
 use crate::server::db::{load_api_token_auth_record_by_hash, update_api_token_last_used};
 use crate::server::models::ErrorResponse;
 use crate::server::state::AppState;
@@ -19,9 +21,17 @@ pub async fn require_client_auth(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if state.auth.config.mode() == AuthMode::AnonymousFullAccess
-        || is_public(request.method(), request.uri().path())
-    {
+    if state.auth.config.mode() == AuthMode::AnonymousFullAccess {
+        let mut request = request;
+        request
+            .extensions_mut()
+            .insert(anonymous_full_access_principal());
+        return next.run(request).await;
+    }
+
+    if is_public(request.method(), request.uri().path()) {
+        let mut request = request;
+        request.extensions_mut().insert(anonymous_principal());
         return next.run(request).await;
     }
 
@@ -52,6 +62,12 @@ pub async fn require_client_auth(
         }
     }
 
+    if allows_anonymous_pipeline_candidate(request.method(), request.uri().path()) {
+        let mut request = request;
+        request.extensions_mut().insert(anonymous_principal());
+        return next.run(request).await;
+    }
+
     (
         StatusCode::UNAUTHORIZED,
         Json(ErrorResponse {
@@ -64,6 +80,35 @@ pub async fn require_client_auth(
 
 fn is_public(method: &Method, path: &str) -> bool {
     path == "/health" || (*method == Method::POST && path == "/api/v1/auth/login")
+}
+
+fn allows_anonymous_pipeline_candidate(method: &Method, path: &str) -> bool {
+    if let Some(rest) = path.strip_prefix("/api/v1/executions/") {
+        return (*method == Method::GET && rest.ends_with("/events"))
+            || (*method == Method::POST && rest.ends_with("/cancel"));
+    }
+
+    let parts = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() < 4 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "projects" {
+        return false;
+    }
+    if parts.len() == 4 {
+        return *method == Method::GET;
+    }
+    match parts[4] {
+        "pipelines" => {
+            (*method == Method::GET && parts.len() == 5)
+                || (parts.len() >= 6
+                    && matches!(*method, Method::GET | Method::PUT | Method::DELETE))
+        }
+        "tests" => matches!(*method, Method::GET | Method::POST | Method::DELETE),
+        "executions" => *method == Method::GET,
+        _ => false,
+    }
 }
 
 async fn authenticate_bearer(state: &AppState, token: &str) -> Option<Principal> {

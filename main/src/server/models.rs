@@ -483,6 +483,100 @@ pub struct ProjectPipelineRecord {
     pub runtime: PipelineRuntimeState,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PipelineVisibility {
+    Private,
+    Public,
+}
+
+impl std::fmt::Display for PipelineVisibility {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Private => "private",
+            Self::Public => "public",
+        })
+    }
+}
+
+impl std::str::FromStr for PipelineVisibility {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "private" => Ok(Self::Private),
+            "public" => Ok(Self::Public),
+            _ => Err(format!("invalid pipeline visibility '{value}'")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PipelineShareAccessLevel {
+    Editor,
+}
+
+impl std::fmt::Display for PipelineShareAccessLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Editor => "editor",
+        })
+    }
+}
+
+impl std::str::FromStr for PipelineShareAccessLevel {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "editor" => Ok(Self::Editor),
+            _ => Err(format!("invalid pipeline share access level '{value}'")),
+        }
+    }
+}
+
+fn default_pipeline_share_access_level() -> PipelineShareAccessLevel {
+    PipelineShareAccessLevel::Editor
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineShareRecord {
+    pub id: String,
+    pub pipeline_id: String,
+    pub user_id: String,
+    pub username: String,
+    pub access_level: PipelineShareAccessLevel,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineSharingRecord {
+    pub pipeline_id: String,
+    pub owner_user_id: String,
+    pub owner_username: String,
+    pub visibility: PipelineVisibility,
+    pub shares: Vec<PipelineShareRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipelineShareCreateRequest {
+    pub user_id: String,
+    pub username: String,
+    #[serde(default = "default_pipeline_share_access_level")]
+    pub access_level: PipelineShareAccessLevel,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PipelineVisibilityUpdateRequest {
+    pub visibility: PipelineVisibility,
+}
+
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineRuntimeState {

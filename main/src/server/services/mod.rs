@@ -1,5 +1,6 @@
 pub mod e2e_rerun;
 pub mod kubernetes_reservations;
+pub mod pipeline_access;
 pub mod pipeline_import;
 pub mod pipeline_runtime;
 pub mod runner_capacity;

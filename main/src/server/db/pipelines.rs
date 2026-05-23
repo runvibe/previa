@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::server::auth::Principal;
+use crate::server::auth::permissions::Role;
 use crate::server::db::DbPool;
 use previa_runner::Pipeline;
 use sqlx::{QueryBuilder, Row};
@@ -16,6 +18,50 @@ pub async fn load_pipelines_for_project(
         .bind(project_id)
         .fetch_all(db)
         .await?;
+
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        let raw = row
+            .try_get::<String, _>("pipeline_json")
+            .unwrap_or_else(|_| "{}".to_owned());
+        if let Ok(pipeline) = serde_json::from_str::<Pipeline>(&raw) {
+            items.push(pipeline);
+        }
+    }
+    Ok(items)
+}
+
+pub async fn load_pipelines_for_project_accessible(
+    db: &DbPool,
+    project_id: &str,
+    principal: &Principal,
+) -> Result<Vec<Pipeline>, sqlx::Error> {
+    let rows = if matches!(principal.role, Role::Root | Role::Admin) {
+        db.query("SELECT pipeline_json FROM pipelines WHERE project_id = ? ORDER BY position ASC")
+            .bind(project_id)
+            .fetch_all(db)
+            .await?
+    } else {
+        db.query(
+            "SELECT pipeline_json FROM pipelines
+            WHERE project_id = ?
+              AND (
+                owner_user_id = ?
+                OR visibility = 'public'
+                OR EXISTS (
+                    SELECT 1 FROM pipeline_shares
+                    WHERE pipeline_shares.pipeline_id = pipelines.id
+                      AND pipeline_shares.user_id = ?
+                )
+              )
+            ORDER BY position ASC",
+        )
+        .bind(project_id)
+        .bind(&principal.subject)
+        .bind(&principal.subject)
+        .fetch_all(db)
+        .await?
+    };
 
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
@@ -150,7 +196,17 @@ pub async fn load_existing_pipeline_ids(
 pub async fn insert_project_pipeline(
     db: &DbPool,
     project_id: &str,
+    pipeline: Pipeline,
+) -> Result<Pipeline, sqlx::Error> {
+    insert_project_pipeline_for_owner(db, project_id, pipeline, "anonymous", "anonymous").await
+}
+
+pub async fn insert_project_pipeline_for_owner(
+    db: &DbPool,
+    project_id: &str,
     mut pipeline: Pipeline,
+    owner_user_id: &str,
+    owner_username: &str,
 ) -> Result<Pipeline, sqlx::Error> {
     let now_iso = now_iso();
     let now_ms_i64 = now_ms() as i64;
@@ -168,8 +224,9 @@ pub async fn insert_project_pipeline(
 
     db.query(
         "INSERT INTO pipelines (
-            id, project_id, position, name, description, created_at, updated_at, pipeline_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            id, project_id, position, name, description, created_at, updated_at,
+            pipeline_json, owner_user_id, owner_username, visibility
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private')",
     )
     .bind(&pipeline_id)
     .bind(project_id)
@@ -179,6 +236,8 @@ pub async fn insert_project_pipeline(
     .bind(&now_iso)
     .bind(&now_iso)
     .bind(serde_json::to_string(&pipeline).unwrap_or_else(|_| "{}".to_owned()))
+    .bind(owner_user_id)
+    .bind(owner_username)
     .execute(&mut *tx)
     .await?;
 

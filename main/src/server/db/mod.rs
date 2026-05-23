@@ -3,6 +3,7 @@ pub mod common;
 pub mod e2e_queues;
 pub mod env_groups;
 pub mod history;
+pub mod pipeline_shares;
 pub mod pipelines;
 pub mod pool;
 pub mod projects;
@@ -29,15 +30,21 @@ pub use history::{
     load_load_history_record_by_id, save_e2e_history, save_load_history, upsert_e2e_history,
     upsert_load_history,
 };
+pub use pipeline_shares::{
+    delete_pipeline_share_record, load_pipeline_sharing_record, update_pipeline_visibility_record,
+    upsert_pipeline_share_record,
+};
 pub use pipelines::{
-    delete_pipeline_record, insert_project_pipeline, load_existing_pipeline_ids,
-    load_existing_project_pipeline_ids, load_pipelines_for_project,
-    load_project_pipeline_for_execution, load_project_pipeline_record, update_project_pipeline,
+    delete_pipeline_record, insert_project_pipeline, insert_project_pipeline_for_owner,
+    load_existing_pipeline_ids, load_existing_project_pipeline_ids, load_pipelines_for_project,
+    load_pipelines_for_project_accessible, load_project_pipeline_for_execution,
+    load_project_pipeline_record, update_project_pipeline,
 };
 pub use pool::{DatabaseKind, DbPool};
 pub use projects::{
     create_project_with_pipelines, list_project_records, load_project_record, project_name_exists,
     upsert_project_metadata, upsert_project_with_pipelines,
+    upsert_project_with_pipelines_for_owner,
 };
 pub use query_utils::{clamp_history_limit, clamp_history_offset, history_order_to_sql};
 pub use runner_reservations::{
