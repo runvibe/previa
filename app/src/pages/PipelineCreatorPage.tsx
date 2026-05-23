@@ -57,6 +57,7 @@ export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, sp
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
 
   const savedContentRef = useRef<string>("");
+  const loadedPipelineIdRef = useRef<string | null>(initialPipeline?.id ?? null);
 
   const canonicalize = useCallback((obj: unknown): unknown => {
     if (obj === null || obj === undefined) return obj;
@@ -88,9 +89,19 @@ export default function PipelineCreatorPage({ onSaveAndRun, isDark, onCancel, sp
   useEffect(() => {
     if (initialPipeline) {
       const { id, ...payload } = initialPipeline;
-      savedContentRef.current = JSON.stringify(payload);
+      const serialized = JSON.stringify(payload, null, 2);
+      const normalized = normalizeContent(serialized);
+      const loadedPipelineChanged = loadedPipelineIdRef.current !== (id ?? null);
+      const shouldAdoptPipeline = loadedPipelineChanged || !content.trim() || normalizeContent(content) === savedContentRef.current;
+
+      savedContentRef.current = normalized;
+      loadedPipelineIdRef.current = id ?? null;
+
+      if (shouldAdoptPipeline) {
+        setContent(serialized);
+      }
     }
-  }, []); // only on mount
+  }, [content, initialPipeline, normalizeContent]);
 
   // Keep savedContentRef in sync after initial content normalization
   const savedContentInitialized = useRef(false);

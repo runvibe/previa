@@ -603,6 +603,13 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
   const loadLoadTestHistory = useLoadTestHistoryStore((state) => state.loadHistory);
   const disconnectLoadTestController = useLoadTestHistoryStore((state) => state.disconnectController);
   const integrationSelectionRef = useRef<string | null>(null);
+  const loadTestSelectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    return () => {
+      disconnectLoadTestController();
+    };
+  }, [disconnectLoadTestController]);
+
   useEffect(() => {
     if (selectedIndex === null || selectedIndex >= orderedPipelines.length) {
       console.log("[DEBUG][TestExecutionPage.useEffect] no selected pipeline or out of bounds", {
@@ -614,6 +621,10 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
       clearExecutionResults();
       setExecutionRuns([]);
       integrationSelectionRef.current = null;
+      if (loadTestSelectionRef.current !== null) {
+        disconnectLoadTestController();
+        loadTestSelectionRef.current = null;
+      }
       return;
     }
 
@@ -627,6 +638,10 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
     });
 
     if (activeTab === "integration") {
+      if (loadTestSelectionRef.current !== null) {
+        disconnectLoadTestController();
+        loadTestSelectionRef.current = null;
+      }
       const nextSelectionKey = `${projectId}:${pipeline.id ?? selectedIndex}:integration`;
       const shouldDisconnectExecution =
         integrationSelectionRef.current !== null && integrationSelectionRef.current !== nextSelectionKey;
@@ -671,6 +686,11 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
         disconnectExecutionController();
         integrationSelectionRef.current = null;
       }
+      const nextSelectionKey = `${projectId}:${pipeline.id ?? selectedIndex}:load`;
+      if (loadTestSelectionRef.current !== null && loadTestSelectionRef.current !== nextSelectionKey) {
+        disconnectLoadTestController();
+      }
+      loadTestSelectionRef.current = nextSelectionKey;
       // loadtest tab
       console.log("[DEBUG][TestExecutionPage.useEffect] loading load-test history", {
         selectedIndex,
@@ -685,7 +705,6 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
           pipelineId: pipeline?.id,
           pipelineName: pipeline?.name,
         });
-        disconnectLoadTestController();
       };
     }
   }, [selectedIndex, projectId, orderedPipelines, executionBackendUrl, activeTab, disconnectExecutionController, clearExecutionResults, setExecutionRuns, checkPipelineRuntime, loadExecutionHistory, loadLoadTestHistory, disconnectLoadTestController]);

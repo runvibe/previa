@@ -32,6 +32,7 @@ use crate::server::handlers::projects::{
     create_project, delete_project, get_project, list_projects, upsert_project,
 };
 use crate::server::handlers::proxy::proxy_request;
+use crate::server::handlers::runner_reservations::get_latest_runner_reservation_for_pipeline;
 use crate::server::handlers::runners::{
     create_runner, delete_runner, get_runner, list_runners, update_runner,
 };
@@ -172,6 +173,10 @@ pub fn build_app_with_config(
             get(get_project_pipeline)
                 .put(upsert_project_pipeline)
                 .delete(delete_project_pipeline),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/pipelines/{pipelineId}/runner-reservation/latest",
+            get(get_latest_runner_reservation_for_pipeline),
         )
         .route("/api/v1/projects/{projectId}", put(upsert_project))
         .route(

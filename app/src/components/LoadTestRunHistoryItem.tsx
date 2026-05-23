@@ -15,7 +15,7 @@ export function LoadTestRunHistoryItem({ run, isActive, onClick }: LoadTestRunHi
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language === "pt-BR" ? ptBR : enUS;
   const localeStr = i18n.language === "pt-BR" ? "pt-BR" : "en-US";
-  const isRunning = run.state === "running";
+  const isRunning = run.state === "running" || run.state === "provisioning";
   const hasErrors = run.metrics.totalError > 0;
   const successRate = run.metrics.totalSent > 0
     ? Math.round((run.metrics.totalSuccess / run.metrics.totalSent) * 100)

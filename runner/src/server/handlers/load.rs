@@ -454,4 +454,161 @@ mod reservation_tests {
         assert!(payload["lastStartedAt"].is_string());
         assert!(payload["lastFinishedAt"].is_string());
     }
+
+    #[tokio::test]
+    async fn rearmed_runner_rejects_old_token_and_accepts_new_token() {
+        let app = reserved_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .header("x-previa-reservation-id", "rr_test")
+                    .header("x-previa-reservation-token", "secret-token")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let _ = response.into_body().collect().await.unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/internal/reservation/rearm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "reservationId": "rr_next",
+                            "reservationToken": "next-token",
+                            "expiresAt": "2999-01-01T00:00:00Z"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .header("x-previa-reservation-id", "rr_test")
+                    .header("x-previa-reservation-token", "secret-token")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/tests/load")
+                    .header("content-type", "application/json")
+                    .header("x-previa-reservation-id", "rr_next")
+                    .header("x-previa-reservation-token", "next-token")
+                    .body(Body::from(load_request().to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn busy_runner_rejects_rearm_and_release() {
+        let state = AppState {
+            reservation: ReservationState::reserved_for_test(
+                "rr_test",
+                "secret-token",
+                "2999-01-01T00:00:00Z",
+            ),
+            ..AppState::default()
+        };
+        state.reservation.mark_execution_started().await;
+        let app = build_app(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/internal/reservation/rearm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "reservationId": "rr_next",
+                            "reservationToken": "next-token",
+                            "expiresAt": "2999-01-01T00:00:00Z"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/internal/reservation/release")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn release_allows_idle_runner_to_be_rearmed() {
+        let app = reserved_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/internal/reservation/release")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/internal/reservation/rearm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "reservationId": "rr_next",
+                            "reservationToken": "next-token",
+                            "expiresAt": "2999-01-01T00:00:00Z"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
 }

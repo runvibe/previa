@@ -2,10 +2,13 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use utoipa::OpenApi;
 
 use crate::server::docs::ApiDoc;
 use crate::server::models::{ErrorResponse, RunnerInfoResponse};
+use crate::server::reservation::{ReservationRearmError, ReservationReleaseError};
 use crate::server::runtime::snapshot_current_process_runtime;
 use crate::server::state::AppState;
 
@@ -81,6 +84,67 @@ pub async fn info_runtime(State(state): State<AppState>) -> Response {
     runtime.last_finished_at = reservation.last_finished_at;
 
     Json(runtime).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReservationRearmRequest {
+    pub reservation_id: String,
+    pub reservation_token: String,
+    pub expires_at: Option<String>,
+}
+
+pub async fn rearm_reservation(
+    State(state): State<AppState>,
+    Json(payload): Json<ReservationRearmRequest>,
+) -> Response {
+    let expires_at = payload
+        .expires_at
+        .as_deref()
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&Utc));
+
+    match state
+        .reservation
+        .rearm(
+            payload.reservation_id,
+            payload.reservation_token,
+            expires_at,
+        )
+        .await
+    {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(ReservationRearmError::Busy) => (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "runner_busy".to_owned(),
+                message: "runner is busy and cannot be rearmed".to_owned(),
+            }),
+        )
+            .into_response(),
+        Err(ReservationRearmError::ActiveReservation) => (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "active_reservation".to_owned(),
+                message: "runner already has an unconsumed reservation".to_owned(),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn release_reservation(State(state): State<AppState>) -> Response {
+    match state.reservation.release() {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(ReservationReleaseError::Busy) => (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "runner_busy".to_owned(),
+                message: "runner is busy and cannot release reservation".to_owned(),
+            }),
+        )
+            .into_response(),
+    }
 }
 
 #[cfg(test)]

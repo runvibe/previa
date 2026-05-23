@@ -320,6 +320,7 @@ pub struct RunnerReservationRecord {
     pub node_profile: Option<String>,
     pub reservation_id: Option<String>,
     #[serde(skip_serializing)]
+    #[schema(ignore)]
     pub reservation_token: Option<String>,
     pub reservation_expires_at: Option<String>,
     pub reservation_status: String,

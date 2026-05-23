@@ -1,11 +1,11 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { PreviaLogo } from "@/components/PreviaLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { login } from "@/lib/auth-client";
+import { fetchCurrentUser, login } from "@/lib/auth-client";
 import { useAuthStore } from "@/stores/useAuthStore";
 
 export default function LoginPage() {
@@ -18,6 +18,21 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
+
+  useEffect(() => {
+    if (token) return;
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((user) => {
+        if (cancelled) return;
+        setSession(null, user);
+        navigate(from, { replace: true });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [from, navigate, setSession, token]);
 
   if (token) {
     return <Navigate to={from} replace />;

@@ -9,6 +9,7 @@ pub mod history_load;
 pub mod pipelines;
 pub mod projects;
 pub mod proxy;
+pub mod runner_reservations;
 pub mod runners;
 pub mod specs;
 pub mod tests_e2e;

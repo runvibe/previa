@@ -10,7 +10,12 @@ import type { Project, ProjectEnvEntry, ProjectEnvGroup, ProjectSpec } from "@/t
 import { getMergedSpec } from "@/types/project";
 import type { ExecutionRun } from "@/lib/execution-store";
 import type { LoadTestRunRecord } from "@/lib/load-test-store";
-import type { LoadTestMetrics, LoadTestState, RunnerResourcePoint } from "@/types/load-test";
+import type {
+  LoadProvisioningStatus,
+  LoadTestMetrics,
+  LoadTestState,
+  RunnerResourcePoint,
+} from "@/types/load-test";
 
 // ============ API Types (from OpenAPI spec) ============
 
@@ -273,6 +278,26 @@ export function ensureApiPrefix(url: string): string {
 
 export function ensureApiRoot(url: string): string {
   return url.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "");
+}
+
+export async function fetchLatestRunnerReservation(
+  baseUrl: string,
+  projectId: string,
+  pipelineId: string,
+): Promise<LoadProvisioningStatus | null> {
+  const base = ensureApiPrefix(baseUrl);
+  const url = `${base}/projects/${encodeURIComponent(projectId)}/pipelines/${encodeURIComponent(pipelineId)}/runner-reservation/latest`;
+  const init: RequestInit = { method: "GET" };
+  const token = getAuthToken();
+  const response = await fetch(url, token ? withBearer(init, token) : init);
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`HTTP ${response.status}: ${body}`);
+  }
+
+  return await response.json() as LoadProvisioningStatus;
 }
 
 export async function getOpenApiVersion(baseUrl: string): Promise<string | null> {

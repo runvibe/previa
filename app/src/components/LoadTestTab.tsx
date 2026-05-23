@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadTestConfigPanel } from "./LoadTestConfigPanel";
+import { LoadProvisioningStatusPanel } from "./LoadProvisioningStatusPanel";
 import { LoadTestResultsPanel } from "./LoadTestResultsPanel";
 import { LoadTestRunHistoryItem } from "./LoadTestRunHistoryItem";
 import { RunHistoryPanel } from "./RunHistoryPanel";
@@ -44,7 +45,18 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
     setHistoryCollapsedState(collapsed);
   }, []);
 
-  const { state, metrics, config, nodesInfo, runs, activeRunId, viewingHistoricRun, liveState } = store;
+  const {
+    state,
+    metrics,
+    config,
+    nodesInfo,
+    runs,
+    activeRunId,
+    viewingHistoricRun,
+    liveState,
+    provisioningStatus,
+    provisioningStartedAt,
+  } = store;
 
   // Notify parent of real test state changes (use ref to avoid infinite loops)
   const onStateChangeRef = useRef(onStateChange);
@@ -106,8 +118,8 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
           run={run}
           isActive={activeRunId === run.id}
           onClick={() => {
-            if (run.state === "running") {
-              if (liveState === "running") {
+            if (run.state === "running" || run.state === "provisioning") {
+              if (liveState === "running" || liveState === "provisioning") {
                 store.backToLive();
               } else if (run.executionId && executionBackendUrl) {
                 store.reconnectExecution(run.executionId, run.projectId, executionBackendUrl);
@@ -245,6 +257,12 @@ export function LoadTestTab({ pipeline, projectId, pipelineIndex, onStateChange,
   const resultsContent = (
     <ScrollArea className="h-full p-4">
       <div className="w-full max-w-3xl mx-auto space-y-4">
+        {(state === "provisioning" || liveState === "provisioning") && (
+          <LoadProvisioningStatusPanel
+            status={provisioningStatus}
+            startedAt={provisioningStartedAt}
+          />
+        )}
         <LoadTestResultsPanel
           metrics={metrics}
           state={state}

@@ -19,8 +19,8 @@ use crate::server::models::{
     ProjectListQuery, ProjectLoadTestRequest, ProjectMetadataUpsertRequest, ProjectPipelineRecord,
     ProjectRecord, ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectSqliteExportRequest,
     ProjectTransferQuery, ProjectUpsertRequest, ProxyRequest, RunnerInfo, RunnerLoadLine,
-    RunnerRecord, RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry,
-    UserCreateRequest, UserRecord, UserUpdateRequest,
+    RunnerRecord, RunnerReservationRecord, RunnerRuntimeInfo, RunnerUpdateRequest,
+    RunnerUpsertRequest, SpecUrlEntry, UserCreateRequest, UserRecord, UserUpdateRequest,
 };
 
 const API_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -73,6 +73,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         crate::server::handlers::pipelines::create_project_pipeline,
         crate::server::handlers::projects::upsert_project,
         crate::server::handlers::pipelines::upsert_project_pipeline,
+        crate::server::handlers::runner_reservations::get_latest_runner_reservation_for_pipeline,
         crate::server::handlers::specs::delete_project_spec,
         crate::server::handlers::pipelines::delete_project_pipeline,
         crate::server::handlers::projects::delete_project,
@@ -153,6 +154,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         E2eQueuePipelineRecord,
         E2eQueueRecord,
         LoadHistoryRecord,
+        RunnerReservationRecord,
         RunnerRuntimeInfo,
         RunnerInfo,
         RunnerRecord,

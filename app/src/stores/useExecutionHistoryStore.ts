@@ -96,6 +96,11 @@ function clearExecutionHint(projectId: string, pipelineId: string): void {
   window.sessionStorage.removeItem(executionHintKey(projectId, pipelineId));
 }
 
+function isStaleExecutionError(error: unknown): boolean {
+  if (typeof error !== "string") return false;
+  return error.includes("HTTP 404") && error.includes("execution not found for project");
+}
+
 export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get) => ({
   runs: [],
   latestStatuses: {},
@@ -727,6 +732,27 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
           pipelineIndex,
           error: err,
         });
+        if (isStaleExecutionError(err)) {
+          if (pipeline?.id) {
+            clearExecutionHint(projectId, pipeline.id);
+          }
+          _lastLoadedExecutionId = null;
+          _controller = null;
+          set((state) => {
+            const latestStatuses = { ...state.latestStatuses };
+            if (pipelineIndex !== undefined) {
+              delete latestStatuses[pipelineIndex];
+            }
+            return {
+              running: false,
+              results: {},
+              activeRunId: null,
+              runs: state.runs.filter((run) => run.id !== syntheticId),
+              latestStatuses,
+            };
+          });
+          return;
+        }
         const hasError = Object.values(finalResults).some(r => r.status === "error");
         const status: "success" | "error" = hasError ? "error" : "success";
         set((state) => ({

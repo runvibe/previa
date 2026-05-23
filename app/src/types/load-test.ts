@@ -335,7 +335,25 @@ export interface ConsolidatedLoadMetrics {
   curveAdherence?: number;
 }
 
-export type LoadTestState = "idle" | "running" | "completed" | "cancelled";
+export type LoadTestState = "idle" | "provisioning" | "running" | "completed" | "cancelled";
+
+export interface LoadProvisioningStatus {
+  executionId: string;
+  pipelineId?: string | null;
+  capacityMode: string;
+  requestedRunnerCount: number;
+  readyRunnerCount: number;
+  targetRps: number;
+  nodeProfile?: string | null;
+  reservationId?: string | null;
+  reservationExpiresAt?: string | null;
+  reservationStatus: string;
+  runnerEndpoints: string[];
+  createdAt: string;
+  updatedAt: string;
+  unavailable?: boolean;
+  message?: string;
+}
 
 export interface LoadTestRun {
   id?: number;

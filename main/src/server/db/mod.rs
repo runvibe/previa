@@ -40,7 +40,9 @@ pub use projects::{
     upsert_project_metadata, upsert_project_with_pipelines,
 };
 pub use query_utils::{clamp_history_limit, clamp_history_offset, history_order_to_sql};
-pub use runner_reservations::upsert_runner_reservation;
+pub use runner_reservations::{
+    load_latest_runner_reservation_for_pipeline, upsert_runner_reservation,
+};
 pub use runners::{
     delete_runner_record, list_enabled_runner_endpoints, list_runner_records, load_runner_record,
     mark_runner_observed, seed_env_runner_records, update_runner_record, upsert_runner_record,
