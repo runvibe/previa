@@ -99,22 +99,46 @@ function ResultsSection({
 
 function buildRunnerResourceChartData(
   points: RunnerResourcePoint[],
+  series: RunnerResourceSeries[],
   valueKey: "cpuUsagePercent" | "memoryMb" | "networkTotalKb",
 ) {
   const rows = new Map<number, Record<string, number>>();
+  const keyByEndpoint = new Map(series.map((item) => [item.endpoint, item.key]));
 
   for (const point of points.slice(-300)) {
+    const key = keyByEndpoint.get(point.node);
+    if (!key) continue;
     const second = Math.round(point.elapsedMs / 1000);
     const row = rows.get(second) ?? { time: second };
-    row[point.node] = Math.round(point[valueKey] * 100) / 100;
+    row[key] = Math.round(point[valueKey] * 100) / 100;
     rows.set(second, row);
   }
 
   return Array.from(rows.values()).sort((a, b) => a.time - b.time);
 }
 
-function getRunnerNames(points: RunnerResourcePoint[]) {
-  return Array.from(new Set(points.map((point) => point.node)));
+interface RunnerResourceSeries {
+  endpoint: string;
+  key: string;
+  label: string;
+}
+
+function getRunnerResourceSeries(points: RunnerResourcePoint[]): RunnerResourceSeries[] {
+  const endpoints = Array.from(new Set(points.map((point) => point.node)));
+  const labelCounts = new Map<string, number>();
+
+  return endpoints.map((endpoint, index) => {
+    const baseLabel = runnerDisplayName(endpoint, index);
+    const count = labelCounts.get(baseLabel) ?? 0;
+    labelCounts.set(baseLabel, count + 1);
+    const label = count === 0 ? baseLabel : `${baseLabel}-${count + 1}`;
+
+    return {
+      endpoint,
+      key: `runner_${index}`,
+      label,
+    };
+  });
 }
 
 function formatMemory(value: number) {
@@ -315,10 +339,11 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const waveDiagnostics = deriveWaveDiagnostics(metrics);
   const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
-  const runnerNames = getRunnerNames(runnerResourceHistory);
-  const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
-  const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, "memoryMb");
-  const networkChartData = buildRunnerResourceChartData(runnerResourceHistory, "networkTotalKb");
+  const runnerResourceSeries = getRunnerResourceSeries(runnerResourceHistory);
+  const runnerResourceLabelByKey = new Map(runnerResourceSeries.map((series) => [series.key, series.label]));
+  const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, runnerResourceSeries, "cpuUsagePercent");
+  const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, runnerResourceSeries, "memoryMb");
+  const networkChartData = buildRunnerResourceChartData(runnerResourceHistory, runnerResourceSeries, "networkTotalKb");
   const hasTrafficSection = rpsChartData.length > 1;
   const hasWavePlanSection = (waveConfig && waveChartData.length > 1) || lifecycleChartData.length > 0;
   const hasResponseSection =
@@ -351,7 +376,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
     typeof metrics.sendStarted === "number" ||
     typeof metrics.httpStarted === "number" ||
     typeof metrics.outstandingRequests === "number";
-  const hasRunnerInfraSection = runnerNames.length > 0 && (cpuChartData.length > 0 || memoryChartData.length > 0 || networkChartData.length > 0);
+  const hasRunnerInfraSection = runnerResourceSeries.length > 0 && (cpuChartData.length > 0 || memoryChartData.length > 0 || networkChartData.length > 0);
 
   return (
     <div className="space-y-4 p-1">
@@ -930,22 +955,9 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
 
       {hasRunnerInfraSection && (
         <ResultsSection title={t("loadTestResults.sectionRunnerInfra")} testId="load-results-runner-infra">
-          {runnerNames.length > 0 && cpuChartData.length > 0 && (
+          {runnerResourceSeries.length > 0 && cpuChartData.length > 0 && (
             <div className="glass rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
-                <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
-                  {runnerNames.map((name, index) => (
-                    <span key={name} className="inline-flex items-center gap-1 text-[9px] text-muted-foreground">
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length] }}
-                      />
-                      <span className="max-w-28 truncate font-mono">{name}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner CPU</p>
               <ResponsiveContainer width="100%" height={110}>
                 <LineChart data={cpuChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -958,14 +970,14 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                       borderRadius: "var(--radius)",
                       fontSize: 11,
                     }}
-                    formatter={(v: number, name: string) => [`${v}%`, name]}
+                    formatter={(v: number, name: string) => [`${v}%`, runnerResourceLabelByKey.get(name) ?? name]}
                     labelFormatter={(v) => `${v}s`}
                   />
-                  {runnerNames.map((name, index) => (
+                  {runnerResourceSeries.map((series, index) => (
                     <Line
-                      key={name}
+                      key={series.endpoint}
                       type="monotone"
-                      dataKey={name}
+                      dataKey={series.key}
                       stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                       strokeWidth={1.5}
                       dot={cpuChartData.length === 1}
@@ -977,7 +989,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
             </div>
           )}
 
-          {runnerNames.length > 0 && memoryChartData.length > 0 && (
+          {runnerResourceSeries.length > 0 && memoryChartData.length > 0 && (
             <div className="glass rounded-lg p-3 space-y-2">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner memory</p>
               <ResponsiveContainer width="100%" height={110}>
@@ -992,14 +1004,14 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                       borderRadius: "var(--radius)",
                       fontSize: 11,
                     }}
-                    formatter={(v: number, name: string) => [formatMemory(v), name]}
+                    formatter={(v: number, name: string) => [formatMemory(v), runnerResourceLabelByKey.get(name) ?? name]}
                     labelFormatter={(v) => `${v}s`}
                   />
-                  {runnerNames.map((name, index) => (
+                  {runnerResourceSeries.map((series, index) => (
                     <Line
-                      key={name}
+                      key={series.endpoint}
                       type="monotone"
-                      dataKey={name}
+                      dataKey={series.key}
                       stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                       strokeWidth={1.5}
                       dot={memoryChartData.length === 1}
@@ -1011,7 +1023,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
             </div>
           )}
 
-          {runnerNames.length > 0 && networkChartData.length > 0 && (
+          {runnerResourceSeries.length > 0 && networkChartData.length > 0 && (
             <div className="glass rounded-lg p-3 space-y-2">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runner network</p>
               <ResponsiveContainer width="100%" height={110}>
@@ -1026,14 +1038,14 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                       borderRadius: "var(--radius)",
                       fontSize: 11,
                     }}
-                    formatter={(v: number, name: string) => [formatNetwork(v), name]}
+                    formatter={(v: number, name: string) => [formatNetwork(v), runnerResourceLabelByKey.get(name) ?? name]}
                     labelFormatter={(v) => `${v}s`}
                   />
-                  {runnerNames.map((name, index) => (
+                  {runnerResourceSeries.map((series, index) => (
                     <Line
-                      key={name}
+                      key={series.endpoint}
                       type="monotone"
-                      dataKey={name}
+                      dataKey={series.key}
                       stroke={RUNNER_RESOURCE_COLORS[index % RUNNER_RESOURCE_COLORS.length]}
                       strokeWidth={1.5}
                       dot={networkChartData.length === 1}

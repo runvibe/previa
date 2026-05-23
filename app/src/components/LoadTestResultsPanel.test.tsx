@@ -249,7 +249,35 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("Runner CPU")).toBeInTheDocument();
     expect(screen.getByText("Runner memory")).toBeInTheDocument();
     expect(screen.getByText("Runner network")).toBeInTheDocument();
-    expect(screen.getAllByText("runner-a").length).toBeGreaterThan(0);
+    expect(screen.queryByText("runner-a")).not.toBeInTheDocument();
+  });
+
+  it("does not render full runner endpoint legends inside infrastructure charts", () => {
+    const runnerEndpoint =
+      "http://previa-runner-rrd42f9e539f1744d5b8-0.previa-runner-rrd42f9e539f1744d5b8.previa.svc.cluster.local:7373";
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      runnerResourceHistory: [
+        {
+          node: runnerEndpoint,
+          timestamp: 1_000,
+          elapsedMs: 1_000,
+          cpuUsagePercent: 12.5,
+          memoryBytes: 104_857_600,
+          memoryMb: 100,
+          networkTxBytes: 2_048,
+          networkRxBytes: 4_096,
+          networkTotalBytes: 6_144,
+          networkTotalKb: 6,
+        },
+      ],
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="running" totalRequests={0} />);
+
+    const runnerInfra = screen.getByTestId("load-results-runner-infra");
+    expect(runnerInfra).toBeInTheDocument();
+    expect(runnerInfra).not.toHaveTextContent(runnerEndpoint);
   });
 
   it("shows elapsed time as a metric card instead of loose footer text", () => {
