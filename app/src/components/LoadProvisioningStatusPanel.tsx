@@ -33,9 +33,7 @@ export function LoadProvisioningStatusPanel({
       className="rounded-lg border border-border bg-card p-4 shadow-sm"
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <ServerCog className="h-5 w-5" />
-        </div>
+        <ServerCog data-testid="load-provisioning-icon" className="mt-1 h-5 w-5 shrink-0 text-white" />
         <div className="min-w-0 flex-1 space-y-3">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground">

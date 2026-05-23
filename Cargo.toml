@@ -3,7 +3,7 @@ resolver = "3"
 members = ['engine', 'main', 'previa', 'runner', 'load-target', 'kubernetes-plugin']
 
 [workspace.package]
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 edition = "2024"
 rust-version = "1.90.0"
 authors = ["Previa Labs <previa@runvibe.dev>"]

@@ -15,9 +15,9 @@ use crate::server::execution::runner_auth::apply_runner_auth;
 use crate::server::execution::scheduler::SharedValue;
 use crate::server::execution::snapshot::build_live_load_snapshot_payload;
 use crate::server::models::{
-    ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, LoadEventContext,
-    LoadLatencyAccumulator, LoadLatencySummary, RunnerLoadDispatchBucket,
-    RunnerLoadLifecycleBucket, RunnerLoadLine, RunnerLoadSnapshotMode,
+    ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, ConsolidatedLoadStatusCodeBucket,
+    LoadEventContext, LoadLatencyAccumulator, LoadLatencySummary, RunnerLoadDispatchBucket,
+    RunnerLoadLifecycleBucket, RunnerLoadLine, RunnerLoadSnapshotMode, RunnerLoadStatusCodeBucket,
 };
 use crate::server::state::TRANSACTION_ID_HEADER;
 use crate::server::utils::{now_ms, parse_runner_duration_ms, parse_runner_load_metrics};
@@ -41,6 +41,7 @@ struct RunnerLoadTelemetryState {
     line: Option<RunnerLoadLine>,
     dispatch_buckets: BTreeMap<u64, RunnerLoadDispatchBucket>,
     lifecycle_buckets: BTreeMap<u64, RunnerLoadLifecycleBucket>,
+    status_code_buckets: BTreeMap<(u64, String), RunnerLoadStatusCodeBucket>,
 }
 
 pub async fn forward_runner_stream_load_chunked(
@@ -728,6 +729,7 @@ pub fn apply_runner_telemetry_line(state: &mut LoadTelemetryState, mut line: Run
     if replaces_bucket_state {
         runner.dispatch_buckets.clear();
         runner.lifecycle_buckets.clear();
+        runner.status_code_buckets.clear();
     }
 
     for bucket in metrics.dispatch_buckets {
@@ -736,11 +738,17 @@ pub fn apply_runner_telemetry_line(state: &mut LoadTelemetryState, mut line: Run
     for bucket in metrics.lifecycle_buckets {
         runner.lifecycle_buckets.insert(bucket.elapsed_ms, bucket);
     }
+    for bucket in metrics.status_code_buckets {
+        runner
+            .status_code_buckets
+            .insert((bucket.elapsed_ms, bucket.code.clone()), bucket);
+    }
 
     line.payload = payload_with_merged_buckets(
         &line.payload,
         &runner.dispatch_buckets,
         &runner.lifecycle_buckets,
+        &runner.status_code_buckets,
     );
     runner.line = Some(line);
 }
@@ -749,6 +757,7 @@ fn payload_with_merged_buckets(
     payload: &Value,
     dispatch_buckets: &BTreeMap<u64, RunnerLoadDispatchBucket>,
     lifecycle_buckets: &BTreeMap<u64, RunnerLoadLifecycleBucket>,
+    status_code_buckets: &BTreeMap<(u64, String), RunnerLoadStatusCodeBucket>,
 ) -> Value {
     let mut obj = payload.as_object().cloned().unwrap_or_default();
     obj.insert(
@@ -785,6 +794,21 @@ fn payload_with_merged_buckets(
                         "dispatcherLagged": bucket.dispatcher_lagged,
                         "runtimeLagged": bucket.runtime_lagged,
                         "senderLagged": bucket.sender_lagged,
+                    })
+                })
+                .collect(),
+        ),
+    );
+    obj.insert(
+        "statusCodeBuckets".to_owned(),
+        Value::Array(
+            status_code_buckets
+                .values()
+                .map(|bucket| {
+                    json!({
+                        "elapsedMs": bucket.elapsed_ms,
+                        "code": bucket.code,
+                        "count": bucket.count,
                     })
                 })
                 .collect(),
@@ -914,6 +938,8 @@ pub fn consolidate_load_metrics(
     let mut elapsed_ms = 0u64;
     let mut nodes_reporting = 0usize;
     let mut lifecycle_by_elapsed = BTreeMap::<u64, ConsolidatedLoadLifecycleBucket>::new();
+    let mut status_codes_by_elapsed =
+        BTreeMap::<(u64, String), ConsolidatedLoadStatusCodeBucket>::new();
 
     for line in latest_by_node.values() {
         let Some(metrics) = parse_runner_load_metrics(&line.payload) else {
@@ -974,6 +1000,16 @@ pub fn consolidate_load_metrics(
             entry.response_observation_duration_ms_max = entry
                 .response_observation_duration_ms_max
                 .max(bucket.response_observation_duration_ms_max);
+        }
+        for bucket in &metrics.status_code_buckets {
+            let entry = status_codes_by_elapsed
+                .entry((bucket.elapsed_ms, bucket.code.clone()))
+                .or_insert_with(|| ConsolidatedLoadStatusCodeBucket {
+                    elapsed_ms: bucket.elapsed_ms,
+                    code: bucket.code.clone(),
+                    count: 0,
+                });
+            entry.count = entry.count.saturating_add(bucket.count);
         }
 
         if let Some(value) = metrics.total_started {
@@ -1196,6 +1232,7 @@ pub fn consolidate_load_metrics(
         elapsed_ms,
         nodes_reporting,
         lifecycle_buckets: lifecycle_by_elapsed.into_values().collect(),
+        status_code_buckets: status_codes_by_elapsed.into_values().collect(),
     })
 }
 
@@ -1912,6 +1949,64 @@ mod tests {
     }
 
     #[test]
+    fn consolidated_metrics_sum_status_code_buckets_by_elapsed_and_code() {
+        let mut latest = HashMap::new();
+        latest.insert(
+            "runner-a".to_owned(),
+            RunnerLoadLine {
+                node: "runner-a".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 0,
+                    "totalSuccess": 0,
+                    "totalError": 0,
+                    "rps": 0.0,
+                    "startTime": 10_000,
+                    "elapsedMs": 2_000,
+                    "statusCodeBuckets": [
+                        {"elapsedMs": 1_000, "code": "200", "count": 10},
+                        {"elapsedMs": 1_000, "code": "502", "count": 2}
+                    ]
+                }),
+            },
+        );
+        latest.insert(
+            "runner-b".to_owned(),
+            RunnerLoadLine {
+                node: "runner-b".to_owned(),
+                runner_event: "metrics".to_owned(),
+                received_at: 1,
+                payload: json!({
+                    "totalSent": 0,
+                    "totalSuccess": 0,
+                    "totalError": 0,
+                    "rps": 0.0,
+                    "startTime": 10_000,
+                    "elapsedMs": 2_000,
+                    "statusCodeBuckets": [
+                        {"elapsedMs": 1_000, "code": "200", "count": 7},
+                        {"elapsedMs": 2_000, "code": "network_error", "count": 1}
+                    ]
+                }),
+            },
+        );
+
+        let metrics = consolidate_load_metrics(&latest, LoadLatencySummary::default()).unwrap();
+
+        assert_eq!(metrics.status_code_buckets.len(), 3);
+        assert_eq!(metrics.status_code_buckets[0].elapsed_ms, 1_000);
+        assert_eq!(metrics.status_code_buckets[0].code, "200");
+        assert_eq!(metrics.status_code_buckets[0].count, 17);
+        assert_eq!(metrics.status_code_buckets[1].elapsed_ms, 1_000);
+        assert_eq!(metrics.status_code_buckets[1].code, "502");
+        assert_eq!(metrics.status_code_buckets[1].count, 2);
+        assert_eq!(metrics.status_code_buckets[2].elapsed_ms, 2_000);
+        assert_eq!(metrics.status_code_buckets[2].code, "network_error");
+        assert_eq!(metrics.status_code_buckets[2].count, 1);
+    }
+
+    #[test]
     fn builds_rps_history_sample_with_wave_targets() {
         let metrics = ConsolidatedLoadMetrics {
             total_started: Some(45),
@@ -1965,6 +2060,7 @@ mod tests {
             elapsed_ms: 2_450,
             nodes_reporting: 2,
             lifecycle_buckets: Vec::new(),
+            status_code_buckets: Vec::new(),
         };
         let latest = HashMap::from([(
             "http://runner-a:3000".to_owned(),
@@ -2072,6 +2168,7 @@ mod tests {
             elapsed_ms: 4_250,
             nodes_reporting: 2,
             lifecycle_buckets: Vec::new(),
+            status_code_buckets: Vec::new(),
         };
         let mut history = BTreeMap::new();
         let partial = HashMap::from([(
@@ -2176,6 +2273,7 @@ mod tests {
             elapsed_ms: 4_250,
             nodes_reporting: 2,
             lifecycle_buckets: Vec::new(),
+            status_code_buckets: Vec::new(),
         };
         let latest = HashMap::from([
             (

@@ -9,6 +9,7 @@ import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Ga
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { buildLifecycleChartData, type LifecycleSeriesTone } from "@/lib/load-lifecycle-chart";
 import { buildRpsChartData, buildWaveSecondMarkers, formatPlannedRequests } from "@/lib/load-rps-chart";
+import { buildStatusCodeChartData } from "@/lib/load-status-code-chart";
 import { deriveWaveDiagnostics } from "@/lib/wave-diagnostics";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, LoadTestMetrics, LoadTestState, RunnerResourcePoint, WaveLoadConfig } from "@/types/load-test";
@@ -206,9 +207,7 @@ function NodeSummaryPanel({ nodesInfo }: { nodesInfo: NonNullable<LoadTestResult
     <Collapsible open={open} onOpenChange={setOpen} className="glass rounded-lg p-3 space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10">
-            <Server className="h-4 w-4 text-primary" />
-          </div>
+          <Server data-testid="load-results-nodes-icon" className="h-4 w-4 shrink-0 text-white" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold">
@@ -311,6 +310,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const visibleWaveSecondMarkers = waveSecondMarkers.filter((marker) => marker.showLabel);
   const lifecycleChart = buildLifecycleChartData(metrics);
   const lifecycleChartData = lifecycleChart.data;
+  const statusCodeChart = buildStatusCodeChartData(metrics);
+  const statusCodeChartData = statusCodeChart.data;
   const waveDiagnostics = deriveWaveDiagnostics(metrics);
   const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
@@ -318,10 +319,12 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const cpuChartData = buildRunnerResourceChartData(runnerResourceHistory, "cpuUsagePercent");
   const memoryChartData = buildRunnerResourceChartData(runnerResourceHistory, "memoryMb");
   const networkChartData = buildRunnerResourceChartData(runnerResourceHistory, "networkTotalKb");
-  const hasWaveSection = rpsChartData.length > 1 || (waveConfig && waveChartData.length > 1) || lifecycleChartData.length > 0;
+  const hasTrafficSection = rpsChartData.length > 1;
+  const hasWavePlanSection = (waveConfig && waveChartData.length > 1) || lifecycleChartData.length > 0;
   const hasResponseSection =
     metrics.avgLatency > 0 ||
     typeof metrics.inFlight === "number" ||
+    statusCodeChartData.length > 0 ||
     latencyChartData.length > 1 ||
     Boolean(metrics.errors && metrics.errors.length > 0);
   const hasGeneratorSummary =
@@ -409,8 +412,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
         )}
       </ResultsSection>
 
-      {hasWaveSection && (
-        <ResultsSection title={t("loadTestResults.sectionWave")} testId="load-results-wave">
+      {hasTrafficSection && (
+        <ResultsSection title={t("loadTestResults.sectionTraffic")} testId="load-results-wave">
           {rpsChartData.length > 1 && (
             <div data-testid="rps-over-time-chart" className="glass rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -496,7 +499,117 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
               </ResponsiveContainer>
             </div>
           )}
+        </ResultsSection>
+      )}
 
+      {hasResponseSection && (
+        <ResultsSection title={t("loadTestResults.sectionResponse")} testId="load-results-response">
+          {metrics.avgLatency > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              <MetricCard icon={Clock} label={t("loadTestResults.avg")} value={`${metrics.avgLatency}ms`} />
+              <MetricCard icon={Activity} label="P95" value={`${metrics.p95}ms`} />
+              <MetricCard icon={Activity} label="P99" value={`${metrics.p99}ms`} />
+            </div>
+          )}
+
+          {typeof metrics.inFlight === "number" && (
+            <div className="grid grid-cols-2 gap-2">
+              <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
+            </div>
+          )}
+
+          {statusCodeChartData.length > 0 && (
+            <div data-testid="status-code-timeline-chart" className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("loadTestResults.statusCodeTimeline")}
+                </p>
+                <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
+                  {statusCodeChart.series.map((series) => (
+                    <span key={series.code} className="inline-flex items-center gap-1">
+                      <span className="h-0 w-3 border-t" style={{ borderColor: series.color }} />
+                      {series.labelKey ? t(series.labelKey) : series.code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={statusCodeChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [
+                      typeof v === "number" ? Math.round(v) : v,
+                      name === "network_error" ? t("loadTestResults.networkError") : name,
+                    ]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {statusCodeChart.series.map((series) => (
+                    <Line
+                      key={series.code}
+                      type="monotone"
+                      dataKey={series.code}
+                      stroke={series.color}
+                      strokeWidth={1.6}
+                      dot={statusCodeChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {latencyChartData.length > 1 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.latencyOverTime")}</p>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={latencyChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    labelFormatter={(v) => `#${v}`}
+                    formatter={(v: number) => [`${v}ms`, t("loadTestResults.latency")]}
+                  />
+                  <Line type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {metrics.errors && metrics.errors.length > 0 && (
+            <div className="glass rounded-lg p-3 space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                {t("loadTestResults.errorSamples")}
+              </p>
+              <div className="space-y-1">
+                {metrics.errors.slice(0, 5).map((error, index) => (
+                  <p key={`${error}-${index}`} className="break-words text-xs text-destructive">
+                    {error}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </ResultsSection>
+      )}
+
+      {hasWavePlanSection && (
+        <ResultsSection title={t("loadTestResults.sectionWavePlan")} testId="load-results-wave-plan">
           {waveConfig && waveChartData.length > 1 && (
             <div data-testid="configured-wave-chart" className="glass rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -625,63 +738,6 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
                   ))}
                 </LineChart>
               </ResponsiveContainer>
-            </div>
-          )}
-        </ResultsSection>
-      )}
-
-      {hasResponseSection && (
-        <ResultsSection title={t("loadTestResults.sectionResponse")} testId="load-results-response">
-          {metrics.avgLatency > 0 && (
-            <div className="grid grid-cols-3 gap-2">
-              <MetricCard icon={Clock} label={t("loadTestResults.avg")} value={`${metrics.avgLatency}ms`} />
-              <MetricCard icon={Activity} label="P95" value={`${metrics.p95}ms`} />
-              <MetricCard icon={Activity} label="P99" value={`${metrics.p99}ms`} />
-            </div>
-          )}
-
-          {typeof metrics.inFlight === "number" && (
-            <div className="grid grid-cols-2 gap-2">
-              <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
-            </div>
-          )}
-
-          {latencyChartData.length > 1 && (
-            <div className="glass rounded-lg p-3 space-y-2">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{t("loadTestResults.latencyOverTime")}</p>
-              <ResponsiveContainer width="100%" height={120}>
-                <LineChart data={latencyChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="idx" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-                  <RechartsTooltip
-                    contentStyle={{
-                      background: "hsl(var(--popover))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "var(--radius)",
-                      fontSize: 11,
-                    }}
-                    labelFormatter={(v) => `#${v}`}
-                    formatter={(v: number) => [`${v}ms`, t("loadTestResults.latency")]}
-                  />
-                  <Line type="monotone" dataKey="latency" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {metrics.errors && metrics.errors.length > 0 && (
-            <div className="glass rounded-lg p-3 space-y-2">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                {t("loadTestResults.errorSamples")}
-              </p>
-              <div className="space-y-1">
-                {metrics.errors.slice(0, 5).map((error, index) => (
-                  <p key={`${error}-${index}`} className="break-words text-xs text-destructive">
-                    {error}
-                  </p>
-                ))}
-              </div>
             </div>
           )}
         </ResultsSection>

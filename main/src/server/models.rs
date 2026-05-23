@@ -1045,6 +1045,8 @@ pub struct ConsolidatedLoadMetrics {
     pub nodes_reporting: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifecycle_buckets: Vec<ConsolidatedLoadLifecycleBucket>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub status_code_buckets: Vec<ConsolidatedLoadStatusCodeBucket>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -1066,6 +1068,14 @@ pub struct ConsolidatedLoadLifecycleBucket {
     pub sender_start_lag_ms_max: u64,
     pub http_send_duration_ms_max: u64,
     pub response_observation_duration_ms_max: u64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsolidatedLoadStatusCodeBucket {
+    pub elapsed_ms: u64,
+    pub code: String,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1121,6 +1131,13 @@ pub struct RunnerLoadLifecycleBucket {
     pub sender_start_lag_ms_max: u64,
     pub http_send_duration_ms_max: u64,
     pub response_observation_duration_ms_max: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RunnerLoadStatusCodeBucket {
+    pub elapsed_ms: u64,
+    pub code: String,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -1209,6 +1226,7 @@ pub struct RunnerLoadMetricsPoint {
     pub latency_buckets: Vec<RunnerLoadLatencyBucket>,
     pub dispatch_buckets: Vec<RunnerLoadDispatchBucket>,
     pub lifecycle_buckets: Vec<RunnerLoadLifecycleBucket>,
+    pub status_code_buckets: Vec<RunnerLoadStatusCodeBucket>,
 }
 
 #[derive(Debug, Clone)]

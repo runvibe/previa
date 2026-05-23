@@ -46,7 +46,7 @@ describe("LoadTestResultsPanel", () => {
     elapsedMs: 0,
   };
 
-  it("shows outcome before wave, response, generator diagnostics, and runner infrastructure", () => {
+  it("shows executive outcome, live traffic, response, wave plan, diagnostics, and runner infrastructure in customer priority order", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,
       totalSent: 1200,
@@ -119,24 +119,33 @@ describe("LoadTestResultsPanel", () => {
     const outcome = screen.getByTestId("load-results-outcome");
     const wave = screen.getByTestId("load-results-wave");
     const response = screen.getByTestId("load-results-response");
+    const wavePlan = screen.getByTestId("load-results-wave-plan");
     const generator = screen.getByTestId("load-results-generator");
     const runnerInfra = screen.getByTestId("load-results-runner-infra");
 
     expectBefore(outcome, wave);
     expectBefore(wave, response);
-    expectBefore(response, generator);
+    expectBefore(response, wavePlan);
+    expectBefore(wavePlan, generator);
     expectBefore(generator, runnerInfra);
     expect(screen.getByText("loadTestResults.httpStarted")).toBeInTheDocument();
-    expectBefore(response, screen.getByText("loadTestResults.httpStarted").closest("div")!);
+    expectBefore(wavePlan, screen.getByText("loadTestResults.httpStarted").closest("div")!);
   });
 
-  it("prioritizes observed RPS before configured wave and lifecycle diagnostics", () => {
+  it("prioritizes observed RPS and application response before configured wave and lifecycle diagnostics", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,
       totalSent: 100,
       totalSuccess: 100,
       rps: 50,
       elapsedMs: 2000,
+      avgLatency: 40,
+      p95: 80,
+      p99: 100,
+      statusCodeBuckets: [
+        { elapsedMs: 1_000, code: "200", count: 20 },
+        { elapsedMs: 2_000, code: "409", count: 3 },
+      ],
       rpsHistory: [
         { timestamp: 1_000, elapsedMs: 1_000, rps: 20, totalSent: 20 },
         { timestamp: 2_000, elapsedMs: 2_000, rps: 50, totalSent: 70 },
@@ -163,6 +172,7 @@ describe("LoadTestResultsPanel", () => {
     );
 
     expectBefore(screen.getByTestId("rps-over-time-chart"), screen.getByTestId("configured-wave-chart"));
+    expectBefore(screen.getByTestId("status-code-timeline-chart"), screen.getByTestId("configured-wave-chart"));
     expectBefore(screen.getByTestId("configured-wave-chart"), screen.getByTestId("wave-lifecycle-chart"));
   });
 
@@ -193,6 +203,8 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("loadTestResults.dynamicReservation")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.runnersUsed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /loadTestResults.showEndpoints/ })).toBeInTheDocument();
+    expect(screen.getByTestId("load-results-nodes-icon")).toHaveClass("text-white");
+    expect(screen.getByTestId("load-results-nodes-icon").parentElement).not.toHaveClass("bg-primary/10", "border-primary/20");
     expect(screen.queryByText("runner-0")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /loadTestResults.showEndpoints/ }));
@@ -529,6 +541,25 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("loadTestResults.lifecycleSenderStartLag")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.lifecycleHttpSendDuration")).toBeInTheDocument();
     expect(screen.getByText("loadTestResults.lifecycleResponseObservation")).toBeInTheDocument();
+  });
+
+  it("renders status codes over time when status buckets are available", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      statusCodeBuckets: [
+        { elapsedMs: 1_000, code: "200", count: 10 },
+        { elapsedMs: 1_000, code: "502", count: 2 },
+        { elapsedMs: 2_000, code: "network_error", count: 1 },
+      ],
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="completed" totalRequests={0} />);
+
+    expect(screen.getByTestId("status-code-timeline-chart")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.statusCodeTimeline")).toBeInTheDocument();
+    expect(screen.getByText("200")).toBeInTheDocument();
+    expect(screen.getByText("502")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.networkError")).toBeInTheDocument();
   });
 
   it("shows the configured wave profile on wave load results", () => {

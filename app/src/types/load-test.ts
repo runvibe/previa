@@ -167,6 +167,12 @@ export interface LoadLifecycleBucket {
   responseObservationDurationMsMax?: number;
 }
 
+export interface LoadStatusCodeBucket {
+  elapsedMs: number;
+  code: string;
+  count: number;
+}
+
 /** Slim payload sent by the backend SSE (no latency history/percentiles). */
 export interface RemoteMetricsEvent {
   snapshotMode?: "live" | "final";
@@ -207,6 +213,7 @@ export interface RemoteMetricsEvent {
   elapsedMs: number;
   dispatchBuckets?: DispatchBucket[];
   lifecycleBuckets?: LoadLifecycleBucket[];
+  statusCodeBuckets?: LoadStatusCodeBucket[];
   targetIntensity?: number;
   targetRpsLimit?: number;
   inFlight?: number;
@@ -264,6 +271,7 @@ export interface LoadTestMetrics {
   rpsHistory: RpsPoint[];
   runnerResourceHistory: RunnerResourcePoint[];
   lifecycleBuckets?: LoadLifecycleBucket[];
+  statusCodeBuckets?: LoadStatusCodeBucket[];
   errors?: string[];
   startTime: number;
   elapsedMs: number;
@@ -322,6 +330,7 @@ export interface ConsolidatedLoadMetrics {
   elapsedMs: number;
   nodesReporting: number;
   lifecycleBuckets?: LoadLifecycleBucket[];
+  statusCodeBuckets?: LoadStatusCodeBucket[];
   targetIntensity?: number;
   targetRpsLimit?: number;
   inFlight?: number;

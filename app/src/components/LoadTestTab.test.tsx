@@ -277,6 +277,8 @@ describe("LoadTestTab", () => {
     expect(screen.getByText("Provisioning Kubernetes runners")).toBeInTheDocument();
     expect(screen.getByText(/2.*4/)).toBeInTheDocument();
     expect(screen.getByText(/rr-1/)).toBeInTheDocument();
+    expect(screen.getByTestId("load-provisioning-icon")).toHaveClass("text-white");
+    expect(screen.getByTestId("load-provisioning-icon").parentElement).not.toHaveClass("bg-primary/10");
   });
 
   it("treats provisioning history entries as active live executions", () => {

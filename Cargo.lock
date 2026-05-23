@@ -2356,7 +2356,7 @@ dependencies = [
 
 [[package]]
 name = "previa"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2382,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "previa-engine"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "chrono",
  "fakeit",
@@ -2400,7 +2400,7 @@ dependencies = [
 
 [[package]]
 name = "previa-kubernetes-plugin"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "async-trait",
  "axum",
@@ -2425,7 +2425,7 @@ dependencies = [
 
 [[package]]
 name = "previa-load-target"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "axum",
  "dotenvy",
@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "previa-main"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "argon2",
  "async-stream",
@@ -2481,7 +2481,7 @@ dependencies = [
 
 [[package]]
 name = "previa-runner"
-version = "1.0.0-alpha.30"
+version = "1.0.0-alpha.31"
 dependencies = [
  "axum",
  "chrono",

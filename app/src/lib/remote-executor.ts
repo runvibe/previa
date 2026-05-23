@@ -7,6 +7,7 @@ import type {
   RemoteMetricsEvent,
   ConsolidatedLoadMetrics,
   LoadLifecycleBucket,
+  LoadStatusCodeBucket,
   RpsPoint,
   RunnerResourcePoint,
   RunnerRuntimeInfo,
@@ -274,6 +275,7 @@ function extractRemoteMetrics(value: unknown): RemoteMetricsEvent | null {
     elapsedMs: toNumber(value.elapsedMs) ?? 0,
     dispatchBuckets: extractDispatchBuckets(value.dispatchBuckets),
     lifecycleBuckets: extractLifecycleBuckets(value.lifecycleBuckets),
+    statusCodeBuckets: extractStatusCodeBuckets(value.statusCodeBuckets),
     targetIntensity: toNumber(value.targetIntensity),
     targetRpsLimit: toNumber(value.targetRpsLimit),
     inFlight: toNumber(value.inFlight),
@@ -330,6 +332,23 @@ function extractLifecycleBuckets(value: unknown): LoadLifecycleBucket[] | undefi
       };
     })
     .filter((item): item is LoadLifecycleBucket => item !== null);
+
+  return buckets.length > 0 ? buckets : undefined;
+}
+
+function extractStatusCodeBuckets(value: unknown): LoadStatusCodeBucket[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const buckets = value
+    .map((item) => {
+      if (!isSseObject(item)) return null;
+      const elapsedMs = toNumber(item.elapsedMs);
+      const count = toNumber(item.count);
+      const code = pickString(item.code);
+      return elapsedMs !== undefined && count !== undefined && code
+        ? { elapsedMs, code, count }
+        : null;
+    })
+    .filter((item): item is LoadStatusCodeBucket => item !== null);
 
   return buckets.length > 0 ? buckets : undefined;
 }
@@ -429,6 +448,7 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
 
   if (metrics.length === 0) return null;
   const lifecycleByElapsed = new Map<number, LoadLifecycleBucket>();
+  const statusCodeByElapsed = new Map<string, LoadStatusCodeBucket>();
   for (const item of metrics) {
     for (const bucket of item.lifecycleBuckets ?? []) {
       const current = lifecycleByElapsed.get(bucket.elapsedMs);
@@ -458,6 +478,15 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
           current?.responseObservationDurationMsMax ?? 0,
           bucket.responseObservationDurationMsMax ?? 0,
         ) || undefined,
+      });
+    }
+    for (const bucket of item.statusCodeBuckets ?? []) {
+      const key = `${bucket.elapsedMs}:${bucket.code}`;
+      const current = statusCodeByElapsed.get(key);
+      statusCodeByElapsed.set(key, {
+        elapsedMs: bucket.elapsedMs,
+        code: bucket.code,
+        count: (current?.count ?? 0) + bucket.count,
       });
     }
   }
@@ -564,6 +593,9 @@ function aggregateLineMetrics(lines: unknown[]): RemoteMetricsEvent | null {
     ...aggregated,
     snapshotMode: metrics.some((item) => item.snapshotMode === "final") ? "final" : metrics[0]?.snapshotMode,
     lifecycleBuckets: Array.from(lifecycleByElapsed.values()).sort((a, b) => a.elapsedMs - b.elapsedMs),
+    statusCodeBuckets: Array.from(statusCodeByElapsed.values()).sort((a, b) =>
+      a.elapsedMs === b.elapsedMs ? a.code.localeCompare(b.code) : a.elapsedMs - b.elapsedMs,
+    ),
     curveAdherence: computeCurveAdherence(
       aggregated.scheduledStarts,
       aggregated.missedStarts,
@@ -640,6 +672,9 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
   const lifecycleBuckets = Array.isArray(consolidated?.lifecycleBuckets)
     ? extractLifecycleBuckets(consolidated.lifecycleBuckets)
     : aggregated?.lifecycleBuckets ?? [];
+  const statusCodeBuckets = Array.isArray(consolidated?.statusCodeBuckets)
+    ? extractStatusCodeBuckets(consolidated.statusCodeBuckets)
+    : aggregated?.statusCodeBuckets ?? [];
   const lifecycleBucket = lifecycleBuckets.find((bucket) => bucket.elapsedMs === elapsedMs);
 
   return {
@@ -698,6 +733,7 @@ function buildLoadMetricsFromSnapshot(snapshot: SseObject): LoadTestMetrics {
       ? extractRunnerResourcePoints(snapshot.lines)
       : [],
     lifecycleBuckets,
+    statusCodeBuckets,
     errors,
     startTime,
     elapsedMs,
@@ -1585,6 +1621,7 @@ export function runRemoteLoadTest(
       rpsHistory: [...rpsHistory],
       runnerResourceHistory: [...runnerResourceHistory],
       lifecycleBuckets: consolidated?.lifecycleBuckets ?? event.lifecycleBuckets ?? [],
+      statusCodeBuckets: consolidated?.statusCodeBuckets ?? event.statusCodeBuckets ?? [],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
       targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,
@@ -2022,6 +2059,7 @@ export function reconnectToLoadExecution(
       rpsHistory: [...rpsHistory],
       runnerResourceHistory: [...runnerResourceHistory],
       lifecycleBuckets: consolidated?.lifecycleBuckets ?? event.lifecycleBuckets ?? [],
+      statusCodeBuckets: consolidated?.statusCodeBuckets ?? event.statusCodeBuckets ?? [],
       startTime: consolidated?.startTime ?? event.startTime,
       elapsedMs: consolidated?.elapsedMs ?? event.elapsedMs,
       targetIntensity: consolidated?.targetIntensity ?? event.targetIntensity,

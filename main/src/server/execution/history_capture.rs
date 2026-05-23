@@ -241,6 +241,7 @@ mod tests {
             elapsed_ms: 1_000,
             nodes_reporting: 1,
             lifecycle_buckets: Vec::new(),
+            status_code_buckets: Vec::new(),
         }
     }
 
