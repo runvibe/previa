@@ -299,6 +299,8 @@
   "loadTestResults.senderStartLagP95Ms": "Start lag p95",
   "loadTestResults.httpSendDurationP95Ms": "HTTP send p95",
   "loadTestResults.responseObservationDurationP95Ms": "Observation p95",
+  "loadTestResults.statusCodeTimeline": "Status codes over time",
+  "loadTestResults.networkError": "Network error",
   "loadTestResults.schedulerLagMs": "Scheduler lag",
   "loadTestResults.schedulerLaggedStarts": "Scheduler-delayed starts",
   "loadTestResults.observerBacklog": "Response observer backlog",

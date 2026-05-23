@@ -115,6 +115,14 @@ pub struct LoadDispatchBucket {
     pub count: usize,
 }
 
+#[derive(Debug, Serialize, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadStatusCodeBucket {
+    pub elapsed_ms: u64,
+    pub code: String,
+    pub count: usize,
+}
+
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum LoadMetricsSnapshotMode {
@@ -271,6 +279,8 @@ pub struct LoadTestMetrics {
     pub dispatch_buckets: Vec<LoadDispatchBucket>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifecycle_buckets: Vec<LoadLifecycleBucket>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub status_code_buckets: Vec<LoadStatusCodeBucket>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latency_sample_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -335,6 +345,7 @@ impl Default for LoadTestMetrics {
             latency_buckets: Vec::new(),
             dispatch_buckets: Vec::new(),
             lifecycle_buckets: Vec::new(),
+            status_code_buckets: Vec::new(),
             latency_sample_count: None,
             latency_total_duration_ms: None,
             error_samples: Vec::new(),

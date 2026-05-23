@@ -13,7 +13,8 @@ use tracing::error;
 use uuid::Uuid;
 
 use previa_runner::{
-    Pipeline, RuntimeEnvGroup, RuntimeSpec, execute_pipeline_with_runtime_request_gate,
+    Pipeline, RuntimeEnvGroup, RuntimeSpec, StepExecutionResult,
+    execute_pipeline_with_runtime_request_gate,
 };
 
 use crate::server::errors::{
@@ -262,6 +263,7 @@ async fn run_classic_load(
                 let duration = duration_ms as f64;
                 let success = !results.iter().any(|r| r.status == "error");
                 let (network_tx_bytes, network_rx_bytes) = estimate_results_network_bytes(&results);
+                let terminal_http_status = terminal_http_status(&results, success);
                 let runtime = {
                     let mut lock = runtime_sampler.lock().await;
                     lock.snapshot()
@@ -270,6 +272,9 @@ async fn run_classic_load(
                 let snapshot = {
                     let mut lock = metrics.lock().await;
                     lock.update(duration, success);
+                    if terminal_http_status.is_some() || !success {
+                        lock.record_status_code(terminal_http_status);
+                    }
                     lock.record_http_completed_count(
                         results
                             .iter()
@@ -315,6 +320,26 @@ async fn run_classic_load(
             &token,
         );
     }
+}
+
+fn terminal_http_status(results: &[StepExecutionResult], success: bool) -> Option<u16> {
+    if !success {
+        return results
+            .iter()
+            .find(|result| result.status == "error")
+            .and_then(|result| result.response.as_ref().map(|response| response.status))
+            .or_else(|| {
+                results
+                    .iter()
+                    .rev()
+                    .find_map(|result| result.response.as_ref().map(|response| response.status))
+            });
+    }
+
+    results
+        .iter()
+        .rev()
+        .find_map(|result| result.response.as_ref().map(|response| response.status))
 }
 
 #[cfg(test)]

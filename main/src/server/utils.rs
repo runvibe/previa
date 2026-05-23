@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::server::models::{
     RunnerLoadDispatchBucket, RunnerLoadLatencyBucket, RunnerLoadLifecycleBucket,
-    RunnerLoadMetricsPoint, RunnerLoadSnapshotMode,
+    RunnerLoadMetricsPoint, RunnerLoadSnapshotMode, RunnerLoadStatusCodeBucket,
 };
 
 pub fn now_ms() -> u64 {
@@ -94,6 +94,7 @@ pub fn parse_runner_load_metrics(payload: &Value) -> Option<RunnerLoadMetricsPoi
         latency_buckets: parse_latency_buckets(payload),
         dispatch_buckets: parse_dispatch_buckets(payload),
         lifecycle_buckets: parse_lifecycle_buckets(payload),
+        status_code_buckets: parse_status_code_buckets(payload),
     })
 }
 
@@ -190,6 +191,28 @@ fn parse_lifecycle_buckets(payload: &Value) -> Vec<RunnerLoadLifecycleBucket> {
                             "responseObservationDurationMsMax",
                         )
                         .unwrap_or(0),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_status_code_buckets(payload: &Value) -> Vec<RunnerLoadStatusCodeBucket> {
+    payload
+        .get("statusCodeBuckets")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let elapsed_ms = get_u64_field(item, "elapsedMs")?;
+                    let code = item.get("code").and_then(Value::as_str)?.to_owned();
+                    let count = get_usize_field(item, "count")?;
+                    Some(RunnerLoadStatusCodeBucket {
+                        elapsed_ms,
+                        code,
+                        count,
                     })
                 })
                 .collect()

@@ -192,7 +192,7 @@ pub async fn dispatch_slot_prepare_intents(args: DispatchSlotPrepareArgs<'_>) {
         }
 
         let Some(step) = args.pipeline.steps.get(cursor.step_index).cloned() else {
-            record_terminal_pipeline(args.metric_tx, cursor, false, None).await;
+            record_terminal_pipeline(args.metric_tx, cursor, false, None, None).await;
             continue;
         };
         drop(step);
@@ -268,6 +268,7 @@ async fn prepare_and_enqueue_wave_request(
         let _ = config.metric_tx.send(WaveMetricEvent::PipelineFinished {
             duration_ms: intent.cursor.pipeline_started_at.elapsed().as_millis() as f64,
             success: false,
+            http_status: None,
         });
         return;
     };
@@ -498,7 +499,8 @@ async fn handle_step_result(
     metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
 ) {
     let Some(step) = pipeline.steps.get(cursor.step_index) else {
-        record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
+        let http_status = result.response.as_ref().map(|response| response.status);
+        record_terminal_pipeline(metric_tx, cursor, false, http_status, Some(&result)).await;
         return;
     };
     let max_attempts = max_attempts_for_step(step);
@@ -510,16 +512,18 @@ async fn handle_step_result(
     }
 
     if result.status == "error" {
-        record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
+        let http_status = result.response.as_ref().map(|response| response.status);
+        record_terminal_pipeline(metric_tx, cursor, false, http_status, Some(&result)).await;
         return;
     }
 
+    let http_status = result.response.as_ref().map(|response| response.status);
     cursor.context.insert(result.step_id.clone(), result);
     cursor.step_index += 1;
     cursor.attempt = 1;
 
     if cursor.step_index >= pipeline.steps.len() {
-        record_terminal_pipeline(metric_tx, cursor, true, None).await;
+        record_terminal_pipeline(metric_tx, cursor, true, http_status, None).await;
     } else {
         ready.push_back(cursor);
     }
@@ -549,19 +553,22 @@ async fn handle_prepare_error(
         missed_starts.fetch_add(1, Ordering::SeqCst);
         let _ = metric_tx.send(WaveMetricEvent::DependencyLimitedStarts(1));
     }
-    record_terminal_pipeline(metric_tx, cursor, false, Some(&result)).await;
+    let http_status = result.response.as_ref().map(|response| response.status);
+    record_terminal_pipeline(metric_tx, cursor, false, http_status, Some(&result)).await;
 }
 
 async fn record_terminal_pipeline(
     metric_tx: &mpsc::UnboundedSender<WaveMetricEvent>,
     cursor: PipelineCursor,
     success: bool,
+    http_status: Option<u16>,
     result: Option<&StepExecutionResult>,
 ) {
     let duration_ms = cursor.pipeline_started_at.elapsed().as_millis() as f64;
     let _ = metric_tx.send(WaveMetricEvent::PipelineFinished {
         duration_ms,
         success,
+        http_status,
     });
     if !success {
         if let Some(result) = result {

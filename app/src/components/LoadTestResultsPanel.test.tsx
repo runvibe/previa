@@ -531,6 +531,25 @@ describe("LoadTestResultsPanel", () => {
     expect(screen.getByText("loadTestResults.lifecycleResponseObservation")).toBeInTheDocument();
   });
 
+  it("renders status codes over time when status buckets are available", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      statusCodeBuckets: [
+        { elapsedMs: 1_000, code: "200", count: 10 },
+        { elapsedMs: 1_000, code: "502", count: 2 },
+        { elapsedMs: 2_000, code: "network_error", count: 1 },
+      ],
+    };
+
+    render(<LoadTestResultsPanel metrics={metrics} state="completed" totalRequests={0} />);
+
+    expect(screen.getByTestId("status-code-timeline-chart")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.statusCodeTimeline")).toBeInTheDocument();
+    expect(screen.getByText("200")).toBeInTheDocument();
+    expect(screen.getByText("502")).toBeInTheDocument();
+    expect(screen.getByText("loadTestResults.networkError")).toBeInTheDocument();
+  });
+
   it("shows the configured wave profile on wave load results", () => {
     const config: WaveLoadConfig = {
       points: [

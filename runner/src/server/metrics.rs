@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::server::models::{
     LoadDispatchBucket, LoadErrorSample, LoadLatencyBucket, LoadLifecycleBucket,
-    LoadMetricsSnapshotMode, LoadTestMetrics, RunnerInfoResponse,
+    LoadMetricsSnapshotMode, LoadStatusCodeBucket, LoadTestMetrics, RunnerInfoResponse,
 };
 use crate::server::utils::{now_ms, round2};
 use previa_runner::{StepExecutionResult, StepRequest, StepResponse};
@@ -65,6 +65,7 @@ pub struct MetricsAccumulator {
     latency_histogram: BTreeMap<u64, usize>,
     dispatch_buckets: BTreeMap<u64, usize>,
     lifecycle_buckets: BTreeMap<u64, LoadLifecycleBucket>,
+    status_code_buckets: BTreeMap<u64, BTreeMap<String, usize>>,
     error_samples: Vec<LoadErrorSample>,
 }
 
@@ -104,6 +105,7 @@ impl MetricsAccumulator {
             latency_histogram: BTreeMap::new(),
             dispatch_buckets: BTreeMap::new(),
             lifecycle_buckets: BTreeMap::new(),
+            status_code_buckets: BTreeMap::new(),
             error_samples: Vec::new(),
         }
     }
@@ -255,6 +257,21 @@ impl MetricsAccumulator {
 
     pub fn record_response_body_completed_count(&mut self, count: usize) {
         self.response_body_completed = self.response_body_completed.saturating_add(count);
+    }
+
+    pub fn record_status_code(&mut self, http_status: Option<u16>) {
+        let elapsed_ms = now_ms().saturating_sub(self.start_time);
+        self.record_status_code_at(elapsed_ms, http_status);
+    }
+
+    pub fn record_status_code_at(&mut self, elapsed_ms: u64, http_status: Option<u16>) {
+        let bucket_ms = lifecycle_bucket_ms(elapsed_ms);
+        let code = http_status
+            .map(|status| status.to_string())
+            .unwrap_or_else(|| "network_error".to_owned());
+        let bucket = self.status_code_buckets.entry(bucket_ms).or_default();
+        let count = bucket.entry(code).or_insert(0);
+        *count = count.saturating_add(1);
     }
 
     pub fn record_dependency_limited_starts_count(&mut self, count: usize) {
@@ -465,6 +482,7 @@ impl MetricsAccumulator {
             },
             dispatch_buckets: filtered_dispatch_buckets(&self.dispatch_buckets, scope),
             lifecycle_buckets: filtered_lifecycle_buckets(&self.lifecycle_buckets, scope),
+            status_code_buckets: filtered_status_code_buckets(&self.status_code_buckets, scope),
             latency_sample_count: (self.latency_sample_count > 0)
                 .then_some(self.latency_sample_count),
             latency_total_duration_ms: (self.latency_sample_count > 0)
@@ -582,6 +600,29 @@ fn filtered_lifecycle_buckets(
             } => bucket_in_live_window(**elapsed_ms, from_elapsed_ms, through_elapsed_ms),
         })
         .map(|(_, bucket)| bucket.clone())
+        .collect()
+}
+
+fn filtered_status_code_buckets(
+    buckets: &BTreeMap<u64, BTreeMap<String, usize>>,
+    scope: MetricsSnapshotScope,
+) -> Vec<LoadStatusCodeBucket> {
+    buckets
+        .iter()
+        .filter(|(elapsed_ms, _)| match scope {
+            MetricsSnapshotScope::Full => true,
+            MetricsSnapshotScope::LiveWindow {
+                from_elapsed_ms,
+                through_elapsed_ms,
+            } => bucket_in_live_window(**elapsed_ms, from_elapsed_ms, through_elapsed_ms),
+        })
+        .flat_map(|(elapsed_ms, codes)| {
+            codes.iter().map(|(code, count)| LoadStatusCodeBucket {
+                elapsed_ms: *elapsed_ms,
+                code: code.clone(),
+                count: *count,
+            })
+        })
         .collect()
 }
 
@@ -752,6 +793,54 @@ mod tests {
         assert_eq!(bucket.response_body_completed, 1);
         assert_eq!(bucket.dispatcher_lagged, 2);
         assert_eq!(bucket.runtime_lagged, 1);
+    }
+
+    #[test]
+    fn snapshot_includes_status_code_buckets() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_status_code_at(1_050, Some(200));
+        metrics.record_status_code_at(1_090, Some(200));
+        metrics.record_status_code_at(1_120, Some(503));
+        metrics.record_status_code_at(2_010, None);
+
+        let snapshot = metrics.snapshot(None, None);
+
+        assert_eq!(snapshot.status_code_buckets.len(), 3);
+        assert_eq!(snapshot.status_code_buckets[0].elapsed_ms, 1_000);
+        assert_eq!(snapshot.status_code_buckets[0].code, "200");
+        assert_eq!(snapshot.status_code_buckets[0].count, 2);
+        assert_eq!(snapshot.status_code_buckets[1].elapsed_ms, 1_000);
+        assert_eq!(snapshot.status_code_buckets[1].code, "503");
+        assert_eq!(snapshot.status_code_buckets[1].count, 1);
+        assert_eq!(snapshot.status_code_buckets[2].elapsed_ms, 2_000);
+        assert_eq!(snapshot.status_code_buckets[2].code, "network_error");
+        assert_eq!(snapshot.status_code_buckets[2].count, 1);
+    }
+
+    #[test]
+    fn live_snapshot_includes_only_requested_status_code_window() {
+        let mut metrics = MetricsAccumulator::new();
+
+        metrics.record_status_code_at(0, Some(200));
+        metrics.record_status_code_at(1_000, Some(502));
+        metrics.record_status_code_at(2_000, Some(503));
+
+        let snapshot = metrics.snapshot_with_wave_scope(
+            None,
+            None,
+            None,
+            MetricsSnapshotScope::LiveWindow {
+                from_elapsed_ms: 1_000,
+                through_elapsed_ms: 1_000,
+            },
+        );
+
+        assert_eq!(snapshot.snapshot_mode, Some(LoadMetricsSnapshotMode::Live));
+        assert_eq!(snapshot.status_code_buckets.len(), 1);
+        assert_eq!(snapshot.status_code_buckets[0].elapsed_ms, 1_000);
+        assert_eq!(snapshot.status_code_buckets[0].code, "502");
+        assert_eq!(snapshot.status_code_buckets[0].count, 1);
     }
 
     #[test]

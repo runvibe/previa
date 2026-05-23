@@ -9,6 +9,7 @@ import { Activity, Zap, AlertCircle, CheckCircle2, Clock, TrendingUp, Server, Ga
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
 import { buildLifecycleChartData, type LifecycleSeriesTone } from "@/lib/load-lifecycle-chart";
 import { buildRpsChartData, buildWaveSecondMarkers, formatPlannedRequests } from "@/lib/load-rps-chart";
+import { buildStatusCodeChartData } from "@/lib/load-status-code-chart";
 import { deriveWaveDiagnostics } from "@/lib/wave-diagnostics";
 import { isWaveLoadConfig } from "@/types/load-test";
 import type { LoadInterpolation, LoadPoint, LoadRunConfig, LoadTestMetrics, LoadTestState, RunnerResourcePoint, WaveLoadConfig } from "@/types/load-test";
@@ -311,6 +312,8 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const visibleWaveSecondMarkers = waveSecondMarkers.filter((marker) => marker.showLabel);
   const lifecycleChart = buildLifecycleChartData(metrics);
   const lifecycleChartData = lifecycleChart.data;
+  const statusCodeChart = buildStatusCodeChartData(metrics);
+  const statusCodeChartData = statusCodeChart.data;
   const waveDiagnostics = deriveWaveDiagnostics(metrics);
   const hasTargetRpsLine = rpsChartData.some((point) => typeof point.targetRpsLimit === "number");
   const runnerResourceHistory = metrics.runnerResourceHistory ?? [];
@@ -322,6 +325,7 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
   const hasResponseSection =
     metrics.avgLatency > 0 ||
     typeof metrics.inFlight === "number" ||
+    statusCodeChartData.length > 0 ||
     latencyChartData.length > 1 ||
     Boolean(metrics.errors && metrics.errors.length > 0);
   const hasGeneratorSummary =
@@ -643,6 +647,55 @@ export function LoadTestResultsPanel({ metrics, state, totalRequests, config, no
           {typeof metrics.inFlight === "number" && (
             <div className="grid grid-cols-2 gap-2">
               <MetricCard icon={Activity} label={t("loadTestResults.inFlight")} value={metrics.inFlight} />
+            </div>
+          )}
+
+          {statusCodeChartData.length > 0 && (
+            <div data-testid="status-code-timeline-chart" className="glass rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t("loadTestResults.statusCodeTimeline")}
+                </p>
+                <div className="flex items-center gap-2 text-[9px] text-muted-foreground flex-wrap justify-end">
+                  {statusCodeChart.series.map((series) => (
+                    <span key={series.code} className="inline-flex items-center gap-1">
+                      <span className="h-0 w-3 border-t" style={{ borderColor: series.color }} />
+                      {series.labelKey ? t(series.labelKey) : series.code}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={statusCodeChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `${v}s`} />
+                  <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      background: "hsl(var(--popover))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                      fontSize: 11,
+                    }}
+                    formatter={(v: number, name: string) => [
+                      typeof v === "number" ? Math.round(v) : v,
+                      name === "network_error" ? t("loadTestResults.networkError") : name,
+                    ]}
+                    labelFormatter={(v) => `${v}s`}
+                  />
+                  {statusCodeChart.series.map((series) => (
+                    <Line
+                      key={series.code}
+                      type="monotone"
+                      dataKey={series.code}
+                      stroke={series.color}
+                      strokeWidth={1.6}
+                      dot={statusCodeChartData.length === 1}
+                      connectNulls
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
 

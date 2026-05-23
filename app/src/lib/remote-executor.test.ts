@@ -194,6 +194,10 @@ describe("remote execution snapshot parsing", () => {
             lifecycleBuckets: [
               { elapsedMs: 2000, planned: 10, httpStarted: 8, senderLagged: 1 },
             ],
+            statusCodeBuckets: [
+              { elapsedMs: 2000, code: "200", count: 19 },
+              { elapsedMs: 2000, code: "502", count: 1 },
+            ],
           },
         },
         {
@@ -210,6 +214,9 @@ describe("remote execution snapshot parsing", () => {
             senderQueueDepth: 6,
             lifecycleBuckets: [
               { elapsedMs: 2000, planned: 12, httpStarted: 9, senderLagged: 2 },
+            ],
+            statusCodeBuckets: [
+              { elapsedMs: 2000, code: "200", count: 30 },
             ],
           },
         },
@@ -232,6 +239,10 @@ describe("remote execution snapshot parsing", () => {
       elapsedMs: 2000,
       senderLagged: 3,
     });
+    expect(snapshot?.metrics.statusCodeBuckets).toEqual([
+      { elapsedMs: 2000, code: "200", count: 49 },
+      { elapsedMs: 2000, code: "502", count: 1 },
+    ]);
     expect(snapshot?.nodesInfo?.nodeNames).toEqual(["runner-a", "runner-b"]);
   });
 

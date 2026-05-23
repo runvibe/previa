@@ -892,6 +892,9 @@ export function loadRecordToRun(r: LoadHistoryRecord): LoadTestRunRecord {
     lifecycleBuckets: Array.isArray(consolidated?.lifecycleBuckets)
       ? consolidated.lifecycleBuckets
       : [],
+    statusCodeBuckets: Array.isArray(consolidated?.statusCodeBuckets)
+      ? consolidated.statusCodeBuckets
+      : [],
     errors: Array.isArray(r.errors)
       ? r.errors.filter((item): item is string => typeof item === "string")
       : [],

@@ -55,6 +55,7 @@ pub enum WaveMetricEvent {
     PipelineFinished {
         duration_ms: f64,
         success: bool,
+        http_status: Option<u16>,
     },
     ErrorSample {
         step_id: String,
@@ -168,7 +169,9 @@ pub async fn run_wave_metrics_actor(
             WaveMetricEvent::PipelineFinished {
                 duration_ms,
                 success,
+                http_status,
             } => {
+                accumulator.record_status_code(http_status);
                 accumulator.update(duration_ms, success);
             }
             WaveMetricEvent::ErrorSample {
