@@ -7,8 +7,9 @@ use previa_runner::{
 
 use crate::server::models::{
     E2eSummary, E2eTestRequest, ErrorResponse, ExecutionInitEvent, LoadInterpolation, LoadPoint,
-    LoadProfile, LoadTestConfig, LoadTestMetrics, LoadTestRequest, RunnerInfoResponse,
-    StepStartEvent,
+    LoadProfile, LoadStartResponse, LoadTelemetryAckRequest, LoadTelemetryAckResponse,
+    LoadTelemetryBucket, LoadTelemetryQuery, LoadTelemetryResponse, LoadTestConfig,
+    LoadTestMetrics, LoadTestRequest, RunnerInfoResponse, StepStartEvent,
 };
 
 #[derive(OpenApi)]
@@ -16,7 +17,7 @@ use crate::server::models::{
     info(
         title = "Test Execution API",
         version = "1.0.0",
-        description = "API para execucao remota de testes end-to-end e carga via HTTP streaming (SSE).",
+        description = "API para execucao remota de testes end-to-end e carga. O runner ainda suporta SSE legado, mas o fluxo escalavel de carga usa start + polling de telemetria.",
         contact(
             name = "Previa Labs",
             email = "previa@previa.dev"
@@ -25,11 +26,22 @@ use crate::server::models::{
     paths(
         crate::server::handlers::e2e::run_e2e_test,
         crate::server::handlers::load::run_load_test,
+        crate::server::handlers::load::start_load_test,
+        crate::server::handlers::load::get_load_telemetry,
+        crate::server::handlers::load::ack_load_telemetry,
+        crate::server::handlers::load::get_load_status,
+        crate::server::handlers::load::cancel_load_test,
         crate::server::handlers::system::info_runtime
     ),
     components(schemas(
         E2eTestRequest,
         LoadTestRequest,
+        LoadStartResponse,
+        LoadTelemetryQuery,
+        LoadTelemetryBucket,
+        LoadTelemetryResponse,
+        LoadTelemetryAckRequest,
+        LoadTelemetryAckResponse,
         Pipeline,
         PipelineStep,
         StepAssertion,

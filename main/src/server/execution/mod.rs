@@ -17,8 +17,9 @@ pub use history_capture::{determine_e2e_history_status, determine_load_history_s
 pub use load::{StartLoadExecutionError, start_load_execution};
 pub use load_batch::{
     LoadTelemetryState, RunnerReservationHeaders, add_load_context_fields, drain_load_chunk,
-    flush_load_batches, forward_runner_stream_load_chunked, rebuild_final_rps_history,
-    snapshot_telemetry_consolidated_metrics, snapshot_telemetry_lines, snapshot_telemetry_map,
+    flush_load_batches, forward_runner_polled_load_chunked, rebuild_final_rps_history,
+    runner_load_poll_concurrency, snapshot_telemetry_consolidated_metrics,
+    snapshot_telemetry_lines, snapshot_telemetry_map,
 };
 pub use node_plan::{
     calculate_node_plan, collect_runner_statuses, parse_runner_endpoints, split_even,

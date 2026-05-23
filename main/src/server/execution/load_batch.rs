@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, Semaphore, broadcast};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
@@ -24,6 +24,17 @@ use crate::server::utils::{now_ms, parse_runner_duration_ms, parse_runner_load_m
 
 const RPS_HISTORY_BUCKET_MS: u64 = 1_000;
 const RPS_HISTORY_CORRECTION_WINDOW_MS: u64 = 10_000;
+const RUNNER_LOAD_POLL_INTERVAL_MS: u64 = 1_000;
+const RUNNER_LOAD_POLL_LIMIT: usize = 512;
+const RUNNER_LOAD_POLL_CONCURRENCY: usize = 100;
+
+pub fn runner_load_poll_concurrency() -> usize {
+    std::env::var("PREVIA_RUNNER_LOAD_POLL_CONCURRENCY")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(RUNNER_LOAD_POLL_CONCURRENCY)
+        .max(1)
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct LoadTelemetryState {
@@ -44,6 +55,7 @@ struct RunnerLoadTelemetryState {
     status_code_buckets: BTreeMap<(u64, String), RunnerLoadStatusCodeBucket>,
 }
 
+#[allow(dead_code)]
 pub async fn forward_runner_stream_load_chunked(
     client: &Client,
     node: String,
@@ -264,6 +276,389 @@ pub async fn forward_runner_stream_load_chunked(
             apply_runner_telemetry_line(&mut telemetry_lock, line);
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnerLoadStartResponse {
+    runner_execution_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnerLoadTelemetryResponse {
+    status: String,
+    buckets: Vec<RunnerLoadTelemetryBucket>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunnerLoadTelemetryBucket {
+    seq: u64,
+    event: String,
+    payload: Value,
+}
+
+pub async fn forward_runner_polled_load_chunked(
+    client: &Client,
+    node: String,
+    body: Value,
+    tx: broadcast::Sender<crate::server::models::SseMessage>,
+    cancel: CancellationToken,
+    load_chunk: Arc<Mutex<HashMap<String, RunnerLoadLine>>>,
+    load_telemetry: Arc<Mutex<LoadTelemetryState>>,
+    load_latency: Arc<Mutex<LoadLatencyAccumulator>>,
+    load_errors: Arc<Mutex<Vec<String>>>,
+    load_context: Arc<LoadEventContext>,
+    execution_id: String,
+    snapshot_payload: SharedValue<Value>,
+    endpoint_path: &str,
+    transaction_id: Option<String>,
+    runner_auth_key: Option<&str>,
+    reservation_headers: Option<RunnerReservationHeaders>,
+    poll_permits: Arc<Semaphore>,
+) {
+    if cancel.is_cancelled() {
+        return;
+    }
+
+    let start_url = format!("{}{}", node.trim_end_matches('/'), endpoint_path);
+    let telemetry_base_path = endpoint_path.trim_end_matches("/start");
+    let mut request = apply_runner_auth(
+        client
+            .post(start_url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json"),
+        runner_auth_key,
+    );
+
+    if let Some(transaction_id) = transaction_id.as_deref() {
+        request = request.header(TRANSACTION_ID_HEADER, transaction_id);
+    }
+    if let Some(headers) = reservation_headers.as_ref() {
+        request = request
+            .header("x-previa-reservation-id", headers.reservation_id.as_str())
+            .header(
+                "x-previa-reservation-token",
+                headers.reservation_token.as_str(),
+            );
+    }
+
+    let response =
+        match tokio::time::timeout(Duration::from_secs(10), request.json(&body).send()).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(err)) => {
+                emit_runner_load_request_error(
+                    &node,
+                    &tx,
+                    &load_errors,
+                    &load_telemetry,
+                    &load_latency,
+                    &load_context,
+                    &execution_id,
+                    &snapshot_payload,
+                    format!("runner start request failed: {}", err),
+                )
+                .await;
+                return;
+            }
+            Err(_) => {
+                emit_runner_load_request_error(
+                    &node,
+                    &tx,
+                    &load_errors,
+                    &load_telemetry,
+                    &load_latency,
+                    &load_context,
+                    &execution_id,
+                    &snapshot_payload,
+                    "runner start request timeout".to_owned(),
+                )
+                .await;
+                return;
+            }
+        };
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body_text = response.text().await.unwrap_or_default();
+        emit_runner_load_request_error(
+            &node,
+            &tx,
+            &load_errors,
+            &load_telemetry,
+            &load_latency,
+            &load_context,
+            &execution_id,
+            &snapshot_payload,
+            format!("runner start returned HTTP {}: {}", status, body_text),
+        )
+        .await;
+        return;
+    }
+
+    let started = match response.json::<RunnerLoadStartResponse>().await {
+        Ok(started) => started,
+        Err(err) => {
+            emit_runner_load_request_error(
+                &node,
+                &tx,
+                &load_errors,
+                &load_telemetry,
+                &load_latency,
+                &load_context,
+                &execution_id,
+                &snapshot_payload,
+                format!("runner start response decode failed: {}", err),
+            )
+            .await;
+            return;
+        }
+    };
+
+    let telemetry_url = format!(
+        "{}{}/{}/telemetry",
+        node.trim_end_matches('/'),
+        telemetry_base_path,
+        started.runner_execution_id
+    );
+    let ack_url = format!("{}/ack", telemetry_url);
+    let cancel_url = format!(
+        "{}{}/{}/cancel",
+        node.trim_end_matches('/'),
+        telemetry_base_path,
+        started.runner_execution_id
+    );
+    let mut after_seq = 0_u64;
+    let mut poll_interval = tokio::time::interval(Duration::from_millis(
+        std::env::var("PREVIA_RUNNER_LOAD_POLL_INTERVAL_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(RUNNER_LOAD_POLL_INTERVAL_MS)
+            .max(50),
+    ));
+    poll_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                let mut cancel_request = apply_runner_auth(client.post(cancel_url.clone()), runner_auth_key);
+                if let Some(transaction_id) = transaction_id.as_deref() {
+                    cancel_request = cancel_request.header(TRANSACTION_ID_HEADER, transaction_id);
+                }
+                if let Some(headers) = reservation_headers.as_ref() {
+                    cancel_request = cancel_request
+                        .header("x-previa-reservation-id", headers.reservation_id.as_str())
+                        .header("x-previa-reservation-token", headers.reservation_token.as_str());
+                }
+                let _ = cancel_request.send().await;
+                return;
+            }
+            _ = poll_interval.tick() => {}
+        }
+
+        let _poll_permit = tokio::select! {
+            _ = cancel.cancelled() => {
+                let mut cancel_request = apply_runner_auth(client.post(cancel_url.clone()), runner_auth_key);
+                if let Some(transaction_id) = transaction_id.as_deref() {
+                    cancel_request = cancel_request.header(TRANSACTION_ID_HEADER, transaction_id);
+                }
+                if let Some(headers) = reservation_headers.as_ref() {
+                    cancel_request = cancel_request
+                        .header("x-previa-reservation-id", headers.reservation_id.as_str())
+                        .header("x-previa-reservation-token", headers.reservation_token.as_str());
+                }
+                let _ = cancel_request.send().await;
+                return;
+            }
+            permit = poll_permits.acquire() => {
+                match permit {
+                    Ok(permit) => permit,
+                    Err(_) => return,
+                }
+            }
+        };
+
+        let mut poll_request = apply_runner_auth(
+            client.get(format!(
+                "{}?afterSeq={}&limit={}",
+                telemetry_url, after_seq, RUNNER_LOAD_POLL_LIMIT
+            )),
+            runner_auth_key,
+        );
+        if let Some(transaction_id) = transaction_id.as_deref() {
+            poll_request = poll_request.header(TRANSACTION_ID_HEADER, transaction_id);
+        }
+        if let Some(headers) = reservation_headers.as_ref() {
+            poll_request = poll_request
+                .header("x-previa-reservation-id", headers.reservation_id.as_str())
+                .header(
+                    "x-previa-reservation-token",
+                    headers.reservation_token.as_str(),
+                );
+        }
+
+        let response =
+            match tokio::time::timeout(Duration::from_secs(10), poll_request.send()).await {
+                Ok(Ok(response)) => response,
+                Ok(Err(err)) => {
+                    push_load_error(
+                        &load_errors,
+                        format!("runner telemetry poll failed: {}", err),
+                    )
+                    .await;
+                    continue;
+                }
+                Err(_) => {
+                    push_load_error(&load_errors, "runner telemetry poll timeout".to_owned()).await;
+                    continue;
+                }
+            };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body_text = response.text().await.unwrap_or_default();
+            push_load_error(
+                &load_errors,
+                format!("runner telemetry returned HTTP {}: {}", status, body_text),
+            )
+            .await;
+            continue;
+        }
+
+        let telemetry = match response.json::<RunnerLoadTelemetryResponse>().await {
+            Ok(telemetry) => telemetry,
+            Err(err) => {
+                push_load_error(
+                    &load_errors,
+                    format!("runner telemetry decode failed: {}", err),
+                )
+                .await;
+                continue;
+            }
+        };
+
+        let had_buckets = !telemetry.buckets.is_empty();
+        let mut ack_through: Option<u64> = None;
+        for bucket in telemetry.buckets {
+            ack_through = Some(ack_through.unwrap_or(after_seq).max(bucket.seq));
+            after_seq = after_seq.max(bucket.seq);
+            if bucket.event == "execution:init" {
+                continue;
+            }
+            record_runner_load_event(
+                &node,
+                bucket.event,
+                bucket.payload,
+                &load_chunk,
+                &load_telemetry,
+                &load_latency,
+                &load_errors,
+            )
+            .await;
+        }
+
+        if let Some(ack_through) = ack_through {
+            let mut ack_request = apply_runner_auth(
+                client
+                    .post(ack_url.clone())
+                    .header("Content-Type", "application/json"),
+                runner_auth_key,
+            );
+            if let Some(transaction_id) = transaction_id.as_deref() {
+                ack_request = ack_request.header(TRANSACTION_ID_HEADER, transaction_id);
+            }
+            if let Some(headers) = reservation_headers.as_ref() {
+                ack_request = ack_request
+                    .header("x-previa-reservation-id", headers.reservation_id.as_str())
+                    .header(
+                        "x-previa-reservation-token",
+                        headers.reservation_token.as_str(),
+                    );
+            }
+            let _ = ack_request
+                .json(&json!({ "throughSeq": ack_through }))
+                .send()
+                .await;
+        }
+
+        if telemetry.status != "running" && !had_buckets {
+            break;
+        }
+    }
+}
+
+async fn emit_runner_load_request_error(
+    node: &str,
+    tx: &broadcast::Sender<crate::server::models::SseMessage>,
+    load_errors: &Arc<Mutex<Vec<String>>>,
+    load_telemetry: &Arc<Mutex<LoadTelemetryState>>,
+    load_latency: &Arc<Mutex<LoadLatencyAccumulator>>,
+    load_context: &Arc<LoadEventContext>,
+    execution_id: &str,
+    snapshot_payload: &SharedValue<Value>,
+    message: String,
+) {
+    push_load_error(load_errors, message.clone()).await;
+    refresh_load_snapshot_from_telemetry(
+        execution_id,
+        snapshot_payload,
+        load_telemetry,
+        load_latency,
+        load_errors,
+        load_context.as_ref(),
+        "running",
+    )
+    .await;
+    let payload = add_load_context_fields(
+        json!({
+            "message": message,
+            "lines": [RunnerLoadLine {
+                node: node.to_owned(),
+                runner_event: "error".to_owned(),
+                received_at: now_ms(),
+                payload: json!({ "message": message }),
+            }]
+        }),
+        load_context.as_ref(),
+    );
+    let _ = send_sse_best_effort(tx, "error", payload);
+}
+
+async fn record_runner_load_event(
+    node: &str,
+    event: String,
+    data: Value,
+    load_chunk: &Arc<Mutex<HashMap<String, RunnerLoadLine>>>,
+    load_telemetry: &Arc<Mutex<LoadTelemetryState>>,
+    load_latency: &Arc<Mutex<LoadLatencyAccumulator>>,
+    load_errors: &Arc<Mutex<Vec<String>>>,
+) {
+    if event == "error" {
+        push_load_error(load_errors, extract_error_message(&data)).await;
+    }
+    if event == "metrics" {
+        if let Some(duration_ms) = parse_runner_duration_ms(&data) {
+            let mut lock = load_latency.lock().await;
+            lock.add_sample(duration_ms);
+        }
+        merge_runner_error_samples(load_errors, node, &data).await;
+    }
+
+    let line = RunnerLoadLine {
+        node: node.to_owned(),
+        runner_event: event,
+        received_at: now_ms(),
+        payload: data,
+    };
+
+    {
+        let mut lock = load_chunk.lock().await;
+        lock.insert(node.to_owned(), line.clone());
+    }
+
+    let mut telemetry_lock = load_telemetry.lock().await;
+    apply_runner_telemetry_line(&mut telemetry_lock, line);
 }
 
 pub async fn flush_load_batches(
@@ -1399,16 +1794,25 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
     use std::sync::Arc;
 
+    use axum::extract::{Path, Query, State};
+    use axum::response::IntoResponse;
+    use axum::routing::{get, post};
+    use axum::{Json, Router};
+    use serde::Deserialize;
     use serde_json::{Value, json};
-    use tokio::sync::Mutex;
+    use tokio::net::TcpListener;
+    use tokio::sync::{Mutex, Semaphore, broadcast};
+    use tokio_util::sync::CancellationToken;
 
     use crate::server::execution::load_batch::{
         LoadTelemetryState, add_load_context_fields, apply_runner_telemetry_line,
         build_rps_history_sample, consolidate_load_metrics, drain_load_chunk,
-        lifecycle_curve_adherence, merge_runner_error_samples_into, rebuild_final_rps_history,
-        rps_history_elapsed_bucket_ms, rps_history_timestamp, snapshot_telemetry_map,
+        forward_runner_polled_load_chunked, lifecycle_curve_adherence,
+        merge_runner_error_samples_into, rebuild_final_rps_history, rps_history_elapsed_bucket_ms,
+        rps_history_timestamp, runner_load_poll_concurrency, snapshot_telemetry_map,
         summarize_load_latency, upsert_rps_history_samples,
     };
+    use crate::server::execution::scheduler::SharedValue;
     use crate::server::models::{
         ConsolidatedLoadLifecycleBucket, ConsolidatedLoadMetrics, LoadEventContext,
         LoadLatencyAccumulator, LoadLatencySummary, NodePlan, RunnerLoadLine,
@@ -1452,6 +1856,178 @@ mod tests {
             json!(response_observation_duration.2),
         );
         payload
+    }
+
+    #[derive(Clone)]
+    struct PollingRunnerState {
+        acked: Arc<Mutex<Vec<u64>>>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct AckRequest {
+        through_seq: u64,
+    }
+
+    async fn mock_load_start(Json(_payload): Json<Value>) -> impl IntoResponse {
+        Json(json!({
+            "runnerExecutionId": "runner-exec-1",
+            "status": "running",
+            "nextSeq": 1,
+            "startedAtMs": 1
+        }))
+    }
+
+    async fn mock_load_telemetry(
+        Path(_execution_id): Path<String>,
+        Query(query): Query<HashMap<String, String>>,
+    ) -> impl IntoResponse {
+        let after_seq = query
+            .get("afterSeq")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0);
+        if after_seq >= 2 {
+            return Json(json!({
+                "runnerExecutionId": "runner-exec-1",
+                "status": "completed",
+                "fromSeq": after_seq,
+                "throughSeq": after_seq,
+                "nextSeq": after_seq + 1,
+                "buckets": []
+            }));
+        }
+
+        Json(json!({
+            "runnerExecutionId": "runner-exec-1",
+            "status": "completed",
+            "fromSeq": 0,
+            "throughSeq": 2,
+            "nextSeq": 3,
+            "buckets": [
+                {
+                    "seq": 1,
+                    "event": "execution:init",
+                    "elapsedMs": 0,
+                    "payload": { "executionId": "runner-exec-1" }
+                },
+                {
+                    "seq": 2,
+                    "event": "metrics",
+                    "elapsedMs": 1000,
+                    "payload": {
+                        "totalStarted": 2,
+                        "totalSent": 2,
+                        "totalSuccess": 2,
+                        "totalError": 0,
+                        "httpStarted": 2,
+                        "httpCompleted": 2,
+                        "rps": 2.0,
+                        "startTime": 1,
+                        "elapsedMs": 1000,
+                        "durationMs": 10
+                    }
+                }
+            ]
+        }))
+    }
+
+    async fn mock_load_ack(
+        State(state): State<PollingRunnerState>,
+        Path(_execution_id): Path<String>,
+        Json(payload): Json<AckRequest>,
+    ) -> impl IntoResponse {
+        state.acked.lock().await.push(payload.through_seq);
+        Json(json!({
+            "runnerExecutionId": "runner-exec-1",
+            "ackedThroughSeq": payload.through_seq,
+            "retainedFromSeq": payload.through_seq + 1
+        }))
+    }
+
+    async fn mock_load_cancel(Path(execution_id): Path<String>) -> impl IntoResponse {
+        Json(json!({ "runnerExecutionId": execution_id, "status": "cancelled" }))
+    }
+
+    async fn spawn_polling_runner() -> (String, Arc<Mutex<Vec<u64>>>) {
+        let acked = Arc::new(Mutex::new(Vec::new()));
+        let state = PollingRunnerState {
+            acked: Arc::clone(&acked),
+        };
+        let app = Router::new()
+            .route("/api/v1/tests/load/start", post(mock_load_start))
+            .route(
+                "/api/v1/tests/load/{execution_id}/telemetry",
+                get(mock_load_telemetry),
+            )
+            .route(
+                "/api/v1/tests/load/{execution_id}/telemetry/ack",
+                post(mock_load_ack),
+            )
+            .route(
+                "/api/v1/tests/load/{execution_id}/cancel",
+                post(mock_load_cancel),
+            )
+            .with_state(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{}", addr), acked)
+    }
+
+    #[tokio::test]
+    async fn polled_load_forwarder_collects_metrics_and_acks_runner_buckets() {
+        let (node, acked) = spawn_polling_runner().await;
+        let client = reqwest::Client::new();
+        let (tx, _rx) = broadcast::channel(16);
+        let load_chunk = Arc::new(Mutex::new(HashMap::new()));
+        let load_telemetry = Arc::new(Mutex::new(LoadTelemetryState::default()));
+        let load_latency = Arc::new(Mutex::new(LoadLatencyAccumulator::default()));
+        let load_errors = Arc::new(Mutex::new(Vec::new()));
+        let load_context = Arc::new(LoadEventContext {
+            plan: NodePlan {
+                requested_nodes: 1,
+                nodes_found: 1,
+                nodes_used: 1,
+                warning: None,
+            },
+            warning: None,
+            registered_nodes: vec![node.clone()],
+            active_nodes: vec![node.clone()],
+            used_nodes: vec![node.clone()],
+            runner_load_plan: Vec::new(),
+            batch_window_ms: 100,
+        });
+        let snapshot_payload = SharedValue::new(json!({}));
+
+        forward_runner_polled_load_chunked(
+            &client,
+            node.clone(),
+            json!({ "config": { "totalRequests": 1 } }),
+            tx,
+            CancellationToken::new(),
+            Arc::clone(&load_chunk),
+            Arc::clone(&load_telemetry),
+            Arc::clone(&load_latency),
+            Arc::clone(&load_errors),
+            load_context,
+            "load-exec-1".to_owned(),
+            snapshot_payload,
+            "/api/v1/tests/load/start",
+            None,
+            None,
+            None,
+            Arc::new(Semaphore::new(runner_load_poll_concurrency())),
+        )
+        .await;
+
+        let lines = drain_load_chunk(&load_chunk).await;
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].runner_event, "metrics");
+        assert_eq!(lines[0].payload["totalSent"], json!(2));
+        assert_eq!(*acked.lock().await, vec![2]);
+        assert!(load_errors.lock().await.is_empty());
     }
 
     #[test]

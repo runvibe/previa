@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tokio::sync::Semaphore;
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -12,10 +13,10 @@ use crate::server::execution::{
     AcquireOutcome, LoadTelemetryState, RunnerReservationHeaders, ScheduledExecutionKind,
     add_load_context_fields, build_live_load_snapshot_payload, build_load_snapshot_payload,
     calculate_node_plan, determine_load_history_status, extract_load_context_value,
-    flush_load_batches, forward_runner_stream_load_chunked, rebuild_final_rps_history,
+    flush_load_batches, forward_runner_polled_load_chunked, rebuild_final_rps_history,
     resolve_runtime_env_groups_for_execution, resolve_runtime_specs_for_execution,
-    send_sse_best_effort, snapshot_telemetry_consolidated_metrics, snapshot_telemetry_lines,
-    snapshot_telemetry_map, split_even,
+    runner_load_poll_concurrency, send_sse_best_effort, snapshot_telemetry_consolidated_metrics,
+    snapshot_telemetry_lines, snapshot_telemetry_map, split_even,
 };
 use crate::server::models::{
     HistoryMetadata, KubernetesReservationCreateRequest, KubernetesReservationStatus,
@@ -828,6 +829,7 @@ pub async fn start_load_execution(
         ));
 
         let mut handles = Vec::with_capacity(selected_nodes.len());
+        let poll_permits = Arc::new(Semaphore::new(runner_load_poll_concurrency()));
         for (index, node) in selected_nodes.iter().enumerate() {
             let node = node.clone();
             let client = state_clone.client.clone();
@@ -848,6 +850,7 @@ pub async fn start_load_execution(
             let env_groups = runtime_env_groups_for_runner.clone();
             let runner_auth_key = state_clone.runner_auth_key.clone();
             let reservation_headers = reservation_headers.clone();
+            let poll_permits = Arc::clone(&poll_permits);
 
             let child_request = if let Some(load_profile) = runner_load.as_ref() {
                 json!({
@@ -880,7 +883,7 @@ pub async fn start_load_execution(
             };
 
             handles.push(tokio::spawn(async move {
-                forward_runner_stream_load_chunked(
+                forward_runner_polled_load_chunked(
                     &client,
                     node,
                     child_request,
@@ -893,10 +896,11 @@ pub async fn start_load_execution(
                     load_context,
                     execution_id,
                     snapshot_payload,
-                    "/api/v1/tests/load",
+                    "/api/v1/tests/load/start",
                     transaction_id,
                     runner_auth_key.as_deref(),
                     reservation_headers,
+                    poll_permits,
                 )
                 .await;
             }));
@@ -1456,21 +1460,18 @@ fn load_pipeline_lock_key(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::convert::Infallible;
     use std::sync::Arc;
     use std::time::Duration;
 
-    use axum::body::{Body, Bytes};
-    use axum::extract::State;
-    use axum::http::{StatusCode, header};
-    use axum::response::{IntoResponse, Response};
+    use axum::extract::{Path, Query};
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
     use axum::routing::{get, post};
     use axum::{Json, Router};
     use previa_runner::{Pipeline, PipelineStep};
     use serde_json::{Value, json};
     use tokio::net::TcpListener;
-    use tokio::sync::{RwLock, mpsc};
-    use tokio_stream::wrappers::ReceiverStream;
+    use tokio::sync::RwLock;
 
     use super::start_load_execution;
     use crate::server::execution::ExecutionScheduler;
@@ -1689,28 +1690,51 @@ mod tests {
             Json(json!({ "status": "ok" }))
         }
 
-        async fn load(State(()): State<()>, Json(_payload): Json<Value>) -> Response {
-            let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(8);
-            tokio::spawn(async move {
-                let _ = tx
-                    .send(Ok(Bytes::from(
-                        "event: execution:init\ndata: {\"status\":\"running\"}\n\n",
-                    )))
-                    .await;
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            });
+        async fn load_start(Json(_payload): Json<Value>) -> impl IntoResponse {
+            (
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "runnerExecutionId": "runner-busy",
+                    "status": "running",
+                    "nextSeq": 1,
+                    "startedAtMs": 1
+                })),
+            )
+        }
 
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, "text/event-stream")
-                .body(Body::from_stream(ReceiverStream::new(rx)))
-                .unwrap()
+        async fn load_telemetry(
+            Path(execution_id): Path<String>,
+            Query(query): Query<HashMap<String, String>>,
+        ) -> impl IntoResponse {
+            let after_seq = query
+                .get("afterSeq")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(0);
+            Json(json!({
+                "runnerExecutionId": execution_id,
+                "status": "running",
+                "fromSeq": after_seq,
+                "throughSeq": after_seq,
+                "nextSeq": after_seq.saturating_add(1),
+                "buckets": []
+            }))
+        }
+
+        async fn load_cancel(Path(execution_id): Path<String>) -> impl IntoResponse {
+            Json(json!({ "runnerExecutionId": execution_id, "status": "cancelled" }))
         }
 
         let app = Router::new()
             .route("/health", get(health))
-            .route("/api/v1/tests/load", post(load))
-            .with_state(());
+            .route("/api/v1/tests/load/start", post(load_start))
+            .route(
+                "/api/v1/tests/load/{execution_id}/telemetry",
+                get(load_telemetry),
+            )
+            .route(
+                "/api/v1/tests/load/{execution_id}/cancel",
+                post(load_cancel),
+            );
 
         let listener = TcpListener::bind("127.0.0.1:0")
             .await

@@ -48,6 +48,58 @@ pub struct LoadTestRequest {
     pub env_groups: Vec<RuntimeEnvGroup>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadStartResponse {
+    pub runner_execution_id: String,
+    pub status: String,
+    pub next_seq: u64,
+    pub started_at_ms: u64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTelemetryQuery {
+    #[serde(default)]
+    pub after_seq: Option<u64>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTelemetryBucket {
+    pub seq: u64,
+    pub event: String,
+    pub elapsed_ms: u64,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTelemetryResponse {
+    pub runner_execution_id: String,
+    pub status: String,
+    pub from_seq: u64,
+    pub through_seq: u64,
+    pub next_seq: u64,
+    pub buckets: Vec<LoadTelemetryBucket>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTelemetryAckRequest {
+    pub through_seq: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadTelemetryAckResponse {
+    pub runner_execution_id: String,
+    pub acked_through_seq: u64,
+    pub retained_from_seq: u64,
+}
+
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestConfig {
