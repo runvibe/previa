@@ -24,6 +24,9 @@ export interface ProjectRecord {
   name: string;
   description?: string | null;
   tags?: string[];
+  ownerUserId?: string;
+  ownerUsername?: string;
+  visibility?: ProjectVisibility;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +60,26 @@ export interface PipelineInput {
 
 export type PipelineVisibility = "private" | "public";
 export type PipelineShareAccessLevel = "editor";
+export type ProjectVisibility = "private" | "public";
+export type ProjectShareAccessLevel = "editor";
+
+export interface ProjectShareRecord {
+  id: string;
+  projectId: string;
+  userId: string;
+  username: string;
+  accessLevel: ProjectShareAccessLevel;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectSharingRecord {
+  projectId: string;
+  ownerUserId: string;
+  ownerUsername: string;
+  visibility: ProjectVisibility;
+  shares: ProjectShareRecord[];
+}
 
 export interface PipelineShareRecord {
   id: string;
@@ -440,6 +463,9 @@ function projectRecordToLocal(
     name: r.name,
     description: r.description ?? undefined,
     tags: r.tags ?? [],
+    ownerUserId: r.ownerUserId,
+    ownerUsername: r.ownerUsername,
+    visibility: r.visibility,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     spec,
@@ -491,6 +517,40 @@ export async function upsertProject(baseUrl: string, id: string, data: ProjectUp
 
 export async function deleteProject(baseUrl: string, id: string): Promise<void> {
   await request<void>(`${baseUrl}/projects/${id}`, { method: "DELETE" });
+}
+
+export async function getProjectSharing(baseUrl: string, projectId: string): Promise<ProjectSharingRecord> {
+  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/shares`);
+}
+
+export async function shareProjectWithUser(
+  baseUrl: string,
+  projectId: string,
+  payload: { userId: string; username: string; accessLevel?: ProjectShareAccessLevel },
+): Promise<ProjectSharingRecord> {
+  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/shares`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessLevel: "editor", ...payload }),
+  });
+}
+
+export async function revokeProjectShare(baseUrl: string, projectId: string, userId: string): Promise<void> {
+  await request<void>(`${baseUrl}/projects/${projectId}/shares/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateProjectVisibility(
+  baseUrl: string,
+  projectId: string,
+  visibility: ProjectVisibility,
+): Promise<ProjectSharingRecord> {
+  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/visibility`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visibility }),
+  });
 }
 
 // ============ Runners ============

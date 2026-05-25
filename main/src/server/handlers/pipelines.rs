@@ -20,6 +20,7 @@ use crate::server::models::{
 };
 use crate::server::services::pipeline_access::{PipelineAccess, can_access_pipeline};
 use crate::server::services::pipeline_runtime::build_project_pipeline_record;
+use crate::server::services::project_access::{ProjectAccess, can_access_project};
 use crate::server::state::AppState;
 use crate::server::utils::new_uuid_v7;
 use crate::server::validation::pipelines::validate_pipeline_templates;
@@ -160,6 +161,12 @@ pub async fn create_project_pipeline(
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Write).await {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("project access denied"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     let pipeline = Pipeline {

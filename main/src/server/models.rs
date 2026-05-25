@@ -461,8 +461,105 @@ pub struct ProjectRecord {
     pub name: String,
     pub description: Option<String>,
     pub tags: Vec<String>,
+    pub owner_user_id: String,
+    pub owner_username: String,
+    pub visibility: ProjectVisibility,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectVisibility {
+    Private,
+    Public,
+}
+
+impl std::fmt::Display for ProjectVisibility {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Private => "private",
+            Self::Public => "public",
+        })
+    }
+}
+
+impl std::str::FromStr for ProjectVisibility {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "private" => Ok(Self::Private),
+            "public" => Ok(Self::Public),
+            _ => Err(format!("invalid project visibility '{value}'")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectShareAccessLevel {
+    Editor,
+}
+
+impl std::fmt::Display for ProjectShareAccessLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Editor => "editor",
+        })
+    }
+}
+
+impl std::str::FromStr for ProjectShareAccessLevel {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "editor" => Ok(Self::Editor),
+            _ => Err(format!("invalid project share access level '{value}'")),
+        }
+    }
+}
+
+fn default_project_share_access_level() -> ProjectShareAccessLevel {
+    ProjectShareAccessLevel::Editor
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectShareRecord {
+    pub id: String,
+    pub project_id: String,
+    pub user_id: String,
+    pub username: String,
+    pub access_level: ProjectShareAccessLevel,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSharingRecord {
+    pub project_id: String,
+    pub owner_user_id: String,
+    pub owner_username: String,
+    pub visibility: ProjectVisibility,
+    pub shares: Vec<ProjectShareRecord>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectShareCreateRequest {
+    pub user_id: String,
+    pub username: String,
+    #[serde(default = "default_project_share_access_level")]
+    pub access_level: ProjectShareAccessLevel,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectVisibilityUpdateRequest {
+    pub visibility: ProjectVisibility,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]

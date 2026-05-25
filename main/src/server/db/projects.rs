@@ -3,12 +3,15 @@ use previa_runner::Pipeline;
 use serde_json::Value;
 use sqlx::{QueryBuilder, Row};
 
+use crate::server::auth::Principal;
 use crate::server::db::query_utils::{
     clamp_history_limit, clamp_history_offset, history_order_to_sql,
 };
 use crate::server::models::{
     ProjectListQuery, ProjectMetadataUpsertRequest, ProjectRecord, ProjectUpsertRequest,
+    ProjectVisibility,
 };
+use crate::server::services::project_access::{has_full_access_anonymous, is_admin};
 use crate::server::utils::{new_uuid_v7, now_iso, now_ms};
 
 fn tags_to_json(tags: &[String]) -> String {
@@ -22,6 +25,32 @@ fn tags_from_row(row: &sqlx::any::AnyRow) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn project_record_from_row(row: &sqlx::any::AnyRow) -> ProjectRecord {
+    let description = row
+        .try_get::<Option<String>, _>("description")
+        .ok()
+        .flatten();
+    ProjectRecord {
+        id: row.try_get("id").unwrap_or_default(),
+        name: row.try_get("name").unwrap_or_default(),
+        description,
+        tags: tags_from_row(row),
+        owner_user_id: row
+            .try_get("owner_user_id")
+            .unwrap_or_else(|_| "anonymous".to_owned()),
+        owner_username: row
+            .try_get("owner_username")
+            .unwrap_or_else(|_| "anonymous".to_owned()),
+        visibility: row
+            .try_get::<String, _>("visibility")
+            .ok()
+            .and_then(|value| value.parse::<ProjectVisibility>().ok())
+            .unwrap_or(ProjectVisibility::Private),
+        created_at: row.try_get("created_at").unwrap_or_default(),
+        updated_at: row.try_get("updated_at").unwrap_or_default(),
+    }
+}
+
 pub async fn list_project_records(
     db: &DbPool,
     query: ProjectListQuery,
@@ -31,7 +60,7 @@ pub async fn list_project_records(
     let order_sql = history_order_to_sql(query.order);
 
     let mut qb = QueryBuilder::<sqlx::Any>::new(
-        "SELECT id, name, description, tags_json, created_at, updated_at FROM projects ORDER BY updated_at_ms ",
+        "SELECT id, name, description, tags_json, owner_user_id, owner_username, visibility, created_at, updated_at FROM projects ORDER BY updated_at_ms ",
     );
     qb.push(order_sql)
         .push(" LIMIT ")
@@ -40,23 +69,61 @@ pub async fn list_project_records(
         .push_bind(offset as i64);
 
     let rows = qb.build().fetch_all(db).await?;
-    let mut projects = Vec::with_capacity(rows.len());
-    for row in rows {
-        let description = row
-            .try_get::<Option<String>, _>("description")
-            .ok()
-            .flatten();
-        projects.push(ProjectRecord {
-            id: row.try_get("id").unwrap_or_default(),
-            name: row.try_get("name").unwrap_or_default(),
-            description,
-            tags: tags_from_row(&row),
-            created_at: row.try_get("created_at").unwrap_or_default(),
-            updated_at: row.try_get("updated_at").unwrap_or_default(),
-        });
+    Ok(rows.iter().map(project_record_from_row).collect())
+}
+
+pub async fn list_project_records_accessible(
+    db: &DbPool,
+    query: ProjectListQuery,
+    principal: &Principal,
+) -> Result<Vec<ProjectRecord>, sqlx::Error> {
+    if is_admin(principal) || has_full_access_anonymous(principal) {
+        return list_project_records(db, query).await;
     }
 
-    Ok(projects)
+    let limit = clamp_history_limit(query.limit);
+    let offset = clamp_history_offset(query.offset);
+    let order_sql = history_order_to_sql(query.order);
+
+    let mut qb = QueryBuilder::<sqlx::Any>::new(
+        "SELECT id, name, description, tags_json, owner_user_id, owner_username, visibility, created_at, updated_at
+         FROM projects
+         WHERE (
+            owner_user_id = ",
+    );
+    qb.push_bind(&principal.subject)
+        .push(" OR visibility = 'public' OR EXISTS (")
+        .push(
+            "SELECT 1 FROM project_shares
+             WHERE project_shares.project_id = projects.id
+               AND project_shares.user_id = ",
+        )
+        .push_bind(&principal.subject)
+        .push(") OR EXISTS (")
+        .push(
+            "SELECT 1 FROM pipelines
+             WHERE pipelines.project_id = projects.id
+               AND (
+                pipelines.owner_user_id = ",
+        )
+        .push_bind(&principal.subject)
+        .push(" OR pipelines.visibility = 'public' OR EXISTS (")
+        .push(
+            "SELECT 1 FROM pipeline_shares
+             WHERE pipeline_shares.pipeline_id = pipelines.id
+               AND pipeline_shares.user_id = ",
+        )
+        .push_bind(&principal.subject)
+        .push(")))")
+        .push(") ORDER BY updated_at_ms ")
+        .push(order_sql)
+        .push(" LIMIT ")
+        .push_bind(limit as i64)
+        .push(" OFFSET ")
+        .push_bind(offset as i64);
+
+    let rows = qb.build().fetch_all(db).await?;
+    Ok(rows.iter().map(project_record_from_row).collect())
 }
 
 pub async fn load_project_record(
@@ -64,7 +131,7 @@ pub async fn load_project_record(
     project_id: &str,
 ) -> Result<Option<ProjectRecord>, sqlx::Error> {
     let row = db
-        .query("SELECT id, name, description, tags_json, created_at, updated_at FROM projects WHERE id = ?")
+        .query("SELECT id, name, description, tags_json, owner_user_id, owner_username, visibility, created_at, updated_at FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_optional(db)
         .await?;
@@ -73,19 +140,7 @@ pub async fn load_project_record(
         return Ok(None);
     };
 
-    let description = row
-        .try_get::<Option<String>, _>("description")
-        .ok()
-        .flatten();
-
-    Ok(Some(ProjectRecord {
-        id: row.try_get("id").unwrap_or_default(),
-        name: row.try_get("name").unwrap_or_default(),
-        description,
-        tags: tags_from_row(&row),
-        created_at: row.try_get("created_at").unwrap_or_default(),
-        updated_at: row.try_get("updated_at").unwrap_or_default(),
-    }))
+    Ok(Some(project_record_from_row(&row)))
 }
 
 pub async fn project_name_exists(db: &DbPool, project_name: &str) -> Result<bool, sqlx::Error> {
@@ -123,8 +178,9 @@ pub async fn upsert_project_metadata(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, name, description, tags_json, owner_user_id, owner_username, visibility,
+            created_at, updated_at, created_at_ms, updated_at_ms
+        ) VALUES (?, ?, ?, ?, 'anonymous', 'anonymous', 'private', ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             description = excluded.description,
@@ -190,8 +246,9 @@ pub async fn upsert_project_with_pipelines_for_owner(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            id, name, description, tags_json, owner_user_id, owner_username, visibility,
+            created_at, updated_at, created_at_ms, updated_at_ms, spec_json
+        ) VALUES (?, ?, ?, ?, ?, ?, 'private', ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             name = excluded.name,
             description = excluded.description,
@@ -204,6 +261,8 @@ pub async fn upsert_project_with_pipelines_for_owner(
     .bind(&payload.name)
     .bind(&payload.description)
     .bind(tags_to_json(&payload.tags))
+    .bind(owner_user_id)
+    .bind(owner_username)
     .bind(&created_at)
     .bind(&updated_at)
     .bind(created_at_ms)
@@ -264,8 +323,9 @@ pub async fn create_project_with_pipelines(
 
     db.query(
         "INSERT INTO projects (
-            id, name, description, tags_json, created_at, updated_at, created_at_ms, updated_at_ms, spec_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            id, name, description, tags_json, owner_user_id, owner_username, visibility,
+            created_at, updated_at, created_at_ms, updated_at_ms, spec_json
+        ) VALUES (?, ?, ?, ?, 'anonymous', 'anonymous', 'private', ?, ?, ?, ?, ?)",
     )
     .bind(&project_id)
     .bind(&project_name)

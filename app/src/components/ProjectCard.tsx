@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { BarChart3, FolderOpen, MoreVertical, Copy, Trash2, Calendar, Download, Pencil, Tag } from "lucide-react";
+import { BarChart3, FolderOpen, MoreVertical, Copy, Trash2, Calendar, Download, Pencil, Tag, Share2 } from "lucide-react";
 import type { Project } from "@/types/project";
 import { format } from "date-fns";
 import { ptBR, enUS } from "date-fns/locale";
@@ -17,11 +17,12 @@ interface ProjectCardProps {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onExport: (id: string) => void;
+  onShare?: (id: string) => void;
   onRename?: (id: string, newName: string) => void;
   onEditTags?: (id: string) => void;
 }
 
-export function ProjectCard({ project, onOpen, onDashboard, onDuplicate, onDelete, onExport, onRename, onEditTags }: ProjectCardProps) {
+export function ProjectCard({ project, onOpen, onDashboard, onDuplicate, onDelete, onExport, onShare, onRename, onEditTags }: ProjectCardProps) {
   const { t, i18n } = useTranslation();
   const pipelinesCount = project.pipelines?.length || 0;
   const specsCount = project.specs?.length || 0;
@@ -125,6 +126,10 @@ export function ProjectCard({ project, onOpen, onDashboard, onDuplicate, onDelet
           <DropdownMenuItem className="gap-2.5" onClick={() => onExport(project.id)}>
           <Download className="h-4 w-4" />
           {t("common.export")}
+          </DropdownMenuItem>
+          <DropdownMenuItem className="gap-2.5" onClick={() => onShare?.(project.id)}>
+          <Share2 className="h-4 w-4" />
+          Compartilhar
           </DropdownMenuItem>
           <DropdownMenuItem 
           onClick={() => onDelete(project.id)}

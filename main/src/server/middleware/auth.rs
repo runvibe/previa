@@ -93,18 +93,27 @@ fn allows_anonymous_pipeline_candidate(method: &Method, path: &str) -> bool {
         .split('/')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>();
+    if parts == ["api", "v1", "projects"] {
+        return *method == Method::GET;
+    }
     if parts.len() < 4 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "projects" {
         return false;
     }
     if parts.len() == 4 {
-        return *method == Method::GET;
+        return matches!(*method, Method::GET | Method::PUT | Method::DELETE);
     }
     match parts[4] {
         "pipelines" => {
-            (*method == Method::GET && parts.len() == 5)
+            (matches!(*method, Method::GET | Method::POST) && parts.len() == 5)
                 || (parts.len() >= 6
                     && matches!(*method, Method::GET | Method::PUT | Method::DELETE))
         }
+        "specs" | "env-groups" => matches!(
+            *method,
+            Method::GET | Method::POST | Method::PUT | Method::DELETE
+        ),
+        "shares" => matches!(*method, Method::GET | Method::POST | Method::DELETE),
+        "visibility" => *method == Method::PUT,
         "tests" => matches!(*method, Method::GET | Method::POST | Method::DELETE),
         "executions" => *method == Method::GET,
         _ => false,

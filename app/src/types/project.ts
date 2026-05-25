@@ -42,6 +42,9 @@ export interface Project {
   name: string;
   description?: string;
   tags?: string[];
+  ownerUserId?: string;
+  ownerUsername?: string;
+  visibility?: "private" | "public";
   createdAt: string;
   updatedAt: string;
   /** @deprecated Use specs[] instead. Kept for backward compatibility — returns merged routes from all specs. */

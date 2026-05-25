@@ -30,7 +30,8 @@ use crate::server::handlers::pipelines::{
     update_project_pipeline_visibility, upsert_project_pipeline, upsert_project_pipeline_share,
 };
 use crate::server::handlers::projects::{
-    create_project, delete_project, get_project, list_projects, upsert_project,
+    create_project, delete_project, delete_project_share, get_project, get_project_shares,
+    list_projects, update_project_visibility, upsert_project, upsert_project_share,
 };
 use crate::server::handlers::proxy::proxy_request;
 use crate::server::handlers::runner_reservations::get_latest_runner_reservation_for_pipeline;
@@ -145,6 +146,18 @@ pub fn build_app_with_config(
         .route("/api/v1/specs/validate", post(validate_openapi_spec))
         .route("/api/v1/projects/{projectId}", get(get_project))
         .route("/api/v1/projects/{projectId}/export", get(export_project))
+        .route(
+            "/api/v1/projects/{projectId}/shares",
+            get(get_project_shares).post(upsert_project_share),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/shares/{userId}",
+            axum::routing::delete(delete_project_share),
+        )
+        .route(
+            "/api/v1/projects/{projectId}/visibility",
+            put(update_project_visibility),
+        )
         .route(
             "/api/v1/projects/{projectId}/specs",
             get(list_project_specs).post(create_project_spec),

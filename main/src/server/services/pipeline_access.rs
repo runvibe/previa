@@ -3,6 +3,7 @@ use sqlx::Row;
 use crate::server::auth::permissions::Role;
 use crate::server::auth::{Principal, PrincipalSource};
 use crate::server::db::DbPool;
+use crate::server::services::project_access::{ProjectAccess, can_access_project};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineAccess {
@@ -90,6 +91,17 @@ pub async fn can_access_pipeline(
         return Ok(true);
     }
 
+    let inherited_project_access = match access {
+        PipelineAccess::Read => Some(ProjectAccess::Read),
+        PipelineAccess::Write => Some(ProjectAccess::Write),
+        PipelineAccess::Manage | PipelineAccess::Delete => None,
+    };
+    if let Some(project_access) = inherited_project_access {
+        if can_access_project(db, project_id, principal, project_access).await? {
+            return Ok(true);
+        }
+    }
+
     let Some(record) = load_pipeline_access_record(db, project_id, pipeline_id).await? else {
         return Ok(false);
     };
@@ -119,9 +131,13 @@ pub async fn can_access_optional_pipeline(
     access: PipelineAccess,
 ) -> Result<bool, sqlx::Error> {
     let Some(pipeline_id) = pipeline_id.filter(|value| !value.trim().is_empty()) else {
-        return Ok(is_admin(principal)
-            || (matches!(principal.role, Role::Anonymous)
-                && !matches!(principal.source, PrincipalSource::Anonymous)));
+        let project_access = match access {
+            PipelineAccess::Read => ProjectAccess::Read,
+            PipelineAccess::Write => ProjectAccess::Write,
+            PipelineAccess::Manage => ProjectAccess::Manage,
+            PipelineAccess::Delete => ProjectAccess::Delete,
+        };
+        return can_access_project(db, project_id, principal, project_access).await;
     };
     can_access_pipeline(db, project_id, pipeline_id, principal, access).await
 }

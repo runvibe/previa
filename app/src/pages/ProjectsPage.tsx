@@ -5,6 +5,7 @@ import { useAppHeader } from "@/components/AppShell";
 import { ProjectCard } from "@/components/ProjectCard";
 import { ProjectsSqliteExportDialog } from "@/components/ProjectsSqliteExportDialog";
 import { ProjectSettingsDialog } from "@/components/ProjectSettingsDialog";
+import { ProjectSharingDialog } from "@/components/ProjectSharingDialog";
 import { ProjectTagsDialog } from "@/components/ProjectTagsDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export default function ProjectsPage() {
   const [sqliteExportOpen, setSqliteExportOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const [projectToEditTags, setProjectToEditTags] = useState<string | null>(null);
+  const [projectToShare, setProjectToShare] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -105,6 +107,7 @@ export default function ProjectsPage() {
 
   const projectToDeleteName = projects.find(p => p.id === projectToDelete)?.name;
   const tagProject = projects.find((project) => project.id === projectToEditTags);
+  const shareProject = projects.find((project) => project.id === projectToShare) ?? null;
   const availableTags = useMemo(() => collectProjectTags(projects), [projects]);
   const filteredProjects = useMemo(
     () => filterProjectsBySearchAndTags(projects, searchQuery, selectedTags),
@@ -240,6 +243,7 @@ export default function ProjectsPage() {
                       onDuplicate={handleDuplicateProject}
                       onDelete={handleDeleteClick}
                       onExport={handleExportClick}
+                      onShare={setProjectToShare}
                       onEditTags={setProjectToEditTags}
                       onRename={async (id, newName) => {
                         await updateProject(id, { name: newName });
@@ -334,6 +338,15 @@ export default function ProjectsPage() {
         projects={projects}
         open={sqliteExportOpen}
         onOpenChange={setSqliteExportOpen}
+      />
+
+      <ProjectSharingDialog
+        open={Boolean(projectToShare)}
+        baseUrl={orchUrl}
+        project={shareProject}
+        onOpenChange={(open) => {
+          if (!open) setProjectToShare(null);
+        }}
       />
 
       <ProjectTagsDialog

@@ -46,7 +46,20 @@ pub async fn load_pipelines_for_project_accessible(
             "SELECT pipeline_json FROM pipelines
             WHERE project_id = ?
               AND (
-                owner_user_id = ?
+                EXISTS (
+                    SELECT 1 FROM projects
+                    WHERE projects.id = pipelines.project_id
+                      AND (
+                        projects.owner_user_id = ?
+                        OR projects.visibility = 'public'
+                        OR EXISTS (
+                            SELECT 1 FROM project_shares
+                            WHERE project_shares.project_id = projects.id
+                              AND project_shares.user_id = ?
+                        )
+                      )
+                )
+                OR owner_user_id = ?
                 OR visibility = 'public'
                 OR EXISTS (
                     SELECT 1 FROM pipeline_shares
@@ -57,6 +70,8 @@ pub async fn load_pipelines_for_project_accessible(
             ORDER BY position ASC",
         )
         .bind(project_id)
+        .bind(&principal.subject)
+        .bind(&principal.subject)
         .bind(&principal.subject)
         .bind(&principal.subject)
         .fetch_all(db)

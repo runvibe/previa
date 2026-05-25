@@ -1,19 +1,22 @@
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, http::StatusCode};
 
+use crate::server::auth::Principal;
 use crate::server::db::{
     delete_project_spec_record, insert_project_spec_record, list_project_spec_records,
     load_project_spec_record_by_id, project_exists, update_project_spec_record,
 };
 use crate::server::errors::{
-    bad_request_message_response, bad_request_response, internal_error_response, not_found_response,
+    bad_request_message_response, bad_request_response, forbidden_response,
+    internal_error_response, not_found_response,
 };
 use crate::server::models::{
     ErrorResponse, OpenApiValidationRequest, OpenApiValidationResponse, ProjectSpecRecord,
     ProjectSpecUpsertRequest,
 };
+use crate::server::services::project_access::{ProjectAccess, can_access_project};
 use crate::server::state::AppState;
 use crate::server::validation::openapi::validate_openapi_source;
 use crate::server::validation::specs::{normalize_spec_slug, normalize_spec_urls_with_legacy};
@@ -68,12 +71,19 @@ pub async fn validate_openapi_spec(
 )]
 pub async fn list_project_specs(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
 ) -> Response {
     match project_exists(&state.db, &project_id).await {
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Read).await {
+        Ok(true) => {}
+        Ok(false) => return not_found_response("project not found"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     match list_project_spec_records(&state.db, &project_id).await {
@@ -104,6 +114,7 @@ pub async fn list_project_specs(
 )]
 pub async fn create_project_spec(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<String>,
     Json(mut payload): Json<ProjectSpecUpsertRequest>,
 ) -> Response {
@@ -122,6 +133,12 @@ pub async fn create_project_spec(
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Write).await {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("project access denied"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     match insert_project_spec_record(&state.db, &project_id, payload).await {
@@ -144,12 +161,19 @@ pub async fn create_project_spec(
 )]
 pub async fn get_project_spec(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, spec_id)): Path<(String, String)>,
 ) -> Response {
     match project_exists(&state.db, &project_id).await {
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Read).await {
+        Ok(true) => {}
+        Ok(false) => return not_found_response("project not found"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     match load_project_spec_record_by_id(&state.db, &project_id, &spec_id).await {
@@ -174,6 +198,7 @@ pub async fn get_project_spec(
 )]
 pub async fn upsert_project_spec(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, spec_id)): Path<(String, String)>,
     Json(mut payload): Json<ProjectSpecUpsertRequest>,
 ) -> Response {
@@ -192,6 +217,12 @@ pub async fn upsert_project_spec(
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Write).await {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("project access denied"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     match update_project_spec_record(&state.db, &project_id, &spec_id, payload).await {
@@ -215,12 +246,19 @@ pub async fn upsert_project_spec(
 )]
 pub async fn delete_project_spec(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path((project_id, spec_id)): Path<(String, String)>,
 ) -> Response {
     match project_exists(&state.db, &project_id).await {
         Ok(false) => return not_found_response("project not found"),
         Ok(true) => {}
         Err(err) => return internal_error_response(format!("failed to load project: {err}")),
+    }
+
+    match can_access_project(&state.db, &project_id, &principal, ProjectAccess::Write).await {
+        Ok(true) => {}
+        Ok(false) => return forbidden_response("project access denied"),
+        Err(err) => return internal_error_response(format!("failed to authorize project: {err}")),
     }
 
     match delete_project_spec_record(&state.db, &project_id, &spec_id).await {

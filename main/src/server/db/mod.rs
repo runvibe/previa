@@ -6,6 +6,7 @@ pub mod history;
 pub mod pipeline_shares;
 pub mod pipelines;
 pub mod pool;
+pub mod project_shares;
 pub mod projects;
 pub mod query_utils;
 pub mod runner_reservations;
@@ -41,10 +42,14 @@ pub use pipelines::{
     load_project_pipeline_record, update_project_pipeline,
 };
 pub use pool::{DatabaseKind, DbPool};
+pub use project_shares::{
+    delete_project_share_record, load_project_sharing_record, update_project_visibility_record,
+    upsert_project_share_record,
+};
 pub use projects::{
-    create_project_with_pipelines, list_project_records, load_project_record, project_name_exists,
-    upsert_project_metadata, upsert_project_with_pipelines,
-    upsert_project_with_pipelines_for_owner,
+    create_project_with_pipelines, list_project_records, list_project_records_accessible,
+    load_project_record, project_name_exists, upsert_project_metadata,
+    upsert_project_with_pipelines, upsert_project_with_pipelines_for_owner,
 };
 pub use query_utils::{clamp_history_limit, clamp_history_offset, history_order_to_sql};
 pub use runner_reservations::{
