@@ -520,7 +520,8 @@ export async function deleteProject(baseUrl: string, id: string): Promise<void> 
 }
 
 export async function getProjectSharing(baseUrl: string, projectId: string): Promise<ProjectSharingRecord> {
-  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/shares`);
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<ProjectSharingRecord>(`${apiBase}/projects/${projectId}/shares`);
 }
 
 export async function shareProjectWithUser(
@@ -528,7 +529,8 @@ export async function shareProjectWithUser(
   projectId: string,
   payload: { userId: string; username: string; accessLevel?: ProjectShareAccessLevel },
 ): Promise<ProjectSharingRecord> {
-  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/shares`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<ProjectSharingRecord>(`${apiBase}/projects/${projectId}/shares`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ accessLevel: "editor", ...payload }),
@@ -536,7 +538,8 @@ export async function shareProjectWithUser(
 }
 
 export async function revokeProjectShare(baseUrl: string, projectId: string, userId: string): Promise<void> {
-  await request<void>(`${baseUrl}/projects/${projectId}/shares/${encodeURIComponent(userId)}`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  await request<void>(`${apiBase}/projects/${projectId}/shares/${encodeURIComponent(userId)}`, {
     method: "DELETE",
   });
 }
@@ -546,7 +549,8 @@ export async function updateProjectVisibility(
   projectId: string,
   visibility: ProjectVisibility,
 ): Promise<ProjectSharingRecord> {
-  return request<ProjectSharingRecord>(`${baseUrl}/projects/${projectId}/visibility`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<ProjectSharingRecord>(`${apiBase}/projects/${projectId}/visibility`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ visibility }),
@@ -646,7 +650,8 @@ export async function deletePipeline(baseUrl: string, projectId: string, pipelin
 }
 
 export async function getPipelineSharing(baseUrl: string, projectId: string, pipelineId: string): Promise<PipelineSharingRecord> {
-  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares`);
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<PipelineSharingRecord>(`${apiBase}/projects/${projectId}/pipelines/${pipelineId}/shares`);
 }
 
 export async function sharePipelineWithUser(
@@ -655,7 +660,8 @@ export async function sharePipelineWithUser(
   pipelineId: string,
   payload: { userId: string; username: string; accessLevel?: PipelineShareAccessLevel },
 ): Promise<PipelineSharingRecord> {
-  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<PipelineSharingRecord>(`${apiBase}/projects/${projectId}/pipelines/${pipelineId}/shares`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ accessLevel: "editor", ...payload }),
@@ -663,7 +669,8 @@ export async function sharePipelineWithUser(
 }
 
 export async function revokePipelineShare(baseUrl: string, projectId: string, pipelineId: string, userId: string): Promise<void> {
-  await request<void>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/shares/${encodeURIComponent(userId)}`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  await request<void>(`${apiBase}/projects/${projectId}/pipelines/${pipelineId}/shares/${encodeURIComponent(userId)}`, {
     method: "DELETE",
   });
 }
@@ -674,7 +681,8 @@ export async function updatePipelineVisibility(
   pipelineId: string,
   visibility: PipelineVisibility,
 ): Promise<PipelineSharingRecord> {
-  return request<PipelineSharingRecord>(`${baseUrl}/projects/${projectId}/pipelines/${pipelineId}/visibility`, {
+  const apiBase = ensureApiPrefix(baseUrl);
+  return request<PipelineSharingRecord>(`${apiBase}/projects/${projectId}/pipelines/${pipelineId}/visibility`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ visibility }),
