@@ -105,6 +105,13 @@ function roundTimeSeconds(elapsedMs: number) {
   return roundOne(elapsedMs / 1000);
 }
 
+function hasVisibleRunnerRps(data: RpsChartRow[], runner: RpsRunnerSeries) {
+  return data.some((row) => {
+    const value = row[runner.key];
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  });
+}
+
 export function buildWaveSecondMarkers(
   config: WaveLoadConfig,
   options: WaveSecondMarkerOptions = {},
@@ -329,6 +336,7 @@ export function buildRpsChartData(metrics: LoadTestMetrics, waveConfig: WaveLoad
       }
       return rounded;
     });
+  const visibleRunnerSeries = runnerSeries.filter((runner) => hasVisibleRunnerRps(data, runner));
 
-  return { data, runnerSeries, usesHttpRps };
+  return { data, runnerSeries: visibleRunnerSeries, usesHttpRps };
 }

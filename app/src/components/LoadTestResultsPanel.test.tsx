@@ -727,6 +727,47 @@ describe("LoadTestResultsPanel", () => {
     });
   });
 
+  it("hides runner RPS series when the traffic data only has consolidated totals", () => {
+    const metrics: LoadTestMetrics = {
+      ...emptyMetrics,
+      rpsHistory: [
+        {
+          timestamp: 1_000,
+          elapsedMs: 0,
+          rps: 0,
+          httpStarted: 100,
+          runners: [
+            { runnerId: "runner-a" },
+            { runnerId: "runner-b" },
+          ],
+        },
+        {
+          timestamp: 2_000,
+          elapsedMs: 1_000,
+          rps: 0,
+          httpStarted: 220,
+          runners: [
+            { runnerId: "runner-a" },
+            { runnerId: "runner-b" },
+          ],
+        },
+      ],
+      lifecycleBuckets: [
+        { elapsedMs: 0, httpStarted: 100 },
+        { elapsedMs: 1_000, httpStarted: 120 },
+      ],
+    };
+
+    expect(buildRpsChartData(metrics, null)).toEqual({
+      data: [
+        { time: 0, rpsTotal: 100, runner0: 0, runner1: 0, targetRpsLimit: undefined },
+        { time: 1, rpsTotal: 120, runner0: 0, runner1: 0, targetRpsLimit: undefined },
+      ],
+      runnerSeries: [],
+      usesHttpRps: true,
+    });
+  });
+
   it("groups irregular HTTP samples into one-second RPS buckets", () => {
     const metrics: LoadTestMetrics = {
       ...emptyMetrics,
