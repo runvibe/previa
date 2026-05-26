@@ -90,6 +90,10 @@ When a project name already exists in the target context, the imported copy gets
 an `-imported`, `-imported-2`, `-imported-3` suffix instead of merging with or
 overwriting the existing project.
 
+See [Import and export](./import-export.md) for a complete format matrix that
+compares pipeline files, SQLite snapshots, project JSON bundles, and remote
+pushes.
+
 ## 2. Choose One of Two Pipeline Styles
 
 There are two practical ways to keep pipelines in the repo.

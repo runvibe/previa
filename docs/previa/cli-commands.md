@@ -251,6 +251,9 @@ previa local push --project my_app --to https://previa.example.com --overwrite -
 previa local push --project my_app --to https://previa.example.com --remote-project-id prj_123 --overwrite
 ```
 
+See [Import and export](./import-export.md) for the difference between pipeline
+files, SQLite project snapshots, project JSON bundles, and remote pushes.
+
 ### `previa local export`
 
 Exports selected projects from the project-local context to a SQLite database.
@@ -758,6 +761,7 @@ Notes:
 
 See also:
 
+- [Import and export](./import-export.md)
 - [Pipeline export](./pipeline-export.md)
 - [Project repository workflow](./project-repository-workflow.md)
 

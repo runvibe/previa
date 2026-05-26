@@ -146,11 +146,11 @@ mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use axum::Router;
     use axum::body::{Body, Bytes, to_bytes};
-    use axum::extract::State;
+    use axum::extract::{Query, State};
     use axum::http::{Method, Request, StatusCode, header};
     use axum::response::Response;
     use axum::routing::{get, post};
@@ -367,6 +367,7 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(_load_response.status(), StatusCode::ACCEPTED);
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -665,7 +666,7 @@ mod tests {
             "ok"
         }
 
-        async fn e2e(State(()): State<()>, Json(payload): Json<Value>) -> Response {
+        async fn e2e(Json(payload): Json<Value>) -> Response {
             let pipeline_id = payload["pipeline"]["id"]
                 .as_str()
                 .unwrap_or_default()
@@ -732,52 +733,123 @@ mod tests {
                 .unwrap()
         }
 
-        async fn load(State(()): State<()>, Json(payload): Json<Value>) -> Response {
+        #[derive(Clone)]
+        struct LoadState {
+            started_at: Instant,
+        }
+
+        async fn load_start(Json(payload): Json<Value>) -> Json<Value> {
             let pipeline_id = payload["pipeline"]["id"]
                 .as_str()
                 .unwrap_or_default()
                 .to_owned();
-            let (tx, rx) = mpsc::channel::<Result<Bytes, Infallible>>(8);
-
-            tokio::spawn(async move {
-                send_event(
-                    &tx,
-                    "execution:init",
-                    json!({ "executionId": format!("runner-load-{pipeline_id}") }),
-                )
-                .await;
-
-                send_event(
-                    &tx,
-                    "metrics",
-                    json!({
-                        "sent": 1,
-                        "completed": 1,
-                        "failed": 0,
-                        "requestsPerSecond": 1.0,
-                        "avgLatencyMs": 1.0,
-                        "durationMs": 1
-                    }),
-                )
-                .await;
-
-                if pipeline_id == "slow" {
-                    tokio::time::sleep(Duration::from_millis(300)).await;
-                }
-            });
-
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, "text/event-stream")
-                .body(Body::from_stream(ReceiverStream::new(rx)))
-                .unwrap()
+            Json(json!({
+                "runnerExecutionId": format!("runner-load-{pipeline_id}")
+            }))
         }
 
+        async fn load_telemetry(
+            State(state): State<LoadState>,
+            Path(execution_id): Path<String>,
+            Query(query): Query<HashMap<String, String>>,
+        ) -> Json<Value> {
+            let after_seq = query
+                .get("afterSeq")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(0);
+            let slow_running = execution_id.ends_with("slow")
+                && state.started_at.elapsed() < Duration::from_millis(300);
+            if slow_running {
+                return Json(json!({
+                    "runnerExecutionId": execution_id,
+                    "status": "running",
+                    "fromSeq": after_seq,
+                    "throughSeq": after_seq,
+                    "nextSeq": after_seq + 1,
+                    "buckets": []
+                }));
+            }
+
+            if after_seq >= 2 {
+                return Json(json!({
+                    "runnerExecutionId": execution_id,
+                    "status": "completed",
+                    "fromSeq": after_seq,
+                    "throughSeq": after_seq,
+                    "nextSeq": after_seq + 1,
+                    "buckets": []
+                }));
+            }
+
+            Json(json!({
+                "runnerExecutionId": execution_id,
+                "status": "completed",
+                "fromSeq": 0,
+                "throughSeq": 2,
+                "nextSeq": 3,
+                "buckets": [
+                    {
+                        "seq": 1,
+                        "event": "execution:init",
+                        "elapsedMs": 0,
+                        "payload": { "executionId": execution_id }
+                    },
+                    {
+                        "seq": 2,
+                        "event": "metrics",
+                        "elapsedMs": 1,
+                        "payload": {
+                            "totalStarted": 1,
+                            "totalSent": 1,
+                            "totalSuccess": 1,
+                            "totalError": 0,
+                            "httpStarted": 1,
+                            "httpCompleted": 1,
+                            "rps": 1.0,
+                            "startTime": 1,
+                            "elapsedMs": 1,
+                            "durationMs": 1
+                        }
+                    }
+                ]
+            }))
+        }
+
+        async fn load_ack(Path(execution_id): Path<String>) -> Json<Value> {
+            Json(json!({
+                "runnerExecutionId": execution_id,
+                "ackedThroughSeq": 2,
+                "retainedFromSeq": 3
+            }))
+        }
+
+        async fn load_cancel(Path(execution_id): Path<String>) -> Json<Value> {
+            Json(json!({
+                "runnerExecutionId": execution_id,
+                "status": "cancelled"
+            }))
+        }
+
+        let load_state = LoadState {
+            started_at: Instant::now(),
+        };
         let app = Router::new()
             .route("/health", get(health))
             .route("/api/v1/tests/e2e", post(e2e))
-            .route("/api/v1/tests/load", post(load))
-            .with_state(());
+            .route("/api/v1/tests/load/start", post(load_start))
+            .route(
+                "/api/v1/tests/load/{execution_id}/telemetry",
+                get(load_telemetry),
+            )
+            .route(
+                "/api/v1/tests/load/{execution_id}/telemetry/ack",
+                post(load_ack),
+            )
+            .route(
+                "/api/v1/tests/load/{execution_id}/cancel",
+                post(load_cancel),
+            )
+            .with_state(load_state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

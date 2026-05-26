@@ -22,6 +22,7 @@ This is the main documentation index for Previa as an operator-facing platform a
 ## Authoring and Testing
 
 - [Pipeline authoring](./pipeline-authoring.md)
+- [Import and export](./import-export.md)
 - [Pipeline export](./pipeline-export.md)
 - [Project repository workflow](./project-repository-workflow.md)
 - [Spec-driven testing](./spec-driven-testing.md)
