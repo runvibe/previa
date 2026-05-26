@@ -95,12 +95,17 @@ export default function ProjectsPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (projectToDelete) {
-      await deleteProject(projectToDelete);
-      toast.success(t("projects.deleted"));
+    try {
+      if (projectToDelete) {
+        await deleteProject(projectToDelete);
+        toast.success(t("projects.deleted"));
+      }
+    } catch {
+      // The store reports the error toast and keeps the stack in state.
+    } finally {
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
     }
-    setDeleteDialogOpen(false);
-    setProjectToDelete(null);
   };
 
   const projectToDeleteName = projects.find(p => p.id === projectToDelete)?.name;

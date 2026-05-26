@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProjectStore } from "@/stores/useProjectStore";
 import type { Project } from "@/types/project";
 
+const toastErrorMock = vi.hoisted(() => vi.fn());
+const toastSuccessMock = vi.hoisted(() => vi.fn());
+
 vi.mock("sonner", () => ({
   toast: {
-    error: vi.fn(),
-    success: vi.fn(),
+    error: toastErrorMock,
+    success: toastSuccessMock,
   },
 }));
 
@@ -161,5 +164,37 @@ describe("useProjectStore duplicateProject", () => {
       expect.objectContaining({ url: `${apiUrl}/projects/project-copy/env-groups`, method: "POST" }),
     ]));
     expect(fetchMock).toHaveBeenCalledTimes(8);
+  });
+});
+
+describe("useProjectStore deleteProject", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.stubEnv("VITE_PREVIA_API_BASE_URL", baseUrl);
+    useProjectStore.setState({
+      projects: [projectSummary],
+      currentProject: projectSummary,
+      loading: false,
+      isRemote: true,
+    });
+  });
+
+  it("keeps a remote stack visible and reports missing permission when delete returns 403", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === `${apiUrl}/projects/project-1` && method === "DELETE") {
+        return jsonResponse({ message: "forbidden" }, 403);
+      }
+
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    }));
+
+    await expect(useProjectStore.getState().deleteProject("project-1")).rejects.toThrow("HTTP 403");
+
+    expect(useProjectStore.getState().projects).toEqual([projectSummary]);
+    expect(useProjectStore.getState().currentProject).toEqual(projectSummary);
+    expect(toastErrorMock).toHaveBeenCalledWith("You do not have permission to perform this action.");
   });
 });

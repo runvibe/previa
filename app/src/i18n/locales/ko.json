@@ -364,6 +364,7 @@
   "store.createProjectError": "백엔드에서 프로젝트 생성 중 오류.",
   "store.syncProjectError": "프로젝트 동기화 중 오류.",
   "store.deleteProjectError": "프로젝트 삭제 중 오류.",
+  "store.permissionDeniedError": "이 작업을 수행할 권한이 없습니다.",
   "store.duplicateProjectError": "프로젝트 복제 중 오류.",
   "store.saveSpecError": "백엔드에서 Spec 저장 중 오류.",
   "store.syncPipelineError": "파이프라인 동기화 중 오류.",

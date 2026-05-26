@@ -361,6 +361,7 @@
   "store.createProjectError": "バックエンドでのプロジェクト作成でエラー。",
   "store.syncProjectError": "プロジェクト同期でエラー。",
   "store.deleteProjectError": "プロジェクト削除でエラー。",
+  "store.permissionDeniedError": "この操作を実行する権限がありません。",
   "store.duplicateProjectError": "プロジェクト複製でエラー。",
   "store.saveSpecError": "バックエンドでのSpec保存でエラー。",
   "store.syncPipelineError": "パイプライン同期でエラー。",

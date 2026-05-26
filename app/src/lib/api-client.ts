@@ -208,6 +208,21 @@ export interface LoadCapacityPreviewResponse {
 
 // ============ Helper ============
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+    readonly responseText: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function isForbiddenApiError(error: unknown): boolean {
+  return error instanceof ApiError && error.statusCode === 403;
+}
+
 function simpleHash(input: string): string {
   let hash = 5381;
   for (let i = 0; i < input.length; i++) {
@@ -244,7 +259,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
         message: text || `HTTP ${statusCode}`,
         details: { method, url, statusCode },
       });
-      throw new Error(`HTTP ${statusCode}: ${text}`);
+      throw new ApiError(`HTTP ${statusCode}: ${text}`, statusCode, text);
     }
     if (res.status === 204) return undefined as unknown as T;
     return res.json();

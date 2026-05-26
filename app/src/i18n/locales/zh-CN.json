@@ -361,6 +361,7 @@
   "store.createProjectError": "在后端创建项目时出错。",
   "store.syncProjectError": "同步项目时出错。",
   "store.deleteProjectError": "删除项目时出错。",
+  "store.permissionDeniedError": "你没有执行此操作的权限。",
   "store.duplicateProjectError": "复制项目时出错。",
   "store.saveSpecError": "在后端保存Spec时出错。",
   "store.syncPipelineError": "同步管道时出错。",

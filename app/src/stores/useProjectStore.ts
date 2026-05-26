@@ -289,7 +289,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         await api.deleteProject(apiUrl, id);
       } catch (err) {
         console.warn("Failed to delete from backend:", err);
-        toast.error(i18n.t("store.deleteProjectError"));
+        toast.error(i18n.t(api.isForbiddenApiError(err) ? "store.permissionDeniedError" : "store.deleteProjectError"));
+        throw err;
       }
       set((state) => ({
         projects: state.projects.filter((p) => p.id !== id),

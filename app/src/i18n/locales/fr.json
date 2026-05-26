@@ -373,6 +373,7 @@
   "store.createProjectError": "Erreur lors de la création du projet sur le backend.",
   "store.syncProjectError": "Erreur lors de la synchronisation du projet.",
   "store.deleteProjectError": "Erreur lors de la suppression du projet.",
+  "store.permissionDeniedError": "Vous n'avez pas l'autorisation d'effectuer cette action.",
   "store.duplicateProjectError": "Erreur lors de la duplication du projet.",
   "store.saveSpecError": "Erreur lors de la sauvegarde de la spec sur le backend.",
   "store.syncPipelineError": "Erreur lors de la synchronisation du pipeline.",
