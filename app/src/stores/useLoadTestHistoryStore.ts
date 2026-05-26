@@ -203,7 +203,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
         set({ runs: records.map(apiClient.loadRecordToRun) });
       } catch (e) {
         console.error("Failed to save/load load test run:", e);
-        toast.error(i18n.t("store.saveLoadTestError"));
+        toast.error(i18n.t(apiClient.apiErrorTranslationKey(e, "store.saveLoadTestError")));
       }
     };
 
@@ -429,7 +429,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       }
     } catch (e) {
       console.error("Failed to clear remote load history:", e);
-      toast.error(i18n.t("store.clearRemoteHistoryError"));
+      toast.error(i18n.t(apiClient.apiErrorTranslationKey(e, "store.clearRemoteHistoryError")));
       if (executionBackendUrl) {
         return;
       }
@@ -494,7 +494,7 @@ export const useLoadTestHistoryStore = create<LoadTestHistoryState>((set, get) =
       }
     } catch (err) {
       console.error("Failed to load history:", err);
-      toast.error(i18n.t("store.loadTestHistoryError"));
+      toast.error(i18n.t(apiClient.apiErrorTranslationKey(err, "store.loadTestHistoryError")));
       if (executionBackendUrl) {
         set({ runs: [] });
         return;

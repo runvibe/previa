@@ -73,7 +73,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return;
       } catch (err) {
         console.error("Failed to load projects from backend:", err);
-        toast.error(i18n.t("store.loadProjectsError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.loadProjectsError")));
         set({ projects: [], loading: false });
         return;
       }
@@ -127,7 +127,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return remote;
       } catch (err) {
         console.warn("Failed to load project from backend:", err);
-        toast.error(i18n.t("store.loadProjectError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.loadProjectError")));
         set({ currentProject: null });
         return null;
       }
@@ -220,7 +220,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return project;
       } catch (err) {
         console.error("Failed to create project on backend:", err);
-        toast.error(i18n.t("store.createProjectError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.createProjectError")));
         throw err;
       }
     }
@@ -266,7 +266,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           
         }).catch((err) => {
           console.warn("Failed to sync project to backend:", err);
-          toast.error(i18n.t("store.syncProjectError"));
+          toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.syncProjectError")));
         });
       }
       return;
@@ -289,7 +289,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         await api.deleteProject(apiUrl, id);
       } catch (err) {
         console.warn("Failed to delete from backend:", err);
-        toast.error(i18n.t(api.isForbiddenApiError(err) ? "store.permissionDeniedError" : "store.deleteProjectError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.deleteProjectError")));
         throw err;
       }
       set((state) => ({
@@ -412,7 +412,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return project;
       } catch (err) {
         console.error("Failed to duplicate project on backend:", err);
-        toast.error(i18n.t("store.duplicateProjectError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.duplicateProjectError")));
         return null;
       }
     }
@@ -448,7 +448,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         console.log("[DEBUG][store] saveProjectSpec POST END", { projectId, timestamp: Date.now() });
       } catch (err) {
         console.warn("Failed to sync spec to backend:", err);
-        toast.error(i18n.t("store.saveSpecError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.saveSpecError")));
       }
     }
   },
@@ -482,7 +482,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             }
           } catch (err) {
             console.warn("Failed to sync pipeline:", p.name, err);
-            toast.error(i18n.t("store.syncPipelineError"));
+            toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.syncPipelineError")));
           }
         }
         console.log("[DEBUG][store] saveProjectPipelines UPSERT all END", { timestamp: Date.now() });
@@ -547,7 +547,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         return newSpec;
       } catch (err) {
         console.warn("Failed to add spec:", err);
-        toast.error(i18n.t("store.addSpecError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.addSpecError")));
         return null;
       }
     }
@@ -593,7 +593,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         });
       } catch (err) {
         console.warn("Failed to update spec:", err);
-        toast.error(i18n.t("store.updateSpecError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.updateSpecError")));
       }
     }
 
@@ -632,7 +632,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         await api.deleteSpec(apiUrl, projectId, specId);
       } catch (err) {
         console.warn("Failed to delete spec:", err);
-        toast.error(i18n.t("store.addSpecError"));
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.addSpecError")));
       }
     }
 
@@ -662,7 +662,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         envGroup = await api.createProjectEnvGroup(apiUrl, projectId, data);
       } catch (err) {
         console.warn("Failed to create env group:", err);
-        toast.error("Erro ao criar env group");
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.createEnvGroupError")));
         return null;
       }
     } else {
@@ -702,7 +702,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         envGroup = await api.updateProjectEnvGroup(apiUrl, projectId, envGroupId, data);
       } catch (err) {
         console.warn("Failed to update env group:", err);
-        toast.error("Erro ao atualizar env group");
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.updateEnvGroupError")));
         return;
       }
     }
@@ -734,7 +734,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         await api.deleteProjectEnvGroup(apiUrl, projectId, envGroupId);
       } catch (err) {
         console.warn("Failed to delete env group:", err);
-        toast.error("Erro ao remover env group");
+        toast.error(i18n.t(api.apiErrorTranslationKey(err, "store.deleteEnvGroupError")));
         return;
       }
     }

@@ -269,7 +269,7 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
       });
     } catch (e) {
       console.error("Failed to save/load run:", e);
-      toast.error(i18n.t("store.saveHistoryError"));
+      toast.error(i18n.t(apiClient.apiErrorTranslationKey(e, "store.saveHistoryError")));
     }
 
     set((state) => ({
@@ -409,7 +409,7 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
       });
     } catch (e) {
       console.error("Failed to reload rerun history:", e);
-      toast.error(i18n.t("store.saveHistoryError"));
+      toast.error(i18n.t(apiClient.apiErrorTranslationKey(e, "store.saveHistoryError")));
     }
 
     return status;
@@ -499,7 +499,7 @@ export const useExecutionHistoryStore = create<ExecutionHistoryState>((set, get)
       }
     } catch (e) {
       console.error("Failed to load history:", e);
-      toast.error(i18n.t("store.loadHistoryError"));
+      toast.error(i18n.t(apiClient.apiErrorTranslationKey(e, "store.loadHistoryError")));
     }
   },
 

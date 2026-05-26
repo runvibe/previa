@@ -1,4 +1,5 @@
 import { resolveApiBaseUrl } from "@/lib/api-base";
+import { ApiError } from "@/lib/api-client";
 import { getAuthToken, type AuthUser } from "@/stores/useAuthStore";
 
 export type AccessRole = AuthUser["role"];
@@ -43,7 +44,8 @@ export async function login(username: string, password: string): Promise<LoginRe
     body: JSON.stringify({ username, password, clientKind: "app" }),
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    const text = await response.text();
+    throw new ApiError(`HTTP ${response.status}: ${text}`, response.status, text);
   }
   return response.json();
 }
@@ -128,7 +130,8 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    const text = await response.text().catch(() => "");
+    throw new ApiError(`HTTP ${response.status}: ${text}`, response.status, text);
   }
   return response.json();
 }
@@ -144,7 +147,8 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
     headers,
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    const text = await response.text().catch(() => "");
+    throw new ApiError(`HTTP ${response.status}: ${text}`, response.status, text);
   }
   return response;
 }

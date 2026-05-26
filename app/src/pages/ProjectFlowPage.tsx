@@ -179,11 +179,11 @@ export default function ProjectFlowPage() {
         } else {
           const created = await api.createPipeline(apiUrl, project.id, { ...pipeline, id: candidateId });
           canonicalId = created.id ?? candidateId;
-        }
-      } catch (err) {
-        console.warn("Failed to save pipeline on backend:", err);
-        toast.error(t("projectFlow.backendSaveError"));
-        throw err;
+      }
+    } catch (err) {
+      console.warn("Failed to save pipeline on backend:", err);
+      toast.error(t(api.apiErrorTranslationKey(err, "projectFlow.backendSaveError")));
+      throw err;
       }
     }
 
@@ -240,7 +240,7 @@ export default function ProjectFlowPage() {
         setEditingPipelineIndex(null);
         navigate(`${basePath}/pipeline/${created.id}/editor`);
         return;
-      } catch (err) { console.warn("Failed to create empty pipeline on backend:", err); toast.error(t("projectFlow.backendCreateError")); }
+      } catch (err) { console.warn("Failed to create empty pipeline on backend:", err); toast.error(t(api.apiErrorTranslationKey(err, "projectFlow.backendCreateError"))); }
     }
 
     const localId = generateUUID();

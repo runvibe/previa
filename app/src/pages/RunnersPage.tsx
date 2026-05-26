@@ -19,7 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  createRunner, deleteRunner, listRunners, updateRunner, type RunnerRecord,
+  apiErrorTranslationKey, createRunner, deleteRunner, listRunners, updateRunner, type RunnerRecord,
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { getApiUrl, useOrchestratorStore } from "@/stores/useOrchestratorStore";
@@ -88,8 +88,8 @@ export default function RunnersPage() {
     try {
       setRunners(await listRunners(currentApiUrl));
       await fetchInfo();
-    } catch {
-      toast.error(t("runners.loadError"));
+    } catch (err) {
+      toast.error(t(apiErrorTranslationKey(err, "runners.loadError")));
     } finally {
       setLoading(false);
     }
@@ -133,8 +133,8 @@ export default function RunnersPage() {
       setName("");
       toast.success(t("runners.addSuccess"));
       await fetchInfo();
-    } catch {
-      toast.error(t("runners.addError"));
+    } catch (err) {
+      toast.error(t(apiErrorTranslationKey(err, "runners.addError")));
     } finally {
       setSaving(false);
     }
@@ -151,8 +151,8 @@ export default function RunnersPage() {
       toast.success(t("runners.updateSuccess"));
       await fetchInfo();
       return true;
-    } catch {
-      toast.error(t("runners.updateError"));
+    } catch (err) {
+      toast.error(t(apiErrorTranslationKey(err, "runners.updateError")));
       return false;
     } finally {
       setSaving(false);
@@ -183,8 +183,8 @@ export default function RunnersPage() {
       setRunnerToDelete(null);
       toast.success(t("runners.deleteSuccess"));
       await fetchInfo();
-    } catch {
-      toast.error(t("runners.deleteError"));
+    } catch (err) {
+      toast.error(t(apiErrorTranslationKey(err, "runners.deleteError")));
     } finally {
       setSaving(false);
     }

@@ -946,7 +946,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
       connectQueueStream(queueRecord.id);
     } catch (err) {
       console.error("Failed to create queue:", err);
-      toast.error(t("batch.createError", "Erro ao criar fila de execução"));
+      toast.error(t(apiClient.apiErrorTranslationKey(err, "batch.createError"), "Erro ao criar fila de execução"));
       setBatchState("idle");
       setBatchTotal(0);
     }
@@ -1054,7 +1054,7 @@ export default function TestExecutionPage({ pipelines, spec, specs, envGroups = 
       clearPipelineStatus(selectedIndex);
     } catch (e) {
       console.error("Failed to clear history:", e);
-      toast.error(t("testExecution.clearHistoryError"));
+      toast.error(t(apiClient.apiErrorTranslationKey(e, "testExecution.clearHistoryError")));
     }
   }, [selectedIndex, projectId, executionBackendUrl, t, deleteLocalExecutionRunsForPipeline, clearExecutionResults, clearPipelineStatus, setExecutionRuns]);
 

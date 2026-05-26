@@ -223,6 +223,18 @@ export function isForbiddenApiError(error: unknown): boolean {
   return error instanceof ApiError && error.statusCode === 403;
 }
 
+export function apiErrorTranslationKey(error: unknown, fallbackKey: string): string {
+  return isForbiddenApiError(error) ? "store.permissionDeniedError" : fallbackKey;
+}
+
+export function apiErrorMessage(
+  error: unknown,
+  fallbackMessage: string,
+  permissionMessage = "Você não tem permissão para realizar esta ação.",
+): string {
+  return isForbiddenApiError(error) ? permissionMessage : fallbackMessage;
+}
+
 function simpleHash(input: string): string {
   let hash = 5381;
   for (let i = 0; i < input.length; i++) {

@@ -29,6 +29,7 @@ import {
   type ApiTokenRecord,
   type ManagedUser,
 } from "@/lib/auth-client";
+import { apiErrorMessage } from "@/lib/api-client";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,8 +116,8 @@ export default function AccessManagementPage() {
       const [nextUsers, nextTokens] = await Promise.all([listUsers(), listApiTokens()]);
       setUsers(nextUsers);
       setTokens(nextTokens);
-    } catch {
-      setError("Nao foi possivel carregar acessos");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Nao foi possivel carregar acessos"));
     } finally {
       setLoading(false);
     }
@@ -143,9 +144,10 @@ export default function AccessManagementPage() {
       setPassword("");
       setCreateDialog(null);
       toast.success("Usuario criado");
-    } catch {
-      setError("Nao foi possivel criar o usuario");
-      toast.error("Nao foi possivel criar o usuario");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel criar o usuario");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -161,9 +163,10 @@ export default function AccessManagementPage() {
       setCreatedToken(result.token);
       setTokenName("");
       toast.success("Token criado");
-    } catch {
-      setError("Nao foi possivel criar o token");
-      toast.error("Nao foi possivel criar o token");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel criar o token");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -176,9 +179,10 @@ export default function AccessManagementPage() {
       const updated = await updateUser(user.id, { active: !user.active });
       setUsers((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       toast.success(updated.active ? "Usuario ativado" : "Usuario desativado");
-    } catch {
-      setError("Nao foi possivel atualizar o usuario");
-      toast.error("Nao foi possivel atualizar o usuario");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel atualizar o usuario");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -193,9 +197,10 @@ export default function AccessManagementPage() {
       setUsers((items) => items.filter((item) => item.id !== userToDelete.id));
       setUserToDelete(null);
       toast.success("Usuario removido");
-    } catch {
-      setError("Nao foi possivel remover o usuario");
-      toast.error("Nao foi possivel remover o usuario");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel remover o usuario");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -208,9 +213,10 @@ export default function AccessManagementPage() {
       const updated = await updateApiToken(token.id, !token.active);
       setTokens((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       toast.success(updated.active ? "Token ativado" : "Token desativado");
-    } catch {
-      setError("Nao foi possivel atualizar o token");
-      toast.error("Nao foi possivel atualizar o token");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel atualizar o token");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -225,9 +231,10 @@ export default function AccessManagementPage() {
       setTokens((items) => items.filter((item) => item.id !== tokenToDelete.id));
       setTokenToDelete(null);
       toast.success("Token revogado");
-    } catch {
-      setError("Nao foi possivel revogar o token");
-      toast.error("Nao foi possivel revogar o token");
+    } catch (err) {
+      const message = apiErrorMessage(err, "Nao foi possivel revogar o token");
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }

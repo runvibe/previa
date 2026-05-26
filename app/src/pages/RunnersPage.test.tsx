@@ -51,6 +51,7 @@ const translateMock = vi.hoisted(() => (key: string, params?: Record<string, str
     "runners.title": "Runners",
     "runners.updateError": "Error updating runner.",
     "runners.updateSuccess": "Runner updated successfully!",
+    "store.permissionDeniedError": "You do not have permission to perform this action.",
   };
   return translations[key] ?? key;
 });
@@ -294,5 +295,51 @@ describe("RunnersPage", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(`${baseUrl}/api/v1/runners/runner-a`, { method: "DELETE" });
     });
+  });
+
+  it("keeps a runner visible and reports missing permission when delete returns 403", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === `${baseUrl}/info`) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ context: "local", totalRunners: 1, activeRunners: 1 }),
+        };
+      }
+
+      if (url === `${baseUrl}/api/v1/runners` && method === "GET") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [runnerA],
+        };
+      }
+
+      if (url === `${baseUrl}/api/v1/runners/runner-a` && method === "DELETE") {
+        return {
+          ok: false,
+          status: 403,
+          text: async () => JSON.stringify({ message: "forbidden" }),
+        };
+      }
+
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove runner http://127.0.0.1:55880" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(`${baseUrl}/api/v1/runners/runner-a`, { method: "DELETE" });
+    });
+    expect(await screen.findByDisplayValue("Local runner")).toBeInTheDocument();
+    expect(toastErrorMock).toHaveBeenCalledWith("You do not have permission to perform this action.");
+    expect(toastErrorMock).not.toHaveBeenCalledWith("Error removing runner.");
   });
 });
