@@ -113,13 +113,31 @@ pub async fn delete_project_share_record(
     project_id: &str,
     user_id: &str,
 ) -> Result<bool, sqlx::Error> {
-    let result = db
+    let mut tx = db.begin().await?;
+
+    let project_result = db
         .query("DELETE FROM project_shares WHERE project_id = ? AND user_id = ?")
         .bind(project_id)
         .bind(user_id)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
-    Ok(result.rows_affected() > 0)
+
+    let pipeline_result = db
+        .query(
+            "DELETE FROM pipeline_shares
+            WHERE user_id = ?
+              AND pipeline_id IN (
+                SELECT id FROM pipelines WHERE project_id = ?
+              )",
+        )
+        .bind(user_id)
+        .bind(project_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(project_result.rows_affected() > 0 || pipeline_result.rows_affected() > 0)
 }
 
 pub async fn update_project_visibility_record(

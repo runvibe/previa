@@ -115,10 +115,15 @@ mod tests {
     use crate::server::auth::permissions::Role;
     use crate::server::auth::{Principal, PrincipalSource, anonymous_principal};
     use crate::server::db::{
-        DbPool, update_project_visibility_record, upsert_project_share_record,
+        DbPool, delete_project_share_record, insert_project_pipeline_for_owner,
+        list_project_records_accessible, update_project_visibility_record,
+        upsert_pipeline_share_record, upsert_project_share_record,
         upsert_project_with_pipelines_for_owner,
     };
-    use crate::server::models::{ProjectShareAccessLevel, ProjectUpsertRequest, ProjectVisibility};
+    use crate::server::models::{
+        ProjectListQuery, ProjectShareAccessLevel, ProjectUpsertRequest, ProjectVisibility,
+    };
+    use previa_runner::Pipeline;
 
     use super::{ProjectAccess, can_access_project};
 
@@ -195,6 +200,90 @@ mod tests {
                 .await
                 .expect("shared delete denied")
         );
+    }
+
+    #[tokio::test]
+    async fn revoking_project_share_removes_pipeline_shares_for_that_stack() {
+        let db = db().await;
+        upsert_project_with_pipelines_for_owner(
+            &db,
+            "project-1".to_owned(),
+            ProjectUpsertRequest {
+                name: "Stack".to_owned(),
+                description: None,
+                tags: Vec::new(),
+                created_at: None,
+                updated_at: None,
+                spec: None,
+                pipelines: Vec::new(),
+            },
+            "owner-1",
+            "owner",
+        )
+        .await
+        .expect("project");
+        insert_project_pipeline_for_owner(
+            &db,
+            "project-1",
+            Pipeline {
+                id: Some("pipe-1".to_owned()),
+                name: "Pipeline".to_owned(),
+                description: None,
+                steps: Vec::new(),
+            },
+            "owner-1",
+            "owner",
+        )
+        .await
+        .expect("pipeline");
+
+        let teammate = user("user-2", "teammate");
+        upsert_project_share_record(
+            &db,
+            "project-1",
+            "user-2",
+            "teammate",
+            ProjectShareAccessLevel::Editor,
+        )
+        .await
+        .expect("project share");
+        upsert_pipeline_share_record(
+            &db,
+            "pipe-1",
+            "user-2",
+            "teammate",
+            crate::server::models::PipelineShareAccessLevel::Editor,
+        )
+        .await
+        .expect("pipeline share");
+
+        assert!(
+            !list_project_records_accessible(&db, project_list_query(), &teammate)
+                .await
+                .expect("visible before revoke")
+                .is_empty()
+        );
+
+        assert!(
+            delete_project_share_record(&db, "project-1", "user-2")
+                .await
+                .expect("revoke")
+        );
+
+        assert!(
+            list_project_records_accessible(&db, project_list_query(), &teammate)
+                .await
+                .expect("visible after revoke")
+                .is_empty()
+        );
+    }
+
+    fn project_list_query() -> ProjectListQuery {
+        ProjectListQuery {
+            limit: None,
+            offset: None,
+            order: None,
+        }
     }
 
     #[tokio::test]
