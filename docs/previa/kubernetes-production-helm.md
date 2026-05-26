@@ -25,6 +25,12 @@ The plugin owns a small schema for reservation and physical runner state. It
 reloads non-terminal reservations on startup, then reconciles Kubernetes pods
 and runner health to recover after restarts.
 
+The service port and container port are configured separately. For example,
+`main.service.port: 80` can expose a stable ClusterIP port for a tunnel while
+`main.containerPort: 5588` keeps the binary on its default port inside the pod.
+The same applies to `kubernetesPlugin.service.port` and
+`kubernetesPlugin.containerPort`.
+
 ## Install
 
 Create a production values file:

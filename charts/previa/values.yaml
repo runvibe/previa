@@ -12,6 +12,7 @@ main:
   service:
     type: ClusterIP
     port: 5588
+  containerPort: 5588
   database:
     existingSecret: ""
     urlKey: ORCHESTRATOR_DATABASE_URL
@@ -49,6 +50,7 @@ kubernetesPlugin:
   service:
     type: ClusterIP
     port: 55980
+  containerPort: 55980
   database:
     existingSecret: ""
     urlKey: PREVIA_PLUGIN_DATABASE_URL

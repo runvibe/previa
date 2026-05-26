@@ -36,7 +36,7 @@ spec:
             - name: ADDRESS
               value: "0.0.0.0"
             - name: PORT
-              value: {{ .Values.kubernetesPlugin.service.port | quote }}
+              value: {{ .Values.kubernetesPlugin.containerPort | quote }}
             - name: PREVIA_PLUGIN_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -64,7 +64,7 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.kubernetesPlugin.service.port }}
+              containerPort: {{ .Values.kubernetesPlugin.containerPort }}
           livenessProbe:
             httpGet:
               path: /health

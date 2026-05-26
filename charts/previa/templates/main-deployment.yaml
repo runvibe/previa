@@ -34,7 +34,7 @@ spec:
             - name: ADDRESS
               value: "0.0.0.0"
             - name: PORT
-              value: {{ .Values.main.service.port | quote }}
+              value: {{ .Values.main.containerPort | quote }}
             - name: ORCHESTRATOR_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -53,7 +53,7 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.main.service.port }}
+              containerPort: {{ .Values.main.containerPort }}
           livenessProbe:
             httpGet:
               path: /health
