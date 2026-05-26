@@ -2,6 +2,41 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.40] - 2026-05-26
+
+### Features
+- Add production helm and durable k8s plugin state (e4edefd)
+
+### Bug Fixes
+- Allow helm service ports to differ from container ports (2ce16f2)
+- App: hide empty runner rps series (5efbfde)
+
+### Documentation
+- Design previa link sync (4171c4d)
+
+### Testing
+- Rename previa workload toleration fixtures to runvibe (a4cd8ca)
+
+### Other Changes
+- Fix e2e queue load runner test mock (e51eb3c)
+- Bump app version to alpha 40 (da975a1)
+- Add share access levels (c30f7d8)
+- Cascade stack share revocation to pipelines (f2b9caa)
+- Add account settings profile controls (c62f758)
+- Apply forbidden API error message broadly (fb2ee75)
+- Fix forbidden stack delete handling (66837c7)
+- Fix sharing API base normalization (2d6fbae)
+- Add stack sharing access controls (a77fcb2)
+- Merge codex/load-runner-polling-telemetry (6551025)
+- Fix leng (fcef6a8)
+- Add pipeline sharing access controls (2d53306)
+- Replace runner load SSE with polling telemetry (e8ce711)
+- Polish load test results layout (632b245)
+- Add load status code timeline (ee4f61c)
+- Fix stale runner reuse and load startup recovery (6487705)
+
+Full Changelog: https://github.com/runvibe/previa/compare/k8s-validation-01de45b...v1.0.0-alpha.40
+
 ## [v1.0.0-alpha.30] - 2026-05-14
 
 ### Bug Fixes
