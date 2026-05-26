@@ -1,0 +1,6 @@
+apiVersion: v2
+name: previa
+description: Production Kubernetes deployment for Previa main and dynamic runner capacity.
+type: application
+version: 0.1.0
+appVersion: "1.0.0-alpha.40"

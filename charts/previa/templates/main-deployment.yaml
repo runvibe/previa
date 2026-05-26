@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "previa.mainName" . }}
+  labels:
+    {{- include "previa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: main
+spec:
+  replicas: {{ .Values.main.replicas }}
+  selector:
+    matchLabels:
+      {{- include "previa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: main
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .Values.main.podAnnotations | nindent 8 }}
+      labels:
+        {{- include "previa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: main
+        {{- with .Values.main.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: previa-main
+          image: "{{ .Values.main.image.repository }}:{{ .Values.main.image.tag }}"
+          imagePullPolicy: {{ .Values.main.image.pullPolicy }}
+          env:
+            - name: ADDRESS
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.main.service.port | quote }}
+            - name: ORCHESTRATOR_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "main.database.existingSecret is required for production installs" .Values.main.database.existingSecret | quote }}
+                  key: {{ .Values.main.database.urlKey | quote }}
+            {{- if .Values.kubernetesPlugin.enabled }}
+            - name: PREVIA_KUBERNETES_PLUGIN_URL
+              value: {{ include "previa.pluginUrl" . | quote }}
+            {{- end }}
+            {{- range $name, $value := .Values.main.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- with .Values.main.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.main.service.port }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.main.resources | nindent 12 }}
+      {{- with .Values.main.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.main.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.main.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

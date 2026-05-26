@@ -20,6 +20,12 @@ reqwest = { workspace = true }
 rustls = { version = "0.23", features = ["aws_lc_rs"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "any",
+    "postgres",
+    "sqlite",
+] }
 thiserror = "2"
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -30,4 +36,5 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 http-body-util = "0.1"
+tempfile = "3"
 tower = { version = "0.5", features = ["util"] }

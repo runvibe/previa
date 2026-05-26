@@ -1,0 +1,35 @@
+{{- if and .Values.kubernetesPlugin.enabled .Values.kubernetesPlugin.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "previa.pluginName" . }}
+  labels:
+    {{- include "previa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kubernetes-plugin
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "previa.pluginName" . }}
+  labels:
+    {{- include "previa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kubernetes-plugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "previa.pluginName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "previa.pluginServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -36,6 +36,7 @@ This is the main documentation index for Previa as an operator-facing platform a
 - [Operations cheatsheet](./operations-cheatsheet.md)
 - [Operations](./operations.md)
 - [Compose source](./compose.md)
+- [Kubernetes production Helm](./kubernetes-production-helm.md)
 - [CLI commands](./cli-commands.md)
 - [Pipeline import](./pipeline-import.md)
 - [Troubleshooting](./troubleshooting.md)

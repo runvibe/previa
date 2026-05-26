@@ -54,9 +54,16 @@ PREVIA_RUNNER_EXCLUSIVE_TAINT_KEY=previa.runvibe.com/runner-only
 PREVIA_RUNNER_EXCLUSIVE_TAINT_VALUE=true
 PREVIA_RUNNER_EXCLUSIVE_TAINT_EFFECT=NoSchedule
 PREVIA_RECONCILE_INTERVAL_MS=1000
+PREVIA_PLUGIN_DATABASE_URL=postgres://previa_plugin:secret@postgres.example:5432/previa_plugin
 ```
 
 `PREVIA_STATIC_RUNNER_ENDPOINTS` is supported only for local/static development mode and should not be used for Kubernetes mode.
+
+For production, set `PREVIA_PLUGIN_DATABASE_URL`. The plugin persists active
+reservations and physical runner lifecycle records, reloads them on startup,
+and lets the reconciliation loop repair status from Kubernetes pods and runner
+health after a plugin restart. Without this setting the plugin uses in-memory
+state and should be treated as development-only.
 
 ## Example NodePool
 

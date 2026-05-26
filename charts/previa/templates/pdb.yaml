@@ -1,0 +1,31 @@
+{{- if .Values.main.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "previa.mainName" . }}
+  labels:
+    {{- include "previa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: main
+spec:
+  minAvailable: {{ .Values.main.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "previa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: main
+{{- end }}
+{{- if and .Values.kubernetesPlugin.enabled .Values.kubernetesPlugin.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "previa.pluginName" . }}
+  labels:
+    {{- include "previa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kubernetes-plugin
+spec:
+  minAvailable: {{ .Values.kubernetesPlugin.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "previa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kubernetes-plugin
+{{- end }}

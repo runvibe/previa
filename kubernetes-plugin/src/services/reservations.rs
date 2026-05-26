@@ -13,6 +13,10 @@ use crate::models::{
 };
 use crate::services::config::{CapacityMode, PluginConfig};
 use crate::services::kubernetes::{KubernetesError, KubernetesRunnerApi};
+use crate::services::persistence::{
+    PersistedPhysicalRunner, PersistedReservation, PersistedReservationState, PersistenceError,
+    ReservationPersistence,
+};
 use crate::services::runner_health::RunnerHealthApi;
 use crate::services::runner_resources::RunnerReservationSpec;
 
@@ -20,6 +24,8 @@ use crate::services::runner_resources::RunnerReservationSpec;
 pub enum ReservationStoreError {
     #[error("kubernetes error: {0}")]
     Kubernetes(#[from] KubernetesError),
+    #[error("persistence error: {0}")]
+    Persistence(#[from] PersistenceError),
 }
 
 #[derive(Clone)]
@@ -29,6 +35,7 @@ pub struct ReservationStore {
     config: PluginConfig,
     kubernetes: Option<Arc<dyn KubernetesRunnerApi>>,
     runner_health: Option<Arc<dyn RunnerHealthApi>>,
+    persistence: Option<Arc<dyn ReservationPersistence>>,
 }
 
 #[derive(Clone)]
@@ -37,6 +44,8 @@ struct ReservationRecord {
     status: ReservationStatus,
     created_at: DateTime<Utc>,
     token: String,
+    physical_runner_count: usize,
+    resources_applied: bool,
 }
 
 #[derive(Clone)]
@@ -57,6 +66,7 @@ impl Default for ReservationStore {
             config: PluginConfig::from_pairs(std::iter::empty::<(&str, &str)>()),
             kubernetes: None,
             runner_health: None,
+            persistence: None,
         }
     }
 }
@@ -72,12 +82,64 @@ impl ReservationStore {
             config,
             kubernetes,
             runner_health: None,
+            persistence: None,
         }
     }
 
     pub fn with_runner_health(mut self, runner_health: Arc<dyn RunnerHealthApi>) -> Self {
         self.runner_health = Some(runner_health);
         self
+    }
+
+    pub async fn with_persistence(
+        mut self,
+        persistence: Arc<dyn ReservationPersistence>,
+    ) -> Result<Self, ReservationStoreError> {
+        let persisted = persistence.load_state().await?;
+        {
+            let mut reservations = self.inner.write().await;
+            reservations.clear();
+            for reservation in persisted.reservations {
+                let created_at = DateTime::parse_from_rfc3339(&reservation.created_at)
+                    .map(|value| value.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now());
+                reservations.insert(
+                    reservation.status.reservation_id.clone(),
+                    ReservationRecord {
+                        request: reservation.request,
+                        status: reservation.status,
+                        created_at,
+                        token: reservation.token,
+                        physical_runner_count: reservation.physical_runner_count,
+                        resources_applied: false,
+                    },
+                );
+            }
+        }
+        {
+            let mut runners = self.runners.write().await;
+            runners.clear();
+            for runner in persisted.runners {
+                let idle_since = runner
+                    .idle_since
+                    .as_deref()
+                    .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                    .map(|value| value.with_timezone(&Utc));
+                runners.insert(
+                    runner.endpoint.clone(),
+                    PhysicalRunnerRecord {
+                        id: runner.id,
+                        endpoint: runner.endpoint,
+                        physical_reservation_id: runner.physical_reservation_id,
+                        logical_reservation_id: runner.logical_reservation_id,
+                        state: runner.state,
+                        idle_since,
+                    },
+                );
+            }
+        }
+        self.persistence = Some(persistence);
+        Ok(self)
     }
 
     #[cfg(test)]
@@ -94,6 +156,8 @@ impl ReservationStore {
         let now = Utc::now();
         let expires_at =
             Some((now + Duration::seconds(self.config.reservation_ttl_seconds)).to_rfc3339());
+        let mut physical_runner_count = 0;
+        let mut spec_to_apply = None;
         let mut status = ReservationStatus {
             reservation_id: reservation_id.clone(),
             status: ReservationStatusKind::Provisioning,
@@ -148,17 +212,17 @@ impl ReservationStore {
                     status.reservation_token = Some(token.clone());
                     status.expires_at = expires_at.clone();
                 }
-                if let Some(api) = self.kubernetes.as_ref() {
+                if self.kubernetes.is_some() {
                     if remaining > 0 {
-                        api.apply_reservation_resources(
-                            &RunnerReservationSpec::new(
+                        physical_runner_count = remaining;
+                        spec_to_apply = Some(
+                            RunnerReservationSpec::new(
                                 reservation_id.clone(),
                                 token.clone(),
                                 remaining,
                             )
                             .with_expires_at(expires_at.clone()),
-                        )
-                        .await?;
+                        );
                     }
                 }
             }
@@ -171,8 +235,30 @@ impl ReservationStore {
                 status: status.clone(),
                 created_at: now,
                 token,
+                physical_runner_count,
+                resources_applied: false,
             },
         );
+        self.persist_snapshot().await?;
+        if let (Some(api), Some(spec)) = (self.kubernetes.as_ref(), spec_to_apply.as_ref()) {
+            if let Err(error) = api.apply_reservation_resources(spec).await {
+                {
+                    let mut lock = self.inner.write().await;
+                    if let Some(record) = lock.get_mut(&status.reservation_id) {
+                        record.status.status = ReservationStatusKind::Failed;
+                        record.status.reason = Some(ReservationFailureReason::KubernetesError);
+                        record.status.message = Some(error.to_string());
+                        record.status.updated_at = Utc::now().to_rfc3339();
+                    }
+                }
+                self.persist_snapshot().await?;
+                return Err(error.into());
+            }
+            let mut lock = self.inner.write().await;
+            if let Some(record) = lock.get_mut(&status.reservation_id) {
+                record.resources_applied = true;
+            }
+        }
         Ok(status)
     }
 
@@ -207,11 +293,33 @@ impl ReservationStore {
             record.status.reason = Some(ReservationFailureReason::ProvisionTimeout);
             record.status.message = Some("timed out waiting for runner pods".to_owned());
             record.status.updated_at = Utc::now().to_rfc3339();
-            return Ok(Some(record.status.clone()));
+            let status = record.status.clone();
+            drop(lock);
+            self.persist_snapshot().await?;
+            return Ok(Some(status));
         }
 
         if self.config.capacity_mode == CapacityMode::Kubernetes {
             if let Some(api) = self.kubernetes.as_ref() {
+                if record.status.status == ReservationStatusKind::Provisioning
+                    && record.physical_runner_count > 0
+                    && !record.resources_applied
+                {
+                    api.apply_reservation_resources(
+                        &RunnerReservationSpec::new(
+                            reservation_id,
+                            record.token.clone(),
+                            record.physical_runner_count,
+                        )
+                        .with_expires_at(Some(
+                            (record.created_at
+                                + Duration::seconds(self.config.reservation_ttl_seconds))
+                            .to_rfc3339(),
+                        )),
+                    )
+                    .await?;
+                    record.resources_applied = true;
+                }
                 let pods = api.list_ready_runner_pods(reservation_id).await?;
                 self.register_physical_runner_pods(reservation_id, &pods)
                     .await;
@@ -251,6 +359,7 @@ impl ReservationStore {
         let status = record.status.clone();
         drop(lock);
         self.reconcile_runner_lifecycle(reservation_id).await?;
+        self.persist_snapshot().await?;
         Ok(self
             .inner
             .read()
@@ -283,6 +392,8 @@ impl ReservationStore {
                 endpoint,
             })
             .collect();
+        record.physical_runner_count = record.status.runners.len();
+        record.resources_applied = true;
         Some(record.status.clone())
     }
 
@@ -298,6 +409,9 @@ impl ReservationStore {
             if let Err(error) = api.delete_reservation_resources(reservation_id).await {
                 warn!(%reservation_id, %error, "failed to delete cancelled reservation resources");
             }
+        }
+        if let Err(error) = self.persist_snapshot().await {
+            warn!(%reservation_id, %error, "failed to persist cancelled reservation");
         }
         true
     }
@@ -602,6 +716,49 @@ impl ReservationStore {
             .write()
             .await
             .retain(|_, runner| runner.physical_reservation_id != reservation_id);
+        if let Err(error) = self.persist_snapshot().await {
+            warn!(%reservation_id, %error, "failed to persist reservation deletion");
+        }
+    }
+
+    async fn persist_snapshot(&self) -> Result<(), ReservationStoreError> {
+        let Some(persistence) = self.persistence.as_ref() else {
+            return Ok(());
+        };
+        let reservations = self
+            .inner
+            .read()
+            .await
+            .values()
+            .map(|record| PersistedReservation {
+                request: record.request.clone(),
+                status: record.status.clone(),
+                created_at: record.created_at.to_rfc3339(),
+                token: record.token.clone(),
+                physical_runner_count: record.physical_runner_count,
+            })
+            .collect::<Vec<_>>();
+        let runners = self
+            .runners
+            .read()
+            .await
+            .values()
+            .map(|runner| PersistedPhysicalRunner {
+                id: runner.id.clone(),
+                endpoint: runner.endpoint.clone(),
+                physical_reservation_id: runner.physical_reservation_id.clone(),
+                logical_reservation_id: runner.logical_reservation_id.clone(),
+                state: runner.state.clone(),
+                idle_since: runner.idle_since.map(|value| value.to_rfc3339()),
+            })
+            .collect::<Vec<_>>();
+        persistence
+            .save_state(PersistedReservationState {
+                reservations,
+                runners,
+            })
+            .await?;
+        Ok(())
     }
 }
 
@@ -739,6 +896,138 @@ mod tests {
             pipeline_id: "pipe-1".to_owned(),
             count,
         }
+    }
+
+    #[tokio::test]
+    async fn persisted_ready_reservation_survives_store_restart() {
+        let db_dir = tempfile::tempdir().expect("temp db dir");
+        let database_url = format!(
+            "sqlite://{}",
+            db_dir.path().join("plugin.sqlite3").display()
+        );
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let persistence = std::sync::Arc::new(
+            crate::services::persistence::SqlReservationPersistence::connect(&database_url)
+                .await
+                .expect("connect persistence"),
+        );
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_persistence(persistence.clone())
+            .await
+            .expect("load persisted reservations");
+
+        let created = store.create(test_request(1)).await.unwrap();
+        let ready = store
+            .reconcile_once(&created.reservation_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ready.status, ReservationStatusKind::Ready);
+        let token = ready.reservation_token.clone().expect("ready token");
+
+        let restarted = ReservationStore::for_test(api, PluginConfig::test_default())
+            .with_persistence(persistence)
+            .await
+            .expect("reload persisted reservations");
+        let loaded = restarted
+            .get(&created.reservation_id)
+            .await
+            .expect("reservation after restart");
+
+        assert_eq!(loaded.status, ReservationStatusKind::Ready);
+        assert_eq!(loaded.reservation_token.as_deref(), Some(token.as_str()));
+        assert_eq!(loaded.runners[0].endpoint, "http://runner-0:7373");
+    }
+
+    #[tokio::test]
+    async fn persisted_idle_reusable_runner_can_be_reclaimed_after_restart() {
+        let db_dir = tempfile::tempdir().expect("temp db dir");
+        let database_url = format!(
+            "sqlite://{}",
+            db_dir.path().join("plugin.sqlite3").display()
+        );
+        let api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let health = std::sync::Arc::new(FakeRunnerHealthApi::default());
+        let persistence = std::sync::Arc::new(
+            crate::services::persistence::SqlReservationPersistence::connect(&database_url)
+                .await
+                .expect("connect persistence"),
+        );
+        let store = ReservationStore::for_test(api.clone(), PluginConfig::test_default())
+            .with_runner_health(health.clone())
+            .with_persistence(persistence.clone())
+            .await
+            .expect("load persisted reservations");
+        let first = store.create(test_request(1)).await.unwrap();
+        api.set_ready(vec![RunnerPod {
+            name: "runner-0".to_owned(),
+            ordinal: 0,
+            pod_ip: "10.20.0.10".to_owned(),
+            endpoint: "http://runner-0:7373".to_owned(),
+        }]);
+        let _ = store.reconcile_once(&first.reservation_id).await.unwrap();
+        health.set_info(RunnerInfo {
+            busy: false,
+            started_execution_count: 1,
+            ..Default::default()
+        });
+        store.reconcile_all_once().await;
+        assert_eq!(
+            store.get(&first.reservation_id).await.unwrap().status,
+            ReservationStatusKind::IdleReusable
+        );
+
+        let restarted = ReservationStore::for_test(api, PluginConfig::test_default())
+            .with_runner_health(health.clone())
+            .with_persistence(persistence)
+            .await
+            .expect("reload persisted idle runner");
+        let second = restarted.create(test_request(1)).await.unwrap();
+
+        assert_eq!(second.status, ReservationStatusKind::Ready);
+        assert_eq!(second.runners[0].endpoint, "http://runner-0:7373");
+        assert_eq!(health.rearmed_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn rehydrated_provisioning_reservation_reapplies_kubernetes_resources() {
+        let db_dir = tempfile::tempdir().expect("temp db dir");
+        let database_url = format!(
+            "sqlite://{}",
+            db_dir.path().join("plugin.sqlite3").display()
+        );
+        let persistence = std::sync::Arc::new(
+            crate::services::persistence::SqlReservationPersistence::connect(&database_url)
+                .await
+                .expect("connect persistence"),
+        );
+        let initial_api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let initial = ReservationStore::for_test(initial_api, PluginConfig::test_default())
+            .with_persistence(persistence.clone())
+            .await
+            .expect("load persisted reservations");
+        let created = initial.create(test_request(2)).await.unwrap();
+
+        let restarted_api = std::sync::Arc::new(FakeKubernetesRunnerApi::default());
+        let restarted =
+            ReservationStore::for_test(restarted_api.clone(), PluginConfig::test_default())
+                .with_persistence(persistence)
+                .await
+                .expect("reload provisioning reservation");
+        let status = restarted
+            .reconcile_once(&created.reservation_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(status.status, ReservationStatusKind::Provisioning);
+        assert_eq!(restarted_api.applied_count(), 1);
     }
 
     #[tokio::test]

@@ -10,6 +10,7 @@ use tracing::info;
 
 use crate::services::config::{CapacityMode, PluginConfig};
 use crate::services::kubernetes::KubeRunnerApi;
+use crate::services::persistence::SqlReservationPersistence;
 use crate::services::reconciler::{ReservationReconciler, reconcile_interval_from_env};
 use crate::services::reservations::ReservationStore;
 use crate::services::runner_health::ReqwestRunnerHealth;
@@ -40,7 +41,23 @@ async fn main() {
         None
     };
     let runner_health = Arc::new(ReqwestRunnerHealth::new(reqwest::Client::new()));
-    let store = ReservationStore::from_config(config, kubernetes).with_runner_health(runner_health);
+    let mut store =
+        ReservationStore::from_config(config, kubernetes).with_runner_health(runner_health);
+    if let Some(database_url) = std::env::var("PREVIA_PLUGIN_DATABASE_URL")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+    {
+        let persistence = Arc::new(
+            SqlReservationPersistence::connect(&database_url)
+                .await
+                .expect("failed to connect plugin database"),
+        );
+        store = store
+            .with_persistence(persistence)
+            .await
+            .expect("failed to load plugin reservations");
+    }
     let reconcile_cancel = CancellationToken::new();
     tokio::spawn(
         ReservationReconciler::new(store.clone(), reconcile_interval_from_env())
