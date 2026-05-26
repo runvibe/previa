@@ -769,7 +769,7 @@ mod tests {
             ("PREVIA_KARPENTER_NODE_POOL", "previa-arm-nodepool"),
             (
                 "PREVIA_RUNNER_TOLERATIONS",
-                "workload.cloudvibe.dev/previa=arm:NoSchedule",
+                "workload.runvibe.dev/previa=arm:NoSchedule",
             ),
         ]);
         let spec = RunnerReservationSpec::new("rr_test", "rt_secret", 1);
@@ -784,7 +784,7 @@ mod tests {
         );
         assert_eq!(
             pod_spec.tolerations.unwrap()[0].key.as_deref(),
-            Some("workload.cloudvibe.dev/previa")
+            Some("workload.runvibe.dev/previa")
         );
         assert_eq!(container.command.as_ref().unwrap()[0], "/app/previa-runner");
         assert!(

@@ -289,7 +289,7 @@ mod tests {
             ),
             (
                 "PREVIA_RUNNER_TOLERATIONS",
-                "workload.cloudvibe.dev/previa=arm:NoSchedule",
+                "workload.runvibe.dev/previa=arm:NoSchedule",
             ),
         ]);
 
@@ -300,7 +300,7 @@ mod tests {
             "https://example.test/runner-${previa_arch}"
         );
         assert_eq!(config.tolerations.len(), 1);
-        assert_eq!(config.tolerations[0].key, "workload.cloudvibe.dev/previa");
+        assert_eq!(config.tolerations[0].key, "workload.runvibe.dev/previa");
         assert_eq!(config.tolerations[0].value.as_deref(), Some("arm"));
         assert_eq!(config.tolerations[0].effect.as_deref(), Some("NoSchedule"));
     }
