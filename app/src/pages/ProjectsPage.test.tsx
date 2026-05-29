@@ -110,6 +110,11 @@ vi.mock("react-i18next", () => ({
         "projects.title": "My Stacks",
         "projects.deleteConfirm.description": `Delete ${params?.name ?? ""}?`,
         "projects.deleteConfirm.title": "Delete stack?",
+        "onboarding.agent.title": "Give your agent a QA runtime",
+        "onboarding.agent.description": "Create a stack, import an OpenAPI spec, and let your agent run real workflows instead of guessing.",
+        "onboarding.agent.create": "Create stack",
+        "onboarding.agent.import": "Import stack",
+        "onboarding.agent.docs": "Open docs",
       };
       return translations[key] ?? key;
     },
@@ -247,5 +252,19 @@ describe("ProjectsPage", () => {
     expect(screen.queryByText("Stack 1")).not.toBeInTheDocument();
     expect(screen.getByText("Stack 11")).toBeInTheDocument();
     expect(screen.getByText("11-11 of 11 stacks")).toBeInTheDocument();
+  });
+
+  it("shows agent-runtime onboarding when there are no stacks", () => {
+    projectStoreMock.projects = [];
+
+    renderPage();
+
+    expect(screen.getByText("Give your agent a QA runtime")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create stack" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import stack" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open docs" })).toHaveAttribute(
+      "href",
+      "https://github.com/runvibe/previa/tree/main/docs/previa",
+    );
   });
 });

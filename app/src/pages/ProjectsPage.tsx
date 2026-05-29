@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { AgentRuntimeOnboarding } from "@/components/AgentRuntimeOnboarding";
 import { useAppHeader } from "@/components/AppShell";
 import { ProjectCard } from "@/components/ProjectCard";
 import { ProjectsSqliteExportDialog } from "@/components/ProjectsSqliteExportDialog";
@@ -10,7 +11,7 @@ import { ProjectTagsDialog } from "@/components/ProjectTagsDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, ChevronRight, Plus, FolderOpen, Upload, Download, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Upload, Download, Search, X } from "lucide-react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 import { exportProjectsSqlite, importProjectFile } from "@/lib/project-io";
@@ -313,19 +314,10 @@ export default function ProjectsPage() {
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/50 py-12 sm:py-16 px-4 animate-fade-in">
-              <div className="rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 p-5 shadow-primary-glow mb-4">
-                <FolderOpen className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-semibold mb-2">{t("projects.empty.title")}</h3>
-              <p className="text-muted-foreground mb-6 text-center max-w-sm text-sm sm:text-base">
-                {t("projects.empty.description")}
-              </p>
-              <Button onClick={handleCreateProject}>
-                <Plus className="h-4 w-4" />
-                {t("projects.empty.button")}
-              </Button>
-            </div>
+            <AgentRuntimeOnboarding
+              onCreateStack={handleCreateProject}
+              onImportStack={() => fileInputRef.current?.click()}
+            />
           )}
       </div>
 
