@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -167,7 +168,7 @@ export function OnboardingModal({ open: controlledOpen, onOpenChange }: Onboardi
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{t("guide.install.description")}</p>
             </div>
 
-            <CodeBlock>curl -fsSL https://downloads.previa.dev/install.sh | sh</CodeBlock>
+            <CodeBlock>curl -fsSL https://raw.githubusercontent.com/runvibe/previa/main/install.sh | sh</CodeBlock>
 
             <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
               {[1, 2, 3].map((item) => (
@@ -193,12 +194,17 @@ export function OnboardingModal({ open: controlledOpen, onOpenChange }: Onboardi
             <div className="space-y-4">
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">{t("guide.firstRun.step1")}</p>
-                <CodeBlock>previa up</CodeBlock>
+                <CodeBlock>previa up -d</CodeBlock>
               </div>
 
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">{t("guide.firstRun.step2")}</p>
                 <CodeBlock>previa open</CodeBlock>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">{t("guide.firstRun.step3")}</p>
+                <CodeBlock>previa mcp install codex --scope project</CodeBlock>
               </div>
             </div>
           </div>
@@ -248,6 +254,7 @@ export function OnboardingModal({ open: controlledOpen, onOpenChange }: Onboardi
               <PreviaLogo className="h-8 w-8 shrink-0 sm:h-9 sm:w-9" />
               <div>
                 <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">{t("guide.title")}</DialogTitle>
+                <DialogDescription className="sr-only">{t("guide.start.description")}</DialogDescription>
               </div>
             </div>
           </DialogHeader>

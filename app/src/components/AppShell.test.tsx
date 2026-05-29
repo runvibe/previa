@@ -8,10 +8,6 @@ import { useOrchestratorStore } from "@/stores/useOrchestratorStore";
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const toastDismissMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/components/OnboardingModal", () => ({
-  OnboardingModal: () => null,
-}));
-
 vi.mock("@/components/EventsPanel", () => ({
   EventsPanel: () => <div data-testid="events-panel" />,
 }));
@@ -43,6 +39,7 @@ describe("AppShell", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    window.localStorage.clear();
     toastErrorMock.mockReset();
     toastDismissMock.mockReset();
     useOrchestratorStore.setState({
@@ -91,6 +88,40 @@ describe("AppShell", () => {
     });
     expect(toastDismissMock).toHaveBeenCalledWith("previa-api-offline");
     expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the first-run guide for the agent runtime", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === `${window.location.origin}/info`) {
+        return {
+          ok: true,
+          json: async () => ({
+            context: "default",
+            totalRunners: 3,
+            activeRunners: 1,
+          }),
+        };
+      }
+      if (url === `${window.location.origin}/openapi.json`) {
+        return {
+          ok: true,
+          json: async () => ({ info: { version: "test" } }),
+        };
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/projects"]}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "QA runtime for AI agents" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /First run/ }));
+    expect(screen.getByText("previa up -d")).toBeInTheDocument();
+    expect(screen.getByText(/previa mcp install codex/)).toBeInTheDocument();
   });
 
   it("shows a toast with the service url when the api is offline", async () => {
