@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Settings, FileCode2, Sparkles, Eye, EyeOff, PanelLeft, PanelRight, Globe, Moon, Sun, Workflow, List, MousePointerClick, Palette } from "lucide-react";
 import { useEditorFormatStore } from "@/stores/useEditorFormatStore";
 import { useOpenAIKeyStore, OPENAI_MODELS } from "@/stores/useOpenAIKeyStore";
@@ -73,6 +73,9 @@ export function ProjectSettingsDialog() {
             <Settings className="h-4 w-4" />
             {t("settings.title")}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t("settings.description", "Project editor, layout, appearance, and experimental feature settings.")}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-2">
