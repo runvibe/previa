@@ -41,16 +41,16 @@ main:
     existingSecret: previa-main-db
     urlKey: ORCHESTRATOR_DATABASE_URL
   image:
-    tag: "1.0.0-alpha.40"
+    tag: "1.0.0-alpha.41"
 
 kubernetesPlugin:
   database:
     existingSecret: previa-plugin-db
     urlKey: PREVIA_PLUGIN_DATABASE_URL
   image:
-    tag: "1.0.0-alpha.40"
+    tag: "1.0.0-alpha.41"
   runnerImage:
-    tag: "1.0.0-alpha.40"
+    tag: "1.0.0-alpha.41"
   env:
     PREVIA_KARPENTER_NODE_POOL: previa-runner-small
     PREVIA_RUNNER_CPU_REQUEST: 100m
