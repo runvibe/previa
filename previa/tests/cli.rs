@@ -1217,6 +1217,30 @@ fn dry_run_rejects_detach() {
 }
 
 #[test]
+fn up_reports_doctor_hint_when_compose_is_missing() {
+    let home = TempDir::new().expect("home tempdir");
+    let empty_path = TempDir::new().expect("empty path tempdir");
+    let mut command = cargo_bin();
+    let output = command
+        .args([
+            "--home",
+            home.path().to_str().expect("home str"),
+            "up",
+            "-d",
+        ])
+        .env("PATH", empty_path.path())
+        .output()
+        .expect("up output");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("previa doctor"),
+        "expected stderr to mention previa doctor, got: {stderr}"
+    );
+}
+
+#[test]
 fn version_accepts_global_home_override() {
     let temp = TempDir::new().expect("tempdir");
     let mut command = cargo_bin();

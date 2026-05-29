@@ -12,6 +12,8 @@ use crate::runtime::{DetachedRuntimeState, LocalRunnerRuntime, MainRuntime, Runt
 
 const MAIN_DATA_DIR_IN_CONTAINER: &str = "/previa/data/main";
 pub const MAIN_SERVICE_NAME: &str = "main";
+const COMPOSE_INSTALL_GUIDANCE: &str =
+    "Install Docker Desktop or Docker Engine with the Compose plugin, then run `previa doctor`.";
 
 #[derive(Debug, Clone)]
 pub struct ComposeProject {
@@ -393,9 +395,7 @@ async fn run_output(mut command: Command, description: &str) -> Result<std::proc
 }
 
 fn docker_spawn_error(description: &str) -> String {
-    format!(
-        "{description}: failed to spawn Docker Compose; ensure `docker compose` or `docker-compose` is installed and available in PATH"
-    )
+    format!("{description}: failed to spawn Docker Compose. {COMPOSE_INSTALL_GUIDANCE}")
 }
 
 fn resolve_compose_cli() -> Result<ComposeCli> {
@@ -421,9 +421,7 @@ where
         return Ok(ComposeCli::DockerComposeBinary);
     }
 
-    bail!(
-        "failed to find Docker Compose; ensure `docker compose` or `docker-compose` is installed and available in PATH"
-    )
+    bail!("failed to find Docker Compose. {COMPOSE_INSTALL_GUIDANCE}")
 }
 
 fn command_available(program: &str, args: &[&str]) -> bool {
@@ -547,7 +545,7 @@ mod tests {
     fn errors_when_no_compose_runtime_is_available() {
         let err = resolve_compose_cli_with(|| false, || false).expect_err("missing compose");
         assert!(
-            err.to_string().contains("failed to find Docker Compose"),
+            err.to_string().contains("previa doctor"),
             "unexpected error: {err}"
         );
     }

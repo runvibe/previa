@@ -34,6 +34,27 @@ What it means:
 - the context was never started with `--detach`
 - or it has already been stopped
 
+## Docker-Backed Startup
+
+Use `previa doctor` first when the Docker-backed runtime does not start:
+
+```bash
+previa doctor
+```
+
+If Docker is running but the default ports are busy, start on alternate ports:
+
+```bash
+previa up -d --main-port 5688 --runner-port-range 56880:56979
+```
+
+If startup fails because runtime images are missing or stale, pull them before
+starting again:
+
+```bash
+previa pull all
+```
+
 ## Docker Compose Is Not Available
 
 Error examples:

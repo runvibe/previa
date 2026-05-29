@@ -332,6 +332,7 @@ async fn cmd_up(paths: &PreviaPaths, http: &Client, mut args: UpArgs) -> Result<
 
     match resolved.backend {
         RuntimeBackend::Compose => {
+            ensure_docker_compose_ready()?;
             write_generated_compose(&resolved)?;
             let state = desired_state_from_resolved(&resolved, Utc::now().to_rfc3339());
             let compose = compose_project_from_state(&state);
@@ -415,6 +416,15 @@ async fn cmd_up(paths: &PreviaPaths, http: &Client, mut args: UpArgs) -> Result<
             }
         }
     }
+}
+
+fn ensure_docker_compose_ready() -> Result<()> {
+    let check = diagnostics::check_docker_compose();
+    if check.status == diagnostics::DiagnosticStatus::Error {
+        bail!("{}. {}", check.summary, check.action);
+    }
+
+    Ok(())
 }
 
 async fn cmd_down(paths: &PreviaPaths, args: DownArgs) -> Result<()> {
