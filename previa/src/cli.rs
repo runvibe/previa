@@ -53,6 +53,8 @@ pub enum Commands {
     Restart(RestartArgs),
     #[command(about = "Show the current state of a context")]
     Status(StatusArgs),
+    #[command(about = "Check the local Previa runtime prerequisites and current context")]
+    Doctor(DoctorArgs),
     #[command(about = "List known contexts")]
     List(ListArgs),
     #[command(about = "Show recorded processes for a context")]
@@ -610,6 +612,20 @@ pub struct StatusArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(about = "Check the local Previa runtime prerequisites and current context")]
+pub struct DoctorArgs {
+    #[arg(
+        long = "context",
+        value_name = "CONTEXT",
+        default_value = "default",
+        help = "Context name"
+    )]
+    pub context: String,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 #[command(about = "List known contexts")]
 pub struct ListArgs {
     #[arg(long)]
@@ -917,5 +933,30 @@ mod tests {
         assert_eq!(args.endpoint, "localhost:5590");
         assert_eq!(args.name.as_deref(), Some("local-a"));
         assert!(!args.disabled);
+    }
+
+    #[test]
+    fn parses_doctor_with_default_context() {
+        let cli = Cli::try_parse_from(["previa", "doctor"]).expect("parse doctor");
+        match cli.command {
+            Commands::Doctor(args) => {
+                assert_eq!(args.context, "default");
+                assert!(!args.json);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_doctor_with_context_and_json() {
+        let cli = Cli::try_parse_from(["previa", "doctor", "--context", "demo", "--json"])
+            .expect("parse doctor json");
+        match cli.command {
+            Commands::Doctor(args) => {
+                assert_eq!(args.context, "demo");
+                assert!(args.json);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }

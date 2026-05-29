@@ -3,6 +3,7 @@ mod browser;
 mod cli;
 mod compose;
 mod config;
+mod diagnostics;
 mod download;
 mod envfile;
 mod export;
@@ -33,9 +34,9 @@ use tokio::time::sleep;
 use crate::auth::{run_login, run_logout, run_token, run_whoami};
 use crate::browser::{build_open_url, open_browser};
 use crate::cli::{
-    Cli, Commands, DownArgs, ExportArgs, ExportTarget, InitArgs, LocalArgs, LocalCommands,
-    LocalExportArgs, LocalImportArgs, LogsArgs, McpArgs, OpenArgs, PsArgs, PullArgs, RestartArgs,
-    StatusArgs, UpArgs,
+    Cli, Commands, DoctorArgs, DownArgs, ExportArgs, ExportTarget, InitArgs, LocalArgs,
+    LocalCommands, LocalExportArgs, LocalImportArgs, LogsArgs, McpArgs, OpenArgs, PsArgs, PullArgs,
+    RestartArgs, StatusArgs, UpArgs,
 };
 use crate::compose::{
     ComposeProject, MAIN_SERVICE_NAME, ServiceInspect, compose_project_from_state,
@@ -93,6 +94,7 @@ pub async fn run() -> Result<()> {
         Commands::Down(args) => cmd_down(&paths, args).await,
         Commands::Restart(args) => cmd_restart(&paths, &http, args).await,
         Commands::Status(args) => cmd_status(&paths, &http, args).await,
+        Commands::Doctor(args) => cmd_doctor(&paths, &http, args).await,
         Commands::List(args) => cmd_list(&paths, &http, args.json).await,
         Commands::Ps(args) => cmd_ps(&paths, &http, args).await,
         Commands::Logs(args) => cmd_logs(&paths, args).await,
@@ -578,6 +580,51 @@ async fn cmd_status(paths: &PreviaPaths, http: &Client, args: StatusArgs) -> Res
     } else {
         print_status_human(&status, args.main, selector.is_some());
     }
+    Ok(())
+}
+
+async fn cmd_doctor(paths: &PreviaPaths, _http: &Client, args: DoctorArgs) -> Result<()> {
+    let stack_name = parse_stack_name(&args.context)?;
+    let stack_paths = paths.stack(&stack_name);
+    let state = read_runtime_state(&stack_paths)?;
+    let mut checks = vec![
+        diagnostics::check_docker_compose(),
+        diagnostics::runtime_state_check(&stack_paths.runtime_file, state.as_ref()),
+    ];
+
+    if state.is_none() {
+        checks.push(diagnostics::check_port_available("127.0.0.1", 5588, "main"));
+        checks.push(diagnostics::check_port_available(
+            "127.0.0.1",
+            55880,
+            "runner",
+        ));
+    }
+
+    let report = diagnostics::DoctorReport {
+        context: stack_name,
+        overall: diagnostics::report_status(&checks),
+        checks,
+    };
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).context("failed to serialize doctor JSON")?
+        );
+    } else {
+        println!("Previa doctor: {} ({:?})", report.context, report.overall);
+        for check in &report.checks {
+            println!("- [{:?}] {}", check.status, check.summary);
+            println!("  {}", check.detail);
+            println!("  Next: {}", check.action);
+        }
+    }
+
+    if report.overall == diagnostics::DiagnosticStatus::Error {
+        bail!("one or more checks failed");
+    }
+
     Ok(())
 }
 
