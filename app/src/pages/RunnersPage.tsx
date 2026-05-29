@@ -19,7 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  apiErrorTranslationKey, createRunner, deleteRunner, listRunners, updateRunner, type RunnerRecord,
+  apiErrorMessage, createRunner, deleteRunner, listRunners, updateRunner, type RunnerRecord,
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { getApiUrl, useOrchestratorStore } from "@/stores/useOrchestratorStore";
@@ -89,7 +89,7 @@ export default function RunnersPage() {
       setRunners(await listRunners(currentApiUrl));
       await fetchInfo();
     } catch (err) {
-      toast.error(t(apiErrorTranslationKey(err, "runners.loadError")));
+      toast.error(apiErrorMessage(err, t("runners.loadError"), t("store.permissionDeniedError")));
     } finally {
       setLoading(false);
     }
@@ -134,7 +134,7 @@ export default function RunnersPage() {
       toast.success(t("runners.addSuccess"));
       await fetchInfo();
     } catch (err) {
-      toast.error(t(apiErrorTranslationKey(err, "runners.addError")));
+      toast.error(apiErrorMessage(err, t("runners.addError"), t("store.permissionDeniedError")));
     } finally {
       setSaving(false);
     }
@@ -152,7 +152,7 @@ export default function RunnersPage() {
       await fetchInfo();
       return true;
     } catch (err) {
-      toast.error(t(apiErrorTranslationKey(err, "runners.updateError")));
+      toast.error(apiErrorMessage(err, t("runners.updateError"), t("store.permissionDeniedError")));
       return false;
     } finally {
       setSaving(false);
@@ -184,7 +184,7 @@ export default function RunnersPage() {
       toast.success(t("runners.deleteSuccess"));
       await fetchInfo();
     } catch (err) {
-      toast.error(t(apiErrorTranslationKey(err, "runners.deleteError")));
+      toast.error(apiErrorMessage(err, t("runners.deleteError"), t("store.permissionDeniedError")));
     } finally {
       setSaving(false);
     }

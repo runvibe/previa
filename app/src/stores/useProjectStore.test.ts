@@ -35,9 +35,46 @@ function jsonResponse(body: unknown, status = 200) {
   };
 }
 
+describe("useProjectStore loadProjects", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    vi.stubEnv("VITE_PREVIA_API_BASE_URL", baseUrl);
+    useProjectStore.setState({
+      projects: [],
+      currentProject: null,
+      loading: false,
+      isRemote: true,
+    });
+  });
+
+  it("surfaces structured backend errors when loading stacks", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === `${apiUrl}/projects` && method === "GET") {
+        return jsonResponse({
+          error: "service_unavailable",
+          message: "runner registry unavailable",
+        }, 503);
+      }
+
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    }));
+
+    await useProjectStore.getState().loadProjects();
+
+    expect(toastErrorMock).toHaveBeenCalledWith("Service unavailable: runner registry unavailable");
+  });
+});
+
 describe("useProjectStore duplicateProject", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
     vi.stubEnv("VITE_PREVIA_API_BASE_URL", baseUrl);
     useProjectStore.setState({
       projects: [projectSummary],
@@ -170,6 +207,8 @@ describe("useProjectStore duplicateProject", () => {
 describe("useProjectStore deleteProject", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
     vi.stubEnv("VITE_PREVIA_API_BASE_URL", baseUrl);
     useProjectStore.setState({
       projects: [projectSummary],
