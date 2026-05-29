@@ -612,18 +612,23 @@ async fn cmd_doctor(paths: &PreviaPaths, _http: &Client, args: DoctorArgs) -> Re
         checks,
     };
 
-    if args.json {
+    finish_doctor_report(&report, args.json)
+}
+
+fn finish_doctor_report(report: &diagnostics::DoctorReport, json: bool) -> Result<()> {
+    if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report).context("failed to serialize doctor JSON")?
+            serde_json::to_string_pretty(report).context("failed to serialize doctor JSON")?
         );
-    } else {
-        println!("Previa doctor: {} ({:?})", report.context, report.overall);
-        for check in &report.checks {
-            println!("- [{:?}] {}", check.status, check.summary);
-            println!("  {}", check.detail);
-            println!("  Next: {}", check.action);
-        }
+        return Ok(());
+    }
+
+    println!("Previa doctor: {} ({:?})", report.context, report.overall);
+    for check in &report.checks {
+        println!("- [{:?}] {}", check.status, check.summary);
+        println!("  {}", check.detail);
+        println!("  Next: {}", check.action);
     }
 
     if report.overall == diagnostics::DiagnosticStatus::Error {
@@ -1583,7 +1588,7 @@ async fn wait_for_detached_startup(
 mod tests {
     use std::path::Path;
 
-    use super::effective_home;
+    use super::{effective_home, finish_doctor_report};
     use crate::cli::{Cli, Commands, LocalArgs, LocalCommands, StatusArgs};
     use crate::selectors::{RunnerSelector, normalize_attach_runner};
 
@@ -1653,5 +1658,22 @@ mod tests {
         };
 
         assert_eq!(effective_home(&cli).as_deref(), Some(Path::new("./custom")));
+    }
+
+    #[test]
+    fn doctor_json_report_does_not_fail_on_error_status() {
+        let report = crate::diagnostics::DoctorReport {
+            context: "default".to_owned(),
+            overall: crate::diagnostics::DiagnosticStatus::Error,
+            checks: vec![crate::diagnostics::DiagnosticCheck {
+                id: "docker-compose".to_owned(),
+                status: crate::diagnostics::DiagnosticStatus::Error,
+                summary: "Docker daemon is not available".to_owned(),
+                detail: "`docker info` failed.".to_owned(),
+                action: "Start Docker Desktop, then rerun `previa doctor`.".to_owned(),
+            }],
+        };
+
+        finish_doctor_report(&report, true).expect("json doctor report should not fail");
     }
 }
