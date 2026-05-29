@@ -57,6 +57,27 @@ MCP:
 - expose the same Previa platform capabilities to AI assistants
 - support project inspection, pipeline authoring, failure triage, queue operations, and migrations
 
+## API Contract Source
+
+`previa-main` defines HTTP handlers under `main/src/server/handlers/`, shared
+request and response contracts in `main/src/server/models.rs`, and the generated
+OpenAPI document in `main/src/server/docs.rs`. The live contract is served at
+`/openapi.json`; there is no checked-in `openapi.yaml` source of truth.
+
+When an endpoint changes, update the Axum route registration, the handler's
+`utoipa` annotation, the `docs.rs` path/component list, and the browser client in
+`app/src/lib/api-client.ts` together.
+
+## Persistence Model
+
+`previa-main` supports both SQLite and Postgres from the same code path through
+`sqlx::Any`. `main/src/server/db/pool.rs` owns backend detection, SQLite setup,
+and placeholder rewriting for Postgres.
+
+Database code should use bound parameters through `DbPool::query`,
+`DbPool::sql`, or `QueryBuilder`. SQLx compile-time macros are useful only where
+they do not conflict with the shared SQLite/Postgres abstraction.
+
 ## See Also
 
 - [Minimal happy path](./minimal-happy-path.md)

@@ -247,4 +247,70 @@ mod tests {
 
         assert_eq!(document.info.version, env!("CARGO_PKG_VERSION"));
     }
+
+    #[test]
+    fn openapi_contains_router_critical_paths() {
+        let document = serde_json::to_value(build_openapi_document()).expect("openapi json");
+        let paths = document
+            .get("paths")
+            .and_then(|value| value.as_object())
+            .expect("openapi paths");
+
+        let expected = [
+            ("/api/v1/projects", "get"),
+            ("/api/v1/projects", "post"),
+            ("/api/v1/projects/{projectId}", "get"),
+            ("/api/v1/projects/{projectId}", "put"),
+            ("/api/v1/projects/{projectId}", "delete"),
+            ("/api/v1/projects/{projectId}/shares", "get"),
+            ("/api/v1/projects/{projectId}/shares", "post"),
+            ("/api/v1/projects/{projectId}/shares/{userId}", "delete"),
+            ("/api/v1/projects/{projectId}/pipelines", "get"),
+            ("/api/v1/projects/{projectId}/pipelines", "post"),
+            ("/api/v1/projects/{projectId}/pipelines/{pipelineId}", "get"),
+            ("/api/v1/projects/{projectId}/pipelines/{pipelineId}", "put"),
+            (
+                "/api/v1/projects/{projectId}/pipelines/{pipelineId}",
+                "delete",
+            ),
+            (
+                "/api/v1/projects/{projectId}/pipelines/{pipelineId}/shares",
+                "get",
+            ),
+            (
+                "/api/v1/projects/{projectId}/pipelines/{pipelineId}/shares",
+                "post",
+            ),
+            (
+                "/api/v1/projects/{projectId}/pipelines/{pipelineId}/shares/{userId}",
+                "delete",
+            ),
+            (
+                "/api/v1/projects/{projectId}/pipelines/{pipelineId}/runner-reservation/latest",
+                "get",
+            ),
+            ("/api/v1/projects/{projectId}/tests/e2e", "get"),
+            ("/api/v1/projects/{projectId}/tests/e2e", "post"),
+            ("/api/v1/projects/{projectId}/tests/e2e", "delete"),
+            ("/api/v1/projects/{projectId}/tests/e2e/queue", "get"),
+            ("/api/v1/projects/{projectId}/tests/e2e/queue", "post"),
+            ("/api/v1/projects/{projectId}/tests/load", "get"),
+            ("/api/v1/projects/{projectId}/tests/load", "post"),
+            ("/api/v1/projects/{projectId}/tests/load", "delete"),
+            ("/api/v1/tests/load/capacity-preview", "post"),
+            ("/api/v1/projects/export", "post"),
+            ("/api/v1/projects/import", "post"),
+            ("/api/v1/projects/import/pipelines", "post"),
+        ];
+
+        for (path, method) in expected {
+            assert!(
+                paths
+                    .get(path)
+                    .and_then(|path_item| path_item.get(method))
+                    .is_some(),
+                "missing {method} {path} from generated OpenAPI document"
+            );
+        }
+    }
 }
