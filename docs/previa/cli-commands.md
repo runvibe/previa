@@ -256,17 +256,19 @@ files, SQLite project snapshots, project JSON bundles, and remote pushes.
 
 ### `previa local export`
 
-Exports selected projects from the project-local context to a SQLite database.
+Exports project data from the project-local context. The default type is
+`sqlite3`; use `--type json` for a readable single-project bundle.
 
 ```text
-previa local export (--all | --project <PROJECT_ID>...) --output <DB_SQLITE3> [OPTIONS]
+previa local export (--all | --project <PROJECT_ID_OR_NAME>...) --output <PATH> [OPTIONS]
 ```
 
 Important options:
 
+- `--type <sqlite3|json>`: export format, default `sqlite3`
 - `--all`: export every project in the local context
 - `--project <PROJECT_ID>`: export one selected project; repeat for multiple projects
-- `--output <DB_SQLITE3>`: destination SQLite file
+- `--output <PATH>`: destination file
 - `--overwrite`: replace an existing destination file
 - `--no-history`: omit E2E and load history from the export
 
@@ -276,21 +278,28 @@ Examples:
 previa local export --all --output ./previa-projects.sqlite3
 previa local export --project project_a --project project_b --output ./selected.sqlite3
 previa local export --all --output ./previa-projects.sqlite3 --overwrite --no-history
+previa local export --type json --project project_a --output ./project-a.json
 ```
+
+For `--type json`, exactly one `--project` is required and `--all` is not
+supported.
 
 ### `previa local import`
 
-Imports every project from a SQLite database into the project-local context.
+Imports project data into the project-local context. The default type is
+`sqlite3`; use `--type json` for a readable single-project bundle.
 
 ```text
-previa local import <DB_SQLITE3> [OPTIONS]
+previa local import <PATH> [OPTIONS]
 ```
 
 If an imported project name already exists, Previa keeps both projects and
-renames the imported project with `-imported`, `-imported-2`, and so on.
+renames the imported project with `-imported`, `-imported-2`, and so on for
+SQLite imports. JSON imports preserve the project ID and fail on ID conflict.
 
 Important options:
 
+- `--type <sqlite3|json>`: import format, default `sqlite3`
 - `--no-history`: omit E2E and load history while importing
 - `--context <CONTEXT>`: import into a specific local context
 
@@ -299,6 +308,7 @@ Examples:
 ```bash
 previa local import ./previa-projects.sqlite3
 previa local import ./previa-projects.sqlite3 --no-history
+previa local import --type json ./project-a.json
 ```
 
 ## `previa init`

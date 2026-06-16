@@ -152,6 +152,13 @@ previa local export --project project_id --output ./project.sqlite3
 previa local import ./previa-projects.sqlite3
 ```
 
+Move one project as a readable JSON bundle:
+
+```bash
+previa local export --type json --project project_id --output ./project.json
+previa local import --type json ./project.json
+```
+
 ### Local wave load target
 
 For validating wave load-test behavior without an external API, start the deterministic local target stack:

@@ -9,7 +9,7 @@ use case.
 | --- | --- | --- | --- | --- |
 | Pipeline files | `previa export pipelines`, `previa up --import`, `previa local up --import` | YAML, JSON | Direct pipeline objects only | Keeping test pipelines in an application repository |
 | Project SQLite snapshot | `previa local export`, `previa local import`, `POST /api/v1/projects/export`, `POST /api/v1/projects/import` | SQLite database | One or more projects with pipelines, specs, env groups, and optional history | Backups, local migration, bulk transfer |
-| Project JSON bundle API | `GET /api/v1/projects/{projectId}/export`, `POST /api/v1/projects/import` | JSON envelope | One project with pipelines, specs, env groups, and optional history | API automation and integrations |
+| Project JSON bundle | `previa local export --type json`, `previa local import --type json`, `GET /api/v1/projects/{projectId}/export`, `POST /api/v1/projects/import` | JSON envelope | One project with pipelines, specs, env groups, and optional history | Readable project transfer, API automation, and integrations |
 | Local push | `previa local push` | No user-facing file | One local project copied to a remote `previa-main` | Publishing a local project to a shared remote environment |
 
 ## Pipeline Files
@@ -115,9 +115,10 @@ Rules and limitations:
 
 ## Project SQLite Snapshot
 
-SQLite import/export is the full local snapshot path. Use it for backup,
-bulk migration between local contexts, or moving a complete project with its
-supporting project data.
+SQLite import/export is the default full local snapshot path. Use it for backup,
+bulk migration between local contexts, or moving one or more complete projects
+with their supporting project data. Omitting `--type` is equivalent to
+`--type sqlite3`.
 
 Export one project from the project-local context:
 
@@ -217,20 +218,35 @@ SQLite API import also accepts these content types:
 - `application/x-sqlite3`
 - `application/octet-stream`
 
-## Project JSON Bundle API
+## Project JSON Bundle
 
-The project JSON bundle is the API-level project transfer format. It is useful
-for integrations that want a readable JSON payload, but there is no direct CLI
-command that writes this bundle to disk.
+The project JSON bundle is the single-project readable transfer format. It is
+useful when a project snapshot should be inspected, reviewed, or transformed as
+JSON before import.
 
-Export one project as JSON:
+Export one project as JSON through the CLI:
+
+```bash
+previa local export \
+  --type json \
+  --project project_id_or_exact_name \
+  --output ./project-export.json
+```
+
+Import the JSON bundle through the CLI:
+
+```bash
+previa local import --type json ./project-export.json
+```
+
+Equivalent API export:
 
 ```bash
 curl -sS 'http://127.0.0.1:5588/api/v1/projects/project_id/export?includeHistory=true' \
   -o project-export.json
 ```
 
-Import the JSON bundle:
+Equivalent API import:
 
 ```bash
 curl -sS 'http://127.0.0.1:5588/api/v1/projects/import?includeHistory=true' \
@@ -252,6 +268,7 @@ The JSON bundle includes:
 
 Import behavior differs from SQLite import:
 
+- JSON CLI export supports exactly one `--project` and does not support `--all`.
 - JSON project import preserves the project ID from the payload.
 - If that project ID already exists, import returns a conflict.
 - It does not auto-rename project names.
@@ -318,7 +335,7 @@ Use SQLite when:
 - you need project specs, env groups, and optional execution history
 - you are moving work between local Previa contexts
 
-Use the project JSON bundle API when:
+Use the project JSON bundle when:
 
 - an integration needs to inspect or transform a complete project payload
 - a human-readable project transfer document is more useful than a SQLite file
@@ -342,6 +359,10 @@ previa up -d --import ./tests/e2e -r --stack my_app
 previa local export --project project_id --output ./project.sqlite3
 previa local export --all --output ./previa-projects.sqlite3
 previa local import ./previa-projects.sqlite3
+
+# Project-local JSON bundle
+previa local export --type json --project project_id --output ./project.json
+previa local import --type json ./project.json
 
 # Remote publication
 previa local push --project my_app --to https://previa.example.com --overwrite

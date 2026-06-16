@@ -35,8 +35,8 @@ use crate::auth::{run_login, run_logout, run_token, run_whoami};
 use crate::browser::{build_open_url, open_browser};
 use crate::cli::{
     Cli, Commands, DoctorArgs, DownArgs, ExportArgs, ExportTarget, InitArgs, LocalArgs,
-    LocalCommands, LocalExportArgs, LocalImportArgs, LogsArgs, McpArgs, OpenArgs, PsArgs, PullArgs,
-    RestartArgs, StatusArgs, UpArgs,
+    LocalCommands, LocalExportArgs, LocalImportArgs, LocalTransferType, LogsArgs, McpArgs,
+    OpenArgs, PsArgs, PullArgs, RestartArgs, StatusArgs, UpArgs,
 };
 use crate::compose::{
     ComposeProject, MAIN_SERVICE_NAME, ServiceInspect, compose_project_from_state,
@@ -49,7 +49,7 @@ use crate::health::{
     DerivedState, probe_health, state_from_pid_and_health, state_from_running_and_health,
 };
 use crate::init::init_compose;
-use crate::local_push::push_project;
+use crate::local_push::{export_project_json, import_project_json, push_project};
 use crate::logs::{follow_logs, print_logs};
 use crate::mcp_cli::run_mcp;
 use crate::output::{
@@ -171,14 +171,40 @@ async fn cmd_local_import(paths: &PreviaPaths, args: LocalImportArgs) -> Result<
     let state = read_required_state(&stack_paths)?;
     let local_base_url = crate::browser::main_url(&state.main.address, state.main.port);
     let bytes = std::fs::read(&args.path)
-        .with_context(|| format!("failed to read sqlite import '{}'", args.path.display()))?;
+        .with_context(|| format!("failed to read local import '{}'", args.path.display()))?;
     let http = Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
         .context("failed to build HTTP client")?;
     let include_history = !args.no_history;
-    let url = format!("{local_base_url}/api/v1/projects/import?includeHistory={include_history}");
     let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+
+    if args.transfer_type == LocalTransferType::Json {
+        let outcome = import_project_json(
+            &http,
+            &local_base_url,
+            Some(&auth_path),
+            &bytes,
+            include_history,
+        )
+        .await?;
+        println!(
+            "imported project '{}' ({}) from '{}'",
+            outcome.project_name,
+            outcome.project_id,
+            args.path.display()
+        );
+        println!(
+            "imported {} pipeline(s), {} spec(s), {} e2e history record(s), {} load history record(s)",
+            outcome.pipelines_imported,
+            outcome.specs_imported,
+            outcome.e2e_history_imported,
+            outcome.load_history_imported
+        );
+        return Ok(());
+    }
+
+    let url = format!("{local_base_url}/api/v1/projects/import?includeHistory={include_history}");
     let response = crate::auth::apply_optional_bearer(http.post(&url), &auth_path)?
         .header("content-type", "application/vnd.sqlite3")
         .body(bytes)
@@ -221,6 +247,11 @@ async fn cmd_local_import(paths: &PreviaPaths, args: LocalImportArgs) -> Result<
 }
 
 async fn cmd_local_export(paths: &PreviaPaths, args: LocalExportArgs) -> Result<()> {
+    if args.transfer_type == LocalTransferType::Json {
+        if args.all || args.projects.len() != 1 {
+            bail!("--type json export supports exactly one --project and does not support --all");
+        }
+    }
     if !args.all && args.projects.is_empty() {
         bail!("use --all or at least one --project <PROJECT_ID>");
     }
@@ -244,17 +275,38 @@ async fn cmd_local_export(paths: &PreviaPaths, args: LocalExportArgs) -> Result<
     let state = read_required_state(&stack_paths)?;
     let local_base_url = crate::browser::main_url(&state.main.address, state.main.port);
     let include_history = !args.no_history;
+    let http = Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .context("failed to build HTTP client")?;
+    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
+
+    if args.transfer_type == LocalTransferType::Json {
+        let outcome = export_project_json(
+            &http,
+            &local_base_url,
+            Some(&auth_path),
+            &args.projects[0],
+            include_history,
+        )
+        .await?;
+        std::fs::write(&args.output, &outcome.bytes)
+            .with_context(|| format!("failed to write project JSON '{}'", args.output.display()))?;
+        println!(
+            "exported project '{}' ({}) to '{}'",
+            outcome.project_name,
+            outcome.project_id,
+            args.output.display()
+        );
+        return Ok(());
+    }
+
     let body = serde_json::json!({
         "all": args.all,
         "projectIds": args.projects,
         "includeHistory": include_history,
     });
-    let http = Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .context("failed to build HTTP client")?;
     let url = format!("{local_base_url}/api/v1/projects/export");
-    let auth_path = crate::auth::auth_path_for_context(paths, &stack_name)?;
     let response = crate::auth::apply_optional_bearer(http.post(&url), &auth_path)?
         .json(&body)
         .send()

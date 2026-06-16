@@ -198,9 +198,9 @@ pub enum LocalCommands {
     Up(UpArgs),
     #[command(about = "Push a project-local Previa project to a remote Previa main")]
     Push(LocalPushArgs),
-    #[command(about = "Import every project from a SQLite export into a project-local context")]
+    #[command(about = "Import project data into a project-local context")]
     Import(LocalImportArgs),
-    #[command(about = "Export selected project-local projects into a SQLite database")]
+    #[command(about = "Export project-local project data")]
     Export(LocalExportArgs),
     #[command(about = "Manage registered runner endpoints in a project-local context")]
     Runner(RunnerArgs),
@@ -214,8 +214,14 @@ pub enum LocalCommands {
     Open(OpenArgs),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LocalTransferType {
+    Sqlite3,
+    Json,
+}
+
 #[derive(Debug, Args)]
-#[command(about = "Import every project from a SQLite export into a project-local context")]
+#[command(about = "Import project data into a project-local context")]
 pub struct LocalImportArgs {
     #[arg(
         long = "context",
@@ -224,14 +230,16 @@ pub struct LocalImportArgs {
         help = "Context name"
     )]
     pub context: String,
-    #[arg(value_name = "DB_SQLITE3")]
+    #[arg(value_name = "PATH")]
     pub path: PathBuf,
+    #[arg(long = "type", value_enum, default_value_t = LocalTransferType::Sqlite3)]
+    pub transfer_type: LocalTransferType,
     #[arg(long = "no-history")]
     pub no_history: bool,
 }
 
 #[derive(Debug, Args)]
-#[command(about = "Export selected project-local projects into a SQLite database")]
+#[command(about = "Export project-local project data")]
 pub struct LocalExportArgs {
     #[arg(
         long = "context",
@@ -242,10 +250,16 @@ pub struct LocalExportArgs {
     pub context: String,
     #[arg(long = "all", conflicts_with = "projects")]
     pub all: bool,
-    #[arg(long = "project", value_name = "PROJECT_ID", conflicts_with = "all")]
+    #[arg(
+        long = "project",
+        value_name = "PROJECT_ID_OR_NAME",
+        conflicts_with = "all"
+    )]
     pub projects: Vec<String>,
-    #[arg(short = 'o', long = "output", value_name = "DB_SQLITE3")]
+    #[arg(short = 'o', long = "output", value_name = "PATH")]
     pub output: PathBuf,
+    #[arg(long = "type", value_enum, default_value_t = LocalTransferType::Sqlite3)]
+    pub transfer_type: LocalTransferType,
     #[arg(long = "overwrite")]
     pub overwrite: bool,
     #[arg(long = "no-history")]
@@ -884,7 +898,30 @@ mod tests {
         };
         assert_eq!(args.context, "default");
         assert_eq!(args.path, std::path::PathBuf::from("./db.sqlite3"));
+        assert_eq!(args.transfer_type, super::LocalTransferType::Sqlite3);
         assert!(!args.no_history);
+    }
+
+    #[test]
+    fn parses_local_import_json_type() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "local",
+            "import",
+            "--type",
+            "json",
+            "./project.json",
+        ])
+        .expect("parse local json import");
+
+        let Commands::Local(local) = cli.command else {
+            panic!("expected local command");
+        };
+        let super::LocalCommands::Import(args) = local.command else {
+            panic!("expected local import");
+        };
+        assert_eq!(args.transfer_type, super::LocalTransferType::Json);
+        assert_eq!(args.path, std::path::PathBuf::from("./project.json"));
     }
 
     #[test]
@@ -909,6 +946,32 @@ mod tests {
         assert!(args.all);
         assert!(args.projects.is_empty());
         assert_eq!(args.output, std::path::PathBuf::from("./db.sqlite3"));
+        assert_eq!(args.transfer_type, super::LocalTransferType::Sqlite3);
+    }
+
+    #[test]
+    fn parses_local_export_json_type() {
+        let cli = Cli::try_parse_from([
+            "previa",
+            "local",
+            "export",
+            "--type",
+            "json",
+            "--project",
+            "my_app",
+            "--output",
+            "./project.json",
+        ])
+        .expect("parse local json export");
+
+        let Commands::Local(local) = cli.command else {
+            panic!("expected local command");
+        };
+        let super::LocalCommands::Export(args) = local.command else {
+            panic!("expected local export");
+        };
+        assert_eq!(args.transfer_type, super::LocalTransferType::Json);
+        assert_eq!(args.projects, vec!["my_app".to_owned()]);
     }
 
     #[test]

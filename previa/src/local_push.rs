@@ -21,6 +21,23 @@ pub struct LocalPushOutcome {
     pub load_history_imported: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalJsonExportOutcome {
+    pub project_id: String,
+    pub project_name: String,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalJsonImportOutcome {
+    pub project_id: String,
+    pub project_name: String,
+    pub pipelines_imported: usize,
+    pub specs_imported: usize,
+    pub e2e_history_imported: usize,
+    pub load_history_imported: usize,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectRecord {
@@ -84,6 +101,86 @@ pub async fn push_project(
         args,
     )
     .await
+}
+
+pub async fn export_project_json(
+    http: &Client,
+    local_base_url: &str,
+    local_auth_path: Option<&std::path::PathBuf>,
+    project_selector: &str,
+    include_history: bool,
+) -> Result<LocalJsonExportOutcome> {
+    let local_base_url = trim_base_url(local_base_url)?;
+    let local_project = resolve_project(
+        http,
+        local_base_url,
+        local_auth_path,
+        project_selector,
+        "local",
+    )
+    .await?;
+    let envelope = export_project(
+        http,
+        local_base_url,
+        local_auth_path,
+        &local_project.id,
+        include_history,
+        "local",
+    )
+    .await?;
+
+    if envelope.format != PROJECT_EXPORT_FORMAT {
+        bail!(
+            "local export returned unsupported format '{}'",
+            envelope.format
+        );
+    }
+
+    let bytes = serde_json::to_vec_pretty(&envelope).context("failed to encode project JSON")?;
+
+    Ok(LocalJsonExportOutcome {
+        project_id: envelope.project.id,
+        project_name: envelope.project.name,
+        bytes,
+    })
+}
+
+pub async fn import_project_json(
+    http: &Client,
+    local_base_url: &str,
+    local_auth_path: Option<&std::path::PathBuf>,
+    bytes: &[u8],
+    include_history: bool,
+) -> Result<LocalJsonImportOutcome> {
+    let local_base_url = trim_base_url(local_base_url)?;
+    let envelope = serde_json::from_slice::<ProjectExportEnvelope>(bytes)
+        .context("failed to decode project JSON export")?;
+
+    if envelope.format != PROJECT_EXPORT_FORMAT {
+        bail!(
+            "project JSON export has unsupported format '{}'",
+            envelope.format
+        );
+    }
+
+    let project_name = envelope.project.name.clone();
+    let imported = import_project(
+        http,
+        local_base_url,
+        local_auth_path,
+        &envelope,
+        include_history,
+    )
+    .await?;
+
+    Ok(LocalJsonImportOutcome {
+        project_id: imported.project_id,
+        project_name,
+        pipelines_imported: imported.pipelines_imported,
+        specs_imported: imported.specs_imported,
+        e2e_history_imported: imported.e2e_history_imported,
+        load_history_imported: imported.load_history_imported,
+    })
 }
 
 async fn push_project_between(
@@ -696,5 +793,50 @@ mod tests {
         let projects = remote.projects.lock().await;
         assert!(projects.contains_key("local-1"));
         assert!(!projects.contains_key("remote-1"));
+    }
+
+    #[tokio::test]
+    async fn export_project_json_resolves_project_by_name_and_returns_pretty_bundle() {
+        let local = MockState::default();
+        local.projects.lock().await.insert(
+            "local-1".to_owned(),
+            project_envelope("local-1", "Local App"),
+        );
+        let local_url = spawn_mock_app(local).await;
+        let http = Client::new();
+
+        let outcome = export_project_json(&http, &local_url, None, "Local App", true)
+            .await
+            .expect("export succeeds");
+
+        assert_eq!(outcome.project_id, "local-1");
+        assert_eq!(outcome.project_name, "Local App");
+        let payload: Value = serde_json::from_slice(&outcome.bytes).expect("json payload");
+        assert_eq!(payload["format"], PROJECT_EXPORT_FORMAT);
+        assert_eq!(payload["historyIncluded"], true);
+        assert_eq!(payload["project"]["id"], "local-1");
+        assert!(
+            String::from_utf8(outcome.bytes)
+                .expect("utf8 json")
+                .contains("\n  \"format\"")
+        );
+    }
+
+    #[tokio::test]
+    async fn import_project_json_posts_bundle_to_local_context() {
+        let local = MockState::default();
+        let local_url = spawn_mock_app(local.clone()).await;
+        let http = Client::new();
+        let bytes =
+            serde_json::to_vec(&project_envelope("local-1", "Local App")).expect("json bytes");
+
+        let outcome = import_project_json(&http, &local_url, None, &bytes, false)
+            .await
+            .expect("import succeeds");
+
+        assert_eq!(outcome.project_id, "local-1");
+        assert_eq!(outcome.pipelines_imported, 1);
+        let projects = local.projects.lock().await;
+        assert_eq!(projects["local-1"]["historyIncluded"], false);
     }
 }
