@@ -180,7 +180,7 @@ git commit -m "feat: add postgres execution queue schema"
 - Produces `enqueue_execution`, `cancel_execution`, `claim_projection`, `read_events_after`, `store_snapshot`, `reap_expired_jobs`.
 - SQL functions consumed by runners: `queue_register_runner`, `queue_heartbeat_runner`, `queue_claim_job`, `queue_renew_job_lease`, `queue_publish_events`, `queue_complete_job`, `queue_fail_job`, `queue_acknowledge_cancellation`, `queue_read_control`.
 
-- [ ] **Step 1: Add failing real-Postgres integration tests**
+- [x] **Step 1: Add failing real-Postgres integration tests**
 
 Use `PREVIA_TEST_POSTGRES_URL`; create a unique schema per test with UUID suffix and set `search_path`. Test:
 
@@ -209,7 +209,7 @@ async fn stale_lease_epoch_cannot_publish_or_finish() {
 }
 ```
 
-- [ ] **Step 2: Run and verify red**
+- [x] **Step 2: Run and verify red**
 
 Run:
 
@@ -220,7 +220,7 @@ PREVIA_TEST_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/previa_test
 
 Expected: compile failure for missing repository/harness.
 
-- [ ] **Step 3: Implement restricted SQL functions**
+- [x] **Step 3: Implement restricted SQL functions**
 
 Each runner function must be `SECURITY DEFINER SET search_path = public, pg_temp`, require `runner_id` plus `runner_session_token`, compare `digest(token, 'sha256')`, and revoke table access from the runner role. `queue_claim_job` must:
 
@@ -258,15 +258,15 @@ LIMIT 1;
 
 Then increment `attempt` and `lease_epoch`, generate a fresh UUID token, set lease fields, and return the complete immutable payload.
 
-- [ ] **Step 4: Implement `QueueRepository`**
+- [x] **Step 4: Implement `QueueRepository`**
 
 Use `sqlx::PgPool`. Keep all SQL in `repository.rs`. Main-side methods use bound parameters and transactions; no handler calls SQL directly.
 
-- [ ] **Step 5: Run concurrency and privilege tests**
+- [x] **Step 5: Run concurrency and privilege tests**
 
 Run the integration command from Step 2. Expected: claim, fencing, idempotency, cancellation, protocol, and privilege tests all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add main/migrations/postgres/202607170002_add_execution_queue_functions.sql \

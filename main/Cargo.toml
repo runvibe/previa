@@ -50,6 +50,9 @@ sqlx = { version = "0.8", features = [
     "postgres",
     "sqlite",
     "migrate",
+    "uuid",
+    "chrono",
+    "json",
 ] }
 regex = "1"
 

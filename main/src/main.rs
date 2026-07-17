@@ -1,5 +1,3 @@
-mod server;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -8,15 +6,15 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::server::db::{
+use previa_main::server::db::{
     DatabaseKind, DbPool, backfill_project_spec_md5_hashes, cancel_stale_e2e_queues,
     seed_env_runner_records,
 };
-use crate::server::execution::{SchedulerConfig, parse_runner_endpoints};
-use crate::server::mcp::models::McpConfig;
-use crate::server::state::{AppState, DB_SCHEMA_VERSION};
-use crate::server::utils::now_iso;
-use crate::server::{AppConfig, build_app_with_config};
+use previa_main::server::execution::{SchedulerConfig, parse_runner_endpoints};
+use previa_main::server::mcp::models::McpConfig;
+use previa_main::server::state::{AppState, DB_SCHEMA_VERSION};
+use previa_main::server::utils::now_iso;
+use previa_main::server::{AppConfig, build_app_with_config};
 
 fn should_print_version(args: impl IntoIterator<Item = String>) -> bool {
     args.into_iter()
@@ -119,13 +117,13 @@ async fn main() {
         db,
         context_name: context_name.clone(),
         runner_auth_key,
-        auth: crate::server::auth::AuthRuntime::from_config(
-            crate::server::auth::config::AuthConfig::from_env()
+        auth: previa_main::server::auth::AuthRuntime::from_config(
+            previa_main::server::auth::config::AuthConfig::from_env()
                 .expect("invalid auth configuration"),
         )
         .expect("invalid auth runtime"),
         rps_per_node,
-        scheduler: crate::server::execution::ExecutionScheduler::new(SchedulerConfig {
+        scheduler: previa_main::server::execution::ExecutionScheduler::new(SchedulerConfig {
             e2e_per_runner_limit,
             load_per_runner_limit,
         }),
