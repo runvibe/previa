@@ -495,7 +495,7 @@ fn not_found_message_response(message: &str) -> Response {
         .into_response()
 }
 
-async fn run_classic_load(
+pub(crate) async fn run_classic_load(
     config: LoadTestConfig,
     pipeline: Pipeline,
     selected_key: Option<String>,

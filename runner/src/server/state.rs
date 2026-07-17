@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -13,4 +14,5 @@ pub struct AppState {
     pub runner_auth_key: Option<String>,
     pub reservation: ReservationState,
     pub load_executions: LoadExecutionStore,
+    pub queue_ready: Option<Arc<AtomicBool>>,
 }

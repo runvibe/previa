@@ -100,7 +100,7 @@ pub struct LoadTelemetryAckResponse {
     pub retained_from_seq: u64,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestConfig {
     pub total_requests: usize,

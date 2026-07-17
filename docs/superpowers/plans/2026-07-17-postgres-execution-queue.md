@@ -293,7 +293,7 @@ git commit -m "feat: add fenced postgres job claims"
 - Produces `EventBuffer::push(QueueEvent)` and `flush`.
 - Consumes a callback `JobExecutor: async fn(ClaimedJob, EventSink, CancellationToken) -> JobOutcome`.
 
-- [ ] **Step 1: Write failing worker tests**
+- [x] **Step 1: Write failing worker tests**
 
 Create fake repository tests proving:
 
@@ -308,15 +308,15 @@ async fn lease_renew_failure_cancels_executor() { /* renew returns false */ }
 async fn event_buffer_flushes_at_batch_size_and_interval() { /* paused time */ }
 ```
 
-- [ ] **Step 2: Run and verify red**
+- [x] **Step 2: Run and verify red**
 
 Run `cargo test -p previa-runner queue::`. Expected: missing worker/repository/event buffer symbols.
 
-- [ ] **Step 3: Implement runner repository and identity**
+- [x] **Step 3: Implement runner repository and identity**
 
 Connect with `PgPoolOptions`, register once, keep the opaque token only in memory, and call the restricted SQL functions. Redact database URLs from all errors.
 
-- [ ] **Step 4: Implement heartbeat and worker loop**
+- [x] **Step 4: Implement heartbeat and worker loop**
 
 The worker loop uses `PgListener` for `previa_jobs` and `previa_control`, plus `tokio::time::interval(config.poll_interval)`. A claimed job starts:
 
@@ -327,11 +327,11 @@ The worker loop uses `PgListener` for `previa_jobs` and `previa_control`, plus `
 
 Whichever first invalidates the lease cancels the executor and prevents terminal writes with stale fencing.
 
-- [ ] **Step 5: Implement buffered event publication**
+- [x] **Step 5: Implement buffered event publication**
 
 Assign monotonically increasing `seq` per attempt. Flush at batch size or timer. Reject serialized payloads over `1 MiB`. Stop accepting events when the configured buffer maximum is reached.
 
-- [ ] **Step 6: Run runner tests**
+- [x] **Step 6: Run runner tests**
 
 Run:
 
@@ -341,7 +341,7 @@ cargo test -p previa-runner queue::
 
 Expected: registration, polling fallback, renewal, cancellation, and buffer tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add runner/Cargo.toml runner/src/main.rs runner/src/server/state.rs \

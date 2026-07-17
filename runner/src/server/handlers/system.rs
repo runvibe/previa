@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use std::sync::atomic::Ordering;
 use utoipa::OpenApi;
 
 use crate::server::docs::ApiDoc;
@@ -43,7 +44,11 @@ pub async fn health() -> StatusCode {
 }
 
 pub async fn ready(State(state): State<AppState>) -> StatusCode {
-    if state.reservation.is_ready() {
+    let queue_ready = state
+        .queue_ready
+        .as_ref()
+        .is_none_or(|ready| ready.load(Ordering::SeqCst));
+    if state.reservation.is_ready() && queue_ready {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE

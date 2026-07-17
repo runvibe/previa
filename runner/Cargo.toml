@@ -28,6 +28,14 @@ previa-engine = { workspace = true }
 futures-util = "0.3"
 reqwest = { workspace = true }
 sysinfo = "0.38.3"
+async-trait = "0.1"
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "json",
+] }
 
 [dev-dependencies]
 httpmock = "0.8.3"

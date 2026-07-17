@@ -1,9 +1,19 @@
 mod server;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::server::build_app;
+use crate::server::queue::config::RunnerQueueConfig;
+use crate::server::queue::heartbeat::run_heartbeat;
+use crate::server::queue::load_executor::QueueJobExecutor;
+use crate::server::queue::repository::{RunnerQueueRepository, RunnerRegistration};
+use crate::server::queue::worker::RunnerWorker;
 use crate::server::state::AppState;
 
 fn should_print_version(args: impl IntoIterator<Item = String>) -> bool {
@@ -32,9 +42,46 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    let queue_config = RunnerQueueConfig::from_env().expect("invalid Postgres queue configuration");
+    let queue_repository = RunnerQueueRepository::connect(&queue_config.database_url, 8)
+        .await
+        .expect("failed to connect to Postgres queue");
+    let mut registration =
+        RunnerRegistration::from_env().expect("invalid runner registration configuration");
+    registration.heartbeat_interval = queue_config.heartbeat_interval;
+    let identity = queue_repository
+        .register(&registration)
+        .await
+        .expect("failed to register Postgres queue runner");
+    let queue_ready = Arc::new(AtomicBool::new(true));
+    let worker = RunnerWorker::new(
+        Arc::new(queue_repository.clone()),
+        Arc::new(QueueJobExecutor::default()),
+        identity.clone(),
+        queue_config.clone(),
+        Duration::from_secs(30),
+    )
+    .expect("invalid queue lease configuration");
+    let queue_cancel = CancellationToken::new();
+    let worker_cancel = queue_cancel.clone();
+    let worker_ready = queue_ready.clone();
+    tokio::spawn(async move {
+        if let Err(error) = worker.run(worker_cancel).await {
+            tracing::error!("Postgres queue worker stopped: {error}");
+            worker_ready.store(false, Ordering::SeqCst);
+        }
+    });
+    tokio::spawn(run_heartbeat(
+        queue_repository,
+        identity,
+        queue_config.heartbeat_interval,
+        queue_cancel,
+    ));
+
     let state = AppState {
         runner_auth_key: optional_env("RUNNER_AUTH_KEY"),
         reservation: crate::server::reservation::ReservationState::from_env(),
+        queue_ready: Some(queue_ready),
         ..AppState::default()
     };
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| "0.0.0.0".to_owned());
