@@ -44,7 +44,7 @@
 - Produces `runner::server::queue::config::RunnerQueueConfig::from_env_values`.
 - Produces shared wire concepts with identical serialized values: `ExecutionKind`, `ExecutionStatus`, `JobStatus`, `QueueProtocolVersion`.
 
-- [ ] **Step 1: Write failing configuration tests**
+- [x] **Step 1: Write failing configuration tests**
 
 ```rust
 #[test]
@@ -82,7 +82,7 @@ fn runner_defaults_and_cross_field_validation() {
 }
 ```
 
-- [ ] **Step 2: Run tests and verify they fail because queue modules do not exist**
+- [x] **Step 2: Run tests and verify they fail because queue modules do not exist**
 
 Run:
 
@@ -93,7 +93,7 @@ cargo test -p previa-runner queue::config
 
 Expected: compile failure for missing `queue` modules and config types.
 
-- [ ] **Step 3: Add exact configuration structs and parsers**
+- [x] **Step 3: Add exact configuration structs and parsers**
 
 ```rust
 pub const QUEUE_PROTOCOL_VERSION: i32 = 1;
@@ -127,7 +127,7 @@ pub struct RunnerQueueConfig {
 
 Implement a private `EnvSource` map and numeric helpers that enforce every range from the spec. `DATABASE_URL` and `PREVIA_QUEUE_DATABASE_URL` must accept only `postgres://` or `postgresql://`.
 
-- [ ] **Step 4: Add the Postgres migration**
+- [x] **Step 4: Add the Postgres migration**
 
 Create the tables `queue_protocol`, `runner_instances`, `executions`, `execution_jobs`, `execution_events`, and `execution_snapshots` with the columns, checks, unique constraints, and indexes from the spec. Seed protocol version atomically:
 
@@ -146,7 +146,7 @@ Enable `pgcrypto` for token hashing and generated fencing tokens:
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 ```
 
-- [ ] **Step 5: Run focused tests and migration validation**
+- [x] **Step 5: Run focused tests and migration validation**
 
 Run:
 
@@ -158,7 +158,7 @@ sqlx migrate info --source main/migrations/postgres
 
 Expected: all queue configuration tests pass and SQLx lists `202607170001` as a valid pending migration.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add main/migrations/postgres/202607170001_add_execution_queue.sql \
