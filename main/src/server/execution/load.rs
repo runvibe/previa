@@ -3,10 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use sqlx::Row;
 use tokio::sync::Semaphore;
 use tokio::sync::{Mutex, broadcast, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
+use uuid::Uuid;
 
 use crate::server::db::{save_load_history, upsert_load_history, upsert_runner_reservation};
 use crate::server::execution::{
@@ -23,6 +25,8 @@ use crate::server::models::{
     LoadEventContext, LoadHistoryWrite, LoadLatencyAccumulator, LoadProfile, LoadTestConfig,
     LoadTestRequest, RunnerLoadLine, RunnerLoadPlanItem, RunnerReservationUpsert,
 };
+use crate::server::queue::config::MainQueueConfig;
+use crate::server::queue::repository::{EnqueueExecution, EnqueueJob, QueueRepository};
 use crate::server::services::kubernetes_reservations::KubernetesReservationClient;
 use crate::server::state::{
     AppState, EXECUTION_SSE_BUFFER_SIZE, ExecutionCtx, ExecutionKind, LOAD_BATCH_WINDOW_MS,
@@ -88,6 +92,9 @@ pub async fn start_load_execution(
     }
     if let Some(load) = payload.load.as_ref() {
         validate_main_load_profile(load)?;
+    }
+    if let Ok(queue_config) = MainQueueConfig::from_env() {
+        return start_load_execution_queue(state, payload, transaction_id, queue_config).await;
     }
 
     let transaction_id_for_children = transaction_id.clone();
@@ -1009,6 +1016,243 @@ pub async fn start_load_execution(
         execution_id: orchestrator_execution_id,
         status: initial_status,
         completion: completion_rx,
+    })
+}
+
+async fn start_load_execution_queue(
+    state: AppState,
+    payload: LoadTestRequest,
+    transaction_id: Option<String>,
+    config: MainQueueConfig,
+) -> Result<StartedLoadExecution, StartLoadExecutionError> {
+    let Some(project_id) = payload.project_id.clone() else {
+        return Err(StartLoadExecutionError::BadRequest(
+            "projectId is required".to_owned(),
+        ));
+    };
+    let runtime_specs =
+        resolve_runtime_specs_for_execution(&state.db, Some(&project_id), &payload.specs)
+            .await
+            .map_err(|error| StartLoadExecutionError::Internal(error.to_string()))?
+            .unwrap_or_default();
+    let runtime_env_groups =
+        resolve_runtime_env_groups_for_execution(&state.db, Some(&project_id), &payload.env_groups)
+            .await
+            .map_err(|error| StartLoadExecutionError::Internal(error.to_string()))?
+            .unwrap_or_default();
+    let template_errors = validate_pipeline_templates(
+        &payload.pipeline,
+        Some(runtime_specs.as_slice()),
+        Some(runtime_env_groups.as_slice()),
+        payload.selected_env_group_slug.as_deref(),
+    );
+    if !template_errors.is_empty() {
+        return Err(StartLoadExecutionError::BadRequest(
+            template_errors.join("; "),
+        ));
+    }
+
+    let planning = dynamic_load_planning_values(
+        payload.config.as_ref(),
+        payload.load.as_ref(),
+        payload.target_rps,
+        state.rps_per_node,
+    );
+    let shard_count = planning
+        .target_rps
+        .div_ceil(state.rps_per_node.max(1))
+        .max(1) as usize;
+    let assigned_rps = split_even(planning.target_rps as usize, shard_count);
+    let assigned_requests = split_even(planning.total_requests, shard_count);
+    let assigned_concurrency = split_even(planning.concurrency, shard_count);
+    let execution_started_at_ms = now_ms();
+    let timeline_ms = payload
+        .load
+        .as_ref()
+        .and_then(|load| load.points.last())
+        .map(|point| point.at_ms)
+        .unwrap_or(86_400_000);
+    let grace_period_ms = payload
+        .load
+        .as_ref()
+        .and_then(|load| load.grace_period_ms)
+        .unwrap_or(30_000);
+    let global_deadline_ms = execution_started_at_ms
+        .saturating_add(timeline_ms)
+        .saturating_add(grace_period_ms);
+    let execution_id = Uuid::now_v7();
+    let execution_id_text = execution_id.to_string();
+    let pool_name =
+        std::env::var("PREVIA_QUEUE_DEFAULT_POOL").unwrap_or_else(|_| "default".to_owned());
+
+    let jobs = (0..shard_count)
+        .map(|shard_index| {
+            let load = payload.load.as_ref().map(|load| {
+                json!({
+                    "points": load.points,
+                    "interpolation": load.interpolation,
+                    "runnerMaxRps": assigned_rps[shard_index] as f64,
+                    "gracePeriodMs": grace_period_ms
+                })
+            });
+            let classic = payload.config.as_ref().map(|classic| {
+                json!({
+                    "totalRequests": assigned_requests[shard_index].max(1),
+                    "concurrency": assigned_concurrency[shard_index]
+                        .max(1)
+                        .min(assigned_requests[shard_index].max(1)),
+                    "rampUpSeconds": classic.ramp_up_seconds
+                })
+            });
+            let job_id = Uuid::now_v7();
+            let job_payload = json!({
+                "executionStartedAtMs": execution_started_at_ms,
+                "globalDeadlineMs": global_deadline_ms,
+                "shardIndex": shard_index,
+                "shardCount": shard_count,
+                "assignedRps": assigned_rps[shard_index] as f64,
+                "pipeline": payload.pipeline,
+                "selectedBaseUrlKey": payload.selected_base_url_key,
+                "selectedEnvGroupSlug": payload.selected_env_group_slug,
+                "specs": runtime_specs,
+                "envGroups": runtime_env_groups,
+                "config": classic,
+                "load": load
+            });
+            EnqueueJob {
+                id: job_id,
+                shard_index: Some(shard_index as i32),
+                pool: pool_name.clone(),
+                requirements_json: json!({}),
+                payload_json: job_payload,
+                priority: 0,
+            }
+        })
+        .collect::<Vec<_>>();
+    let request_json = json!({
+        "pipelineId": payload.pipeline.id,
+        "targetRps": planning.target_rps,
+        "shardCount": shard_count,
+        "executionStartedAtMs": execution_started_at_ms,
+        "globalDeadlineMs": global_deadline_ms
+    });
+    let queue = QueueRepository::connect(&config.database_url, 5)
+        .await
+        .map_err(|error| StartLoadExecutionError::ServiceUnavailable(error.to_string()))?;
+    queue
+        .enqueue_execution(&EnqueueExecution {
+            id: execution_id,
+            project_id: project_id.clone(),
+            pipeline_id: None,
+            kind: "load".to_owned(),
+            request_json,
+            created_by: "api".to_owned(),
+            transaction_id,
+            max_attempts: i32::try_from(config.job_max_attempts).unwrap_or(3),
+            jobs,
+        })
+        .await
+        .map_err(|error| StartLoadExecutionError::Internal(error.to_string()))?;
+
+    let init_payload = json!({
+        "executionId": execution_id_text,
+        "status": "queued",
+        "transport": "postgres",
+        "shardCount": shard_count,
+        "targetRps": planning.target_rps
+    });
+    let (sse_tx, _) = broadcast::channel(EXECUTION_SSE_BUFFER_SIZE);
+    let context = Arc::new(ExecutionCtx {
+        cancel: CancellationToken::new(),
+        project_id,
+        pipeline_id: payload.pipeline.id,
+        kind: ExecutionKind::Load,
+        sse_tx: sse_tx.clone(),
+        init_payload: crate::server::execution::scheduler::SharedValue::new(init_payload.clone()),
+        snapshot_payload: crate::server::execution::scheduler::SharedValue::new(
+            init_payload.clone(),
+        ),
+    });
+    state
+        .executions
+        .write()
+        .await
+        .insert(execution_id_text.clone(), Arc::clone(&context));
+    let (completion_tx, completion) = oneshot::channel();
+    let monitor_execution_id = execution_id_text.clone();
+    tokio::spawn(async move {
+        let _ = send_sse_best_effort(&sse_tx, "execution:init", init_payload);
+        let mut last_event_id = 0_i64;
+        let mut cancelled = false;
+        loop {
+            if context.cancel.is_cancelled() && !cancelled {
+                let _ = queue.cancel_execution(execution_id).await;
+                cancelled = true;
+            }
+            if let Ok(events) = queue
+                .read_events_after(execution_id, last_event_id, 1_000)
+                .await
+            {
+                for event in events {
+                    last_event_id = event.id;
+                    let _ = send_sse_best_effort(&sse_tx, &event.event_type, event.payload_json);
+                }
+            }
+            let rows = sqlx::query(
+                "SELECT status, count(*) AS count
+                 FROM execution_jobs WHERE execution_id = $1 GROUP BY status",
+            )
+            .bind(execution_id)
+            .fetch_all(queue.pool())
+            .await
+            .unwrap_or_default();
+            let mut terminal_count = 0_i64;
+            let mut failed = false;
+            let mut cancelled_jobs = 0_i64;
+            for row in rows {
+                let status: String = row.get("status");
+                let count: i64 = row.get("count");
+                if matches!(
+                    status.as_str(),
+                    "completed" | "failed" | "cancelled" | "dead_letter"
+                ) {
+                    terminal_count += count;
+                }
+                failed |= matches!(status.as_str(), "failed" | "dead_letter");
+                if status == "cancelled" {
+                    cancelled_jobs += count;
+                }
+            }
+            if terminal_count == shard_count as i64 {
+                let status = if failed {
+                    "failed"
+                } else if cancelled_jobs == shard_count as i64 {
+                    "cancelled"
+                } else {
+                    "completed"
+                };
+                let snapshot = json!({
+                    "executionId": monitor_execution_id,
+                    "status": status,
+                    "shardCount": shard_count
+                });
+                context.snapshot_payload.set(snapshot.clone()).await;
+                let _ = send_sse_best_effort(&sse_tx, "execution:status", snapshot);
+                state.executions.write().await.remove(&monitor_execution_id);
+                let _ = completion_tx.send(LoadExecutionOutcome {
+                    execution_id: monitor_execution_id,
+                    status: status.to_owned(),
+                });
+                return;
+            }
+            tokio::time::sleep(config.projection_poll_interval).await;
+        }
+    });
+
+    Ok(StartedLoadExecution {
+        execution_id: execution_id_text,
+        status: "queued".to_owned(),
+        completion,
     })
 }
 

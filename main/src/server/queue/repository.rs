@@ -200,9 +200,19 @@ impl QueueRepository {
             "WITH candidate AS (
                 SELECT execution_id
                 FROM execution_snapshots
-                WHERE projection_lease_expires_at IS NULL
-                   OR projection_lease_expires_at <= CURRENT_TIMESTAMP
-                   OR projection_owner = $1
+                WHERE (
+                    projection_lease_expires_at IS NULL
+                    OR projection_lease_expires_at <= CURRENT_TIMESTAMP
+                    OR projection_owner = $1
+                )
+                  AND (
+                    status NOT IN ('completed', 'failed', 'cancelled')
+                    OR EXISTS (
+                        SELECT 1 FROM execution_events event
+                        WHERE event.execution_id = execution_snapshots.execution_id
+                          AND event.id > execution_snapshots.last_event_id
+                    )
+                  )
                 ORDER BY updated_at ASC
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
@@ -296,7 +306,6 @@ impl QueueRepository {
         .bind(lease.execution_id)
         .bind(lease.owner)
         .bind(lease.lease_epoch)
-        .bind(last_event_id)
         .bind(last_event_id)
         .bind(status)
         .bind(snapshot_json)

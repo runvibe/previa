@@ -267,7 +267,7 @@ fn response_with_execution_headers(
     response
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;

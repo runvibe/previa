@@ -363,11 +363,11 @@ git commit -m "feat: run postgres queue worker"
 - Produces `E2eJobPayload` and `E2eQueueExecutor`.
 - Main `start_e2e_execution` enqueues and returns a durable execution context without selecting runner endpoints.
 
-- [ ] **Step 1: Write failing E2E queue tests**
+- [x] **Step 1: Write failing E2E queue tests**
 
 Test that POST creation inserts one E2E job, no runner endpoint is required, step events are persisted, retry increments attempt, and a terminal result creates one history row.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run:
 
@@ -377,23 +377,23 @@ PREVIA_TEST_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/previa_test
 cargo test -p previa-runner e2e_executor
 ```
 
-- [ ] **Step 3: Implement immutable E2E payload**
+- [x] **Step 3: Implement immutable E2E payload**
 
 Payload contains pipeline, specs, env groups, selected URLs, prior results for rerun, `execution_id`, `job_id`, and `attempt`. It contains all data required by `previa-engine`; the runner never reads project tables.
 
-- [ ] **Step 4: Adapt runner engine hooks**
+- [x] **Step 4: Adapt runner engine hooks**
 
 Emit deterministic `execution:running`, `step:start`, `step:result`, error, and terminal events through `EventSink`. Return `JobOutcome::Completed(result_json)`, `Failed { retryable, error }`, or `Cancelled`.
 
-- [ ] **Step 5: Replace main E2E dispatch**
+- [x] **Step 5: Replace main E2E dispatch**
 
 Remove runner registry collection, scheduler in-memory acquire/release, and HTTP forwarding from `start_e2e_execution`. Enqueue execution/job transactionally and create the `ExecutionCtx` from durable snapshot updates.
 
-- [ ] **Step 6: Run E2E tests**
+- [x] **Step 6: Run E2E tests**
 
 Expected: focused main/runner tests pass and no E2E start path opens runner HTTP.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add runner/src/server/queue/e2e_executor.rs runner/src/server/queue \
@@ -416,31 +416,31 @@ git commit -m "feat: execute e2e jobs from postgres"
 - Produces `LoadShardJobPayload`.
 - Reuses `apply_runner_telemetry_line`, latency consolidation, and existing wave metrics.
 
-- [ ] **Step 1: Write failing shard tests**
+- [x] **Step 1: Write failing shard tests**
 
 Test exact split of RPS/wave across three shards, concurrent claims, aggregated buckets, and retry after the global clock advances without replaying expired slots.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run focused main Postgres integration test and `cargo test -p previa-runner load_executor`.
 
-- [ ] **Step 3: Implement shard payload**
+- [x] **Step 3: Implement shard payload**
 
 Include `execution_started_at_ms`, shard index/count, assigned RPS, wave profile, global deadline, grace period, pipeline/spec/env snapshots, and reservation labels.
 
-- [ ] **Step 4: Implement load executor**
+- [x] **Step 4: Implement load executor**
 
 Adapt existing classic/wave execution functions to an internal executor that publishes aggregated `RunnerLoadLine` buckets. On retry compute current elapsed time from the global execution clock and skip expired dispatch slots.
 
-- [ ] **Step 5: Replace main HTTP polling**
+- [x] **Step 5: Replace main HTTP polling**
 
 Delete `forward_runner_polled_load_chunked`, telemetry URL construction, ack handling, and polling envs. Keep pure consolidation functions in `load_batch.rs`; feed them from Postgres events.
 
-- [ ] **Step 6: Run load tests**
+- [x] **Step 6: Run load tests**
 
 Expected: split, wave, retry clock, consolidation, cancellation, and history compatibility tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add runner/src/server/queue/load_executor.rs runner/src/server/queue \
@@ -466,19 +466,19 @@ git commit -m "feat: distribute load through postgres shards"
 - Produces background `QueueRuntime::start`.
 - Produces durable snapshot subscription used by SSE and summary handlers.
 
-- [ ] **Step 1: Write failing recovery tests**
+- [x] **Step 1: Write failing recovery tests**
 
 Cover lost notify, main restart from `last_event_id`, projection lease takeover, cancellation before/after claim, exponential retry, dead letter, and retention prerequisites.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run `cargo test -p previa-main --test postgres_queue_recovery` with the Postgres test URL.
 
-- [ ] **Step 3: Implement projector**
+- [x] **Step 3: Implement projector**
 
 Use a projection lease in `execution_snapshots`; read ordered events after checkpoint; apply event and checkpoint in one transaction; publish the resulting snapshot to in-process subscribers. History insert uses execution ID idempotency.
 
-- [ ] **Step 4: Implement dispatcher and maintenance**
+- [x] **Step 4: Implement dispatcher and maintenance**
 
 Implement cancel desired state, expired lease reaper, retry promotion, stale runner marking, dead letter transition, and advisory-lock ownership. Backoff is:
 
@@ -487,19 +487,19 @@ let shift = attempt.saturating_sub(1).min(31);
 let delay = base.saturating_mul(1_u32 << shift).min(max);
 ```
 
-- [ ] **Step 5: Implement retention**
+- [x] **Step 5: Implement retention**
 
 Delete events only for terminal, fully projected executions with final history older than retention. Delete inactive runners only with no active jobs and after runner retention.
 
-- [ ] **Step 6: Wire startup and handlers**
+- [x] **Step 6: Wire startup and handlers**
 
 Start listener/projector/maintenance tasks after migrations. Cancellation updates Postgres. SSE reads persisted snapshot first and subscribes to subsequent projection changes.
 
-- [ ] **Step 7: Run recovery tests**
+- [x] **Step 7: Run recovery tests**
 
 Expected: all recovery/cancellation/retention tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add main/src/main.rs main/src/server/state.rs main/src/server/queue \

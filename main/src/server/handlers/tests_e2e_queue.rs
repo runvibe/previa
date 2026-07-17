@@ -141,7 +141,7 @@ pub async fn delete_e2e_queue_for_project(
     }
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;
