@@ -41,6 +41,9 @@ jobs:
       - name: Install app dependencies
         working-directory: app
         run: npm ci
+      - name: App build
+        working-directory: app
+        run: npm run build
       - name: Rust format
         run: cargo fmt --all -- --check
       - name: Rust lint
@@ -52,8 +55,5 @@ jobs:
       - name: App tests
         working-directory: app
         run: npm test
-      - name: App build
-        working-directory: app
-        run: npm run build
       - name: Release build
         run: cargo build --release
