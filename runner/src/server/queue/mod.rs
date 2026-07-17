@@ -1,3 +1,4 @@
+pub mod classic_load;
 pub mod config;
 pub mod e2e_executor;
 pub mod event_buffer;

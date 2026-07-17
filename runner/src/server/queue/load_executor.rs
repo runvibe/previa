@@ -6,12 +6,12 @@ use tokio_util::sync::CancellationToken;
 
 use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
 
-use crate::server::handlers::load::run_classic_load;
 use crate::server::load_wave::{sample_intensity, timeline_end_ms};
 use crate::server::models::{LoadProfile, LoadTestConfig};
 use crate::server::sse::SseMessage;
 use crate::server::wave_executor::run_wave_load;
 
+use super::classic_load::run_classic_load;
 use super::e2e_executor::E2eQueueExecutor;
 use super::repository::ClaimedJob;
 use super::worker::{EventSink, JobExecutor, JobOutcome};

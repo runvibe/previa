@@ -525,27 +525,27 @@ git commit -m "feat: project durable execution events"
 **Interfaces:**
 - Runner HTTP surface temporarily contains health/readiness/info/OpenAPI and reservation lifecycle endpoints; Task 10 moves reservation lifecycle to Postgres and removes the temporary endpoints.
 
-- [ ] **Step 1: Write failing route/OpenAPI tests**
+- [x] **Step 1: Write failing route/OpenAPI tests**
 
 Assert old execution routes return `404` and OpenAPI excludes `/tests/e2e`, `/tests/load`, `/telemetry`, `/status`, and `/cancel`, while health/info routes remain.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run `cargo test -p previa-runner server::`.
 
-- [ ] **Step 3: Remove execution handlers and in-memory load registry**
+- [x] **Step 3: Remove execution handlers and in-memory load registry**
 
 Move reusable engine calls into queue executors before deleting handler modules. Keep reservation endpoints only if the Kubernetes plugin still calls them during this task; Task 10 removes or replaces remaining direct runner control.
 
-- [ ] **Step 4: Update runner models/docs**
+- [x] **Step 4: Update runner models/docs**
 
 Remove HTTP-only request/response models after queue payload equivalents compile. Update OpenAPI paths/components.
 
-- [ ] **Step 5: Run runner tests**
+- [x] **Step 5: Run runner tests**
 
 Expected: route/OpenAPI, engine, wave, metrics, queue, and reservation tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A runner/src
