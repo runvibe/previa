@@ -1,5 +1,8 @@
 use previa_main::server::execution::split_even;
-use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob, QueueRepository};
+mod common;
+
+use common::migrated_queue_repository;
+use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -11,7 +14,7 @@ async fn load_enqueue_preserves_exact_split_across_shards() {
         eprintln!("skipping: PREVIA_TEST_POSTGRES_URL is not configured");
         return;
     };
-    let queue = QueueRepository::connect(&database_url, 4).await.unwrap();
+    let queue = migrated_queue_repository(&database_url, 4).await;
     let project_id = format!("queue-load-{}", Uuid::new_v4());
     sqlx::query(
         "INSERT INTO projects (

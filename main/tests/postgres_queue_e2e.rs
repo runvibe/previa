@@ -1,4 +1,7 @@
-use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob, QueueRepository};
+mod common;
+
+use common::migrated_queue_repository;
+use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -8,7 +11,7 @@ async fn e2e_enqueue_creates_one_job_without_a_registered_runner() {
         eprintln!("skipping: PREVIA_TEST_POSTGRES_URL is not configured");
         return;
     };
-    let queue = QueueRepository::connect(&database_url, 4).await.unwrap();
+    let queue = migrated_queue_repository(&database_url, 4).await;
     let project_id = format!("queue-e2e-{}", Uuid::new_v4());
     sqlx::query(
         "INSERT INTO projects (

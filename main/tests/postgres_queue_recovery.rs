@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use previa_main::server::queue::projector::QueueProjector;
-use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob, QueueRepository};
+mod common;
+
+use common::migrated_queue_repository;
+use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob};
 use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
@@ -12,7 +15,7 @@ async fn projector_resumes_from_checkpoint_and_writes_history_once() {
         eprintln!("skipping: PREVIA_TEST_POSTGRES_URL is not configured");
         return;
     };
-    let queue = QueueRepository::connect(&database_url, 6).await.unwrap();
+    let queue = migrated_queue_repository(&database_url, 6).await;
     let project_id = format!("queue-recovery-{}", Uuid::new_v4());
     sqlx::query(
         "INSERT INTO projects (

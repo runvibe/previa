@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob, QueueRepository};
+mod common;
+
+use common::migrated_queue_repository;
+use previa_main::server::queue::repository::{EnqueueExecution, EnqueueJob};
 use serde_json::json;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -58,9 +61,7 @@ async fn connects_only_to_postgres_queue_storage() {
         return;
     };
 
-    let repository = QueueRepository::connect(&database_url, 2)
-        .await
-        .expect("connect queue repository");
+    let repository = migrated_queue_repository(&database_url, 2).await;
     assert_eq!(
         repository
             .protocol_version()
@@ -76,9 +77,7 @@ async fn claims_are_concurrent_idempotent_and_fenced() {
         eprintln!("skipping: PREVIA_TEST_POSTGRES_URL is not configured");
         return;
     };
-    let repository = QueueRepository::connect(&database_url, 8)
-        .await
-        .expect("connect queue repository");
+    let repository = migrated_queue_repository(&database_url, 8).await;
     let pool = repository.pool();
 
     let project_id = format!("queue-test-{}", Uuid::new_v4());
