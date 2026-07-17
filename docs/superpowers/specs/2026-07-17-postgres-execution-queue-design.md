@@ -259,6 +259,7 @@ Uma linha por processo de runner:
 - `pool`: pool de capacidade;
 - `protocol_version`;
 - `version`;
+- `supported_kinds`: array contendo `e2e`, `load` ou ambos;
 - `capabilities_json`: capabilities adicionais;
 - `labels_json`: labels para matching;
 - `max_e2e_slots`;
