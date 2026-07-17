@@ -1725,7 +1725,7 @@ mod tests {
     #[tokio::test]
     async fn second_load_execution_is_marked_queued_when_runner_capacity_is_busy() {
         let runner = spawn_busy_runner().await;
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")
@@ -1839,7 +1839,7 @@ mod tests {
     async fn second_load_execution_for_same_pipeline_is_queued_even_with_free_runner_capacity() {
         let first_runner = spawn_busy_runner().await;
         let second_runner = spawn_busy_runner().await;
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")

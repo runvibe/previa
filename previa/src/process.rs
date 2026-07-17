@@ -38,7 +38,7 @@ pub struct ForegroundStack {
 }
 
 pub fn validate_startup_bindings(config: &ResolvedUpConfig) -> Result<()> {
-    for conflict in startup_binding_conflicts(config) {
+    if let Some(conflict) = startup_binding_conflicts(config).into_iter().next() {
         bail!("{}", conflict_message(&conflict));
     }
     Ok(())

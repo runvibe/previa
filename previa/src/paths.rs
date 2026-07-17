@@ -16,7 +16,6 @@ pub struct StackPaths {
     pub main_env: PathBuf,
     pub runner_env: PathBuf,
     pub main_data_dir: PathBuf,
-    pub orchestrator_db: PathBuf,
     pub runner_logs_dir: PathBuf,
     pub main_log: PathBuf,
     pub run_dir: PathBuf,
@@ -68,7 +67,6 @@ impl PreviaPaths {
             name: name.to_owned(),
             main_env: config_dir.join("main.env"),
             runner_env: config_dir.join("runner.env"),
-            orchestrator_db: main_data_dir.join("orchestrator.db"),
             main_log: logs_dir.join("main.log"),
             runtime_file: run_dir.join("state.json"),
             lock_file: run_dir.join("lock"),
@@ -124,10 +122,6 @@ fn absolutize(path: PathBuf) -> Result<PathBuf> {
     Ok(env::current_dir()
         .context("failed to read current directory")?
         .join(path))
-}
-
-pub fn sqlite_database_url(path: &Path) -> String {
-    format!("sqlite://{}", path.display())
 }
 
 fn resolve_binary(

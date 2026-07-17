@@ -184,7 +184,6 @@ mod tests {
             main_env: PathBuf::from("/tmp/previa/default/config/main.env"),
             runner_env: PathBuf::from("/tmp/previa/default/config/runner.env"),
             main_data_dir: PathBuf::from("/tmp/previa/default/data/main"),
-            orchestrator_db: PathBuf::from("/tmp/previa/default/data/main/orchestrator.db"),
             runner_logs_dir: PathBuf::from("/tmp/previa/default/logs/runners"),
             main_log: PathBuf::from("/tmp/previa/default/logs/main.log"),
             run_dir: PathBuf::from("/tmp/previa/default/run"),

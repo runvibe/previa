@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: previa_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d previa_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PREVIA_TEST_POSTGRES_URL: postgres://postgres:postgres@127.0.0.1:5432/previa_test
+      PREVIA_MAIN_SKIP_APP_BUILD: "1"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: clippy,rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+      - name: Rust format
+        run: cargo fmt --all -- --check
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets
+      - name: Rust tests
+        run: cargo test --workspace
+      - name: OpenAPI client contract
+        run: python3 scripts/check_openapi_client_contract.py
+      - name: App tests
+        working-directory: app
+        run: npm test
+      - name: App build
+        working-directory: app
+        run: npm run build
+      - name: Release build
+        run: cargo build --release

@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use k8s_openapi::api::apps::v1::{StatefulSet, StatefulSetSpec};
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, HTTPGetAction,
-    PodAffinityTerm, PodAntiAffinity, PodSecurityContext, PodSpec, PodTemplateSpec, Probe,
-    ResourceRequirements, SecurityContext, Service, ServicePort, ServiceSpec, Toleration, Volume,
-    VolumeMount,
+    Capabilities, Container, ContainerPort, EmptyDirVolumeSource, EnvVar, EnvVarSource,
+    HTTPGetAction, PodAffinityTerm, PodAntiAffinity, PodSecurityContext, PodSpec, PodTemplateSpec,
+    Probe, ResourceRequirements, SecretKeySelector, SecurityContext, Service, ServicePort,
+    ServiceSpec, Toleration, Volume, VolumeMount,
 };
 use k8s_openapi::api::policy::v1::{PodDisruptionBudget, PodDisruptionBudgetSpec};
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
@@ -293,7 +293,7 @@ pub fn build_runner_pdb(
 }
 
 fn runner_container(config: &PluginConfig, spec: &RunnerReservationSpec) -> Container {
-    let mut env = vec![
+    let env = vec![
         EnvVar {
             name: "ADDRESS".to_owned(),
             value: Some("0.0.0.0".to_owned()),
@@ -310,23 +310,43 @@ fn runner_container(config: &PluginConfig, spec: &RunnerReservationSpec) -> Cont
             ..Default::default()
         },
         EnvVar {
-            name: "PREVIA_RESERVATION_ID".to_owned(),
+            name: "PREVIA_QUEUE_DATABASE_URL".to_owned(),
+            value_from: Some(EnvVarSource {
+                secret_key_ref: Some(SecretKeySelector {
+                    name: config.runner_queue_secret_name.clone(),
+                    key: config.runner_queue_secret_key.clone(),
+                    optional: Some(false),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "PREVIA_RUNNER_POOL".to_owned(),
+            value: Some(config.runner_pool.clone()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "PREVIA_RUNNER_SUPPORTED_KINDS".to_owned(),
+            value: Some("e2e,load".to_owned()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "PREVIA_RUNNER_NAME".to_owned(),
             value: Some(spec.reservation_id.clone()),
             ..Default::default()
         },
         EnvVar {
-            name: "PREVIA_RESERVATION_TOKEN".to_owned(),
-            value: Some(spec.reservation_token.clone()),
+            name: "PREVIA_RUNNER_MAX_E2E_SLOTS".to_owned(),
+            value: Some("1".to_owned()),
+            ..Default::default()
+        },
+        EnvVar {
+            name: "PREVIA_RUNNER_MAX_LOAD_SLOTS".to_owned(),
+            value: Some("1".to_owned()),
             ..Default::default()
         },
     ];
-    if let Some(expires_at) = spec.expires_at.as_deref() {
-        env.push(EnvVar {
-            name: "PREVIA_RESERVATION_EXPIRES_AT".to_owned(),
-            value: Some(expires_at.to_owned()),
-            ..Default::default()
-        });
-    }
 
     Container {
         name: "previa-runner".to_owned(),

@@ -27,20 +27,21 @@ The `previa` CLI is the local entry point for running a Previa stack on your mac
 Previa combines local runtime operations with project-scoped API testing workflows:
 
 - `previa` runs and manages the local stack
-- `previa-main` is the orchestrator API for projects, specs, pipelines, history, proxying, queues, and MCP
-- `previa-runner` executes E2E and load tests
+- `previa-main` is the orchestrator API and durable Postgres queue owner
+- `previa-runner` claims and executes E2E/load jobs from Postgres
 - the browser IDE is served by `previa-main`; external builds can point to a main API with `VITE_PREVIA_API_BASE_URL`
 
 In practice, the flow looks like this:
 
 ```text
-previa CLI -> previa-main -> previa-runner -> target API
+previa CLI -> previa-main -> Postgres queue <- previa-runner -> target API
 ```
 
 ## Agent Loop
 
 ```text
-agent -> MCP/API -> previa-main -> previa-runner -> target API -> structured execution result -> agent
+agent -> MCP/API -> previa-main -> Postgres queue <- previa-runner -> target API
+                         ^ durable result/events ------------------|
 ```
 
 Use Previa when an agent needs to verify a real workflow:
@@ -110,7 +111,8 @@ Start a Docker-backed stack:
 previa up -d
 ```
 
-This is the general cross-platform path when Docker is available.
+This is the general cross-platform path. It provisions Postgres 17 with
+persistent data and separate main/runner credentials.
 
 Start a binary-backed stack without Docker:
 
@@ -119,6 +121,8 @@ previa up -d --bin
 ```
 
 This path is Linux-only and aimed at local runtime development.
+It requires an externally managed Postgres configured with `DATABASE_URL` and
+`PREVIA_QUEUE_DATABASE_URL`.
 On macOS and Windows, the control binary is supported, but the `--bin` feature is not exposed.
 
 Inspect the runtime and open the IDE:
@@ -204,6 +208,7 @@ Recommended first reads:
 - [Getting started](docs/previa/getting-started.md)
 - [Minimal happy path](docs/previa/minimal-happy-path.md)
 - [Architecture at a glance](docs/previa/architecture.md)
+- [Postgres execution queue](docs/previa/postgres-execution-queue.md)
 - [Runtime modes](docs/previa/runtime-modes.md)
 - [Access management](docs/previa/access-management.md)
 - [Wave load tests](docs/previa/wave-load-tests.md)

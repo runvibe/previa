@@ -8,6 +8,7 @@ This is the main documentation index for Previa as an operator-facing platform a
 - [Minimal happy path](./minimal-happy-path.md)
 - [End-to-end walkthrough](./end-to-end-walkthrough.md)
 - [Architecture at a glance](./architecture.md)
+- [Postgres execution queue](./postgres-execution-queue.md)
 - [Release and install](./release-install.md)
 
 ## Core Concepts

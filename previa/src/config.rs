@@ -12,7 +12,7 @@ use crate::download::ensure_runtime_binaries;
 use crate::envfile::{
     default_main_env_map, default_runner_env_map, ensure_default_env_files, read_env_file,
 };
-use crate::paths::{PreviaPaths, StackPaths, sqlite_database_url};
+use crate::paths::{PreviaPaths, StackPaths};
 use crate::pull::normalize_image_tag;
 use crate::runtime::{DetachedRuntimeState, PortRange, RuntimeBackend};
 use crate::selectors::normalize_attach_runner;
@@ -361,10 +361,6 @@ pub async fn resolve_up_config(
     main_env
         .entry("PREVIA_APP_ENABLED".to_owned())
         .or_insert_with(|| "true".to_owned());
-    main_env
-        .entry("ORCHESTRATOR_DATABASE_URL".to_owned())
-        .or_insert_with(|| sqlite_database_url(&stack_paths.orchestrator_db));
-
     let auth_config_changed = apply_access_management_config(&mut main_env, &args)?;
 
     let mut effective_runner_auth_key = resolve_runner_auth_key(

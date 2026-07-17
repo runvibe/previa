@@ -126,7 +126,7 @@ mod tests {
     }
 
     async fn db() -> crate::server::db::DbPool {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")

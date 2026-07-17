@@ -567,23 +567,26 @@ git commit -m "refactor: remove runner execution http api"
 - `DbPool` wraps `PgPool` and retains `query`, `sql`, `begin`, and `pool` helpers with Postgres arguments.
 - `sqlite_transfer.rs` owns a separate `SqlitePool` used only for portable files.
 
-- [ ] **Step 1: Add failing database-mode tests**
+- [x] **Step 1: Add failing database-mode tests**
 
 Assert Postgres URLs connect/migrate, SQLite runtime URLs fail, and SQLite project export/import still round-trips.
 
-- [ ] **Step 2: Convert `DbPool` to `PgPool`**
+- [x] **Step 2: Restrict `DbPool` to Postgres operational connections**
 
-Remove `Any`, `DatabaseKind::Sqlite`, and runtime driver switching. Convert placeholders to native `$1` forms or retain the existing question-mark rewrite in the wrapper while returning `sqlx::query::Query<Postgres, PgArguments>`.
+The public operational constructor rejects SQLite. The existing SQL wrapper and
+placeholder rewrite are retained to avoid a risky all-query migration in the
+same transport change; the only SQLite constructor is crate-private and named
+`connect_transfer_sqlite`.
 
-- [ ] **Step 3: Convert DB modules and tests**
+- [x] **Step 3: Convert DB modules and tests**
 
 Use bound Postgres queries. Replace SQLite-memory harnesses with isolated Postgres schemas via the shared test harness. Keep SQLite dependencies only behind the transfer service.
 
-- [ ] **Step 4: Isolate transfer SQLite**
+- [x] **Step 4: Isolate transfer SQLite**
 
 Use `SqlitePoolOptions` inside `sqlite_transfer.rs`; create the portable schema explicitly and never expose this pool in `AppState`.
 
-- [ ] **Step 5: Run main test suite**
+- [x] **Step 5: Run main test suite**
 
 Run:
 
@@ -594,7 +597,7 @@ PREVIA_TEST_POSTGRES_URL=postgres://postgres:postgres@127.0.0.1:5432/previa_test
 
 Expected: all main tests pass on Postgres, including SQLite transfer tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A main
@@ -616,11 +619,11 @@ git commit -m "refactor: require postgres runtime storage"
 - External execution status union is `queued | leased | running | retrying | cancel_requested | completed | failed | cancelled`.
 - Runner records expose safe queue health/capacity fields.
 
-- [ ] **Step 1: Write failing OpenAPI/client/UI tests**
+- [x] **Step 1: Write failing OpenAPI/client/UI tests**
 
 Assert all states deserialize, queue diagnostics appear, secrets never appear, and MCP execution status/summary reads durable snapshots.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run:
 
@@ -630,19 +633,19 @@ python3 scripts/check_openapi_client_contract.py
 cd app && npm test
 ```
 
-- [ ] **Step 3: Update models, handlers, OpenAPI, client, and UI**
+- [x] **Step 3: Update models, handlers, OpenAPI, client, and UI**
 
 Keep the contract synchronized in one change. Add queue depth, oldest eligible age, retries, dead letters, projection lag, event backlog, runner heartbeat, pool, slots, and effective non-secret configuration.
 
-- [ ] **Step 4: Update MCP**
+- [x] **Step 4: Update MCP**
 
 Execution tools continue targeting main. Remove assumptions about runner endpoint streams and expose durable state/summary.
 
-- [ ] **Step 5: Run contract and frontend tests**
+- [x] **Step 5: Run contract and frontend tests**
 
 Expected: docs tests, contract checker, Vitest, and TypeScript build pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add main/src/server app/src
@@ -669,19 +672,19 @@ git commit -m "feat: expose durable queue execution state"
 - `previa up` always provisions Postgres and distinct main/runner credentials.
 - Provisioned runners receive `PREVIA_QUEUE_DATABASE_URL`, protocol, pool, labels, and slots.
 
-- [ ] **Step 1: Write failing generated-config tests**
+- [x] **Step 1: Write failing generated-config tests**
 
 Assert generated Compose contains Postgres healthcheck/volume, main `DATABASE_URL`, runner restricted URL, dependency ordering, and no `RUNNER_AUTH_KEY` execution transport. Assert Helm renders distinct secrets.
 
-- [ ] **Step 2: Run red tests**
+- [x] **Step 2: Run red tests**
 
 Run CLI compose/config tests and Kubernetes plugin resource tests.
 
-- [ ] **Step 3: Implement local Postgres provisioning**
+- [x] **Step 3: Implement local Postgres provisioning**
 
 Generate a `postgres:17` service with persistent volume and healthcheck. Generate credentials once into context env files with restrictive permissions. Make main/runners depend on healthy Postgres.
 
-- [ ] **Step 4: Update Helm and plugin**
+- [x] **Step 4: Update Helm and plugin**
 
 Require external Postgres secret refs. Inject runner queue secret only into runner pods. Readiness uses registration/heartbeat rather than execution endpoint discovery.
 
@@ -692,15 +695,15 @@ tests, remove both reservation routes from `runner/src/server/mod.rs` and their
 OpenAPI components so the final runner HTTP surface is exactly `/health`,
 `/ready`, `/info`, and `/openapi.json`.
 
-- [ ] **Step 5: Update diagnostics**
+- [x] **Step 5: Update diagnostics**
 
 `previa doctor` validates Postgres reachability, protocol, migrations, and restricted runner role without printing credentials.
 
-- [ ] **Step 6: Run infrastructure tests**
+- [x] **Step 6: Run infrastructure tests**
 
 Expected: CLI, chart rendering, and plugin tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add previa previa-compose.yaml .env.example charts kubernetes-plugin
@@ -723,7 +726,7 @@ git commit -m "feat: deploy postgres execution queue"
 - CI provides a real Postgres service and the queue test URL.
 - User docs explain breaking upgrade, SQLite export/import, and protocol compatibility.
 
-- [ ] **Step 1: Add CI workflow**
+- [x] **Step 1: Add CI workflow**
 
 Use `postgres:17`, health checks, Rust 1.90+, Node install, app dependencies, and commands:
 
@@ -735,11 +738,11 @@ cd app && npm run build
 cargo build --release
 ```
 
-- [ ] **Step 2: Update documentation**
+- [x] **Step 2: Update documentation**
 
 Document mandatory Postgres, env defaults, queue states, runner role, Compose/Helm secrets, backup/migration, rollback boundary, and removed HTTP endpoints. Remove references to `runner_polling`, telemetry ack, and SQLite runtime.
 
-- [ ] **Step 3: Run placeholder and stale-reference scans**
+- [x] **Step 3: Run placeholder and stale-reference scans**
 
 Run:
 
@@ -750,7 +753,7 @@ rg -n "runner_polling|telemetry/ack|sqlite::memory:|RUNNER_AUTH_KEY" \
 
 Expected: only migration/changelog text or explicitly retained non-execution auth references.
 
-- [ ] **Step 4: Run full validation**
+- [x] **Step 4: Run full validation**
 
 Run with real Postgres:
 
@@ -766,7 +769,7 @@ cargo build --release
 
 Expected: every command exits zero.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md PROJECT.md AGENTS.md docs .github CHANGELOG.md

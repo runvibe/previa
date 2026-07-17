@@ -7,8 +7,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use previa_main::server::db::{
-    DatabaseKind, DbPool, backfill_project_spec_md5_hashes, cancel_stale_e2e_queues,
-    seed_env_runner_records,
+    DbPool, backfill_project_spec_md5_hashes, cancel_stale_e2e_queues, seed_env_runner_records,
 };
 use previa_main::server::execution::{SchedulerConfig, parse_runner_endpoints};
 use previa_main::server::mcp::models::McpConfig;
@@ -93,9 +92,6 @@ async fn main() {
     let db = DbPool::connect(&database_url, 5)
         .await
         .expect("failed to connect orchestrator database");
-    if db.kind() != DatabaseKind::Postgres {
-        panic!("the operational database must use Postgres");
-    }
     sqlx::migrate!("./migrations/postgres")
         .run(db.pool())
         .await

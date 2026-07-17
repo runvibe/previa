@@ -15,7 +15,7 @@ use crate::server::handlers::env_groups::{
     list_project_env_groups, upsert_project_env_group,
 };
 use crate::server::handlers::executions::{
-    cancel_execution, stream_execution, stream_execution_events,
+    cancel_execution, queue_diagnostics, stream_execution, stream_execution_events,
 };
 use crate::server::handlers::health::{get_info, health, openapi_json};
 use crate::server::handlers::history_e2e::{
@@ -126,6 +126,7 @@ pub fn build_app_with_config(
             "/api/v1/executions/{executionId}/cancel",
             post(cancel_execution),
         )
+        .route("/api/v1/queue/diagnostics", get(queue_diagnostics))
         .route(
             "/api/v1/executions/{executionId}/events",
             get(stream_execution_events),
@@ -301,7 +302,7 @@ mod tests {
     use super::{AppConfig, build_app_with_config};
 
     async fn test_app(mcp_enabled: bool) -> axum::Router {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")
@@ -331,7 +332,7 @@ mod tests {
     }
 
     async fn test_app_with_config(app_config: AppConfig) -> axum::Router {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")
@@ -365,7 +366,7 @@ mod tests {
         auth: AuthRuntime,
         app_config: AppConfig,
     ) -> axum::Router {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")
@@ -396,7 +397,7 @@ mod tests {
     }
 
     async fn test_app_with_auth(auth: AuthRuntime) -> axum::Router {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")
@@ -1344,7 +1345,7 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_resources_list_and_read_return_project_pipeline_and_spec_json() {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")

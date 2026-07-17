@@ -4,8 +4,6 @@ use axum::middleware::Next;
 use axum::response::Response;
 use uuid::Uuid;
 
-use previa_runner::Pipeline;
-
 pub const TRANSACTION_ID_HEADER: &str = "x-transaction-id";
 
 pub async fn propagate_transaction_header(
@@ -39,17 +37,4 @@ pub fn extract_transaction_id(headers: &HeaderMap) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-}
-
-pub fn with_transaction_header(mut pipeline: Pipeline, transaction_id: Option<&str>) -> Pipeline {
-    let Some(transaction_id) = transaction_id else {
-        return pipeline;
-    };
-
-    for step in &mut pipeline.steps {
-        step.headers
-            .insert(TRANSACTION_ID_HEADER.to_owned(), transaction_id.to_owned());
-    }
-
-    pipeline
 }

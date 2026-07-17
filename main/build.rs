@@ -45,8 +45,8 @@ fn main() {
         .unwrap_or(false);
 
     if !skip_build {
-        run(&mut Command::new("npm").arg("ci").current_dir(&app_dir));
-        run(&mut Command::new("npm")
+        run(Command::new("npm").arg("ci").current_dir(&app_dir));
+        run(Command::new("npm")
             .arg("run")
             .arg("build")
             .current_dir(&app_dir));

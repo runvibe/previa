@@ -35,7 +35,7 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: {{ .Values.main.containerPort | quote }}
-            - name: ORCHESTRATOR_DATABASE_URL
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ required "main.database.existingSecret is required for production installs" .Values.main.database.existingSecret | quote }}

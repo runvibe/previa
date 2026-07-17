@@ -1006,6 +1006,23 @@ pub struct CancelExecutionResponse {
     pub message: String,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueDiagnosticsResponse {
+    pub protocol_version: i32,
+    pub queued_jobs: i64,
+    pub active_jobs: i64,
+    pub retry_wait_jobs: i64,
+    pub dead_letter_jobs: i64,
+    pub oldest_eligible_age_ms: i64,
+    pub event_backlog: i64,
+    pub ready_runners: i64,
+    pub stale_runners: i64,
+    pub runner_stale_after_ms: u64,
+    pub job_lease_ms: u64,
+    pub projection_poll_interval_ms: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct HistoryMetadata {
     pub project_id: Option<String>,

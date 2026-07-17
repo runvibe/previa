@@ -20,7 +20,6 @@ impl MainQueueConfig {
     pub fn from_env() -> Result<Self, String> {
         let keys = [
             "DATABASE_URL",
-            "ORCHESTRATOR_DATABASE_URL",
             "PREVIA_QUEUE_RUNNER_STALE_AFTER_MS",
             "PREVIA_QUEUE_JOB_LEASE_MS",
             "PREVIA_QUEUE_JOB_MAX_ATTEMPTS",
@@ -47,7 +46,6 @@ impl MainQueueConfig {
         let values = values.iter().copied().collect::<HashMap<_, _>>();
         let database_url = values
             .get("DATABASE_URL")
-            .or_else(|| values.get("ORCHESTRATOR_DATABASE_URL"))
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
             .ok_or_else(|| "DATABASE_URL is required and must use Postgres".to_owned())?;

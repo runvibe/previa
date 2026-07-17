@@ -11,7 +11,6 @@ use crate::server::middleware::transaction::propagate_transaction_header;
 use crate::server::state::AppState;
 
 pub mod docs;
-pub mod errors;
 pub mod handlers;
 pub mod load_dispatch;
 pub mod load_wave;

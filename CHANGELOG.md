@@ -2,6 +2,23 @@
 
 All notable changes to Previa are documented in this file.
 
+## Unreleased
+
+### Breaking changes
+
+- Require Postgres for all `previa-main` operational state; SQLite is now only
+  a project import/export format.
+- Replace main-to-runner HTTP execution and telemetry transport with a durable,
+  fenced Postgres job/event queue.
+- Reduce runner HTTP routes to health, readiness, info, and OpenAPI.
+
+### Features
+
+- Add queue leases, retries, cancellation, recovery, projection, retention,
+  runner heartbeats, load shards, diagnostics, Compose provisioning, Helm
+  secret injection, and real-Postgres CI coverage.
+- Add validated environment defaults for all queue timing and buffer settings.
+
 ## [v1.0.0-alpha.41] - 2026-05-29
 
 ### Features

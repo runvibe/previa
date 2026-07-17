@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use assert_cmd::prelude::*;
 use tempfile::TempDir;
-use uuid::Uuid;
 
 #[cfg(target_os = "linux")]
 const TEST_BINARY_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -1683,7 +1682,7 @@ fn relative_home_override_is_resolved_from_current_directory() {
 }
 
 #[test]
-fn up_process_runner_auth_key_overrides_compose_and_env_files() {
+fn up_does_not_put_legacy_runner_auth_key_in_generated_execution_transport() {
     if !python3_available() {
         return;
     }
@@ -1737,18 +1736,26 @@ runners:
         .success();
 
     let generated = read_generated_compose(temp.path(), "default");
-    assert_eq!(
-        generated["services"]["main"]["environment"]["RUNNER_AUTH_KEY"],
-        "process-key"
+    assert!(generated["services"]["main"]["environment"]["RUNNER_AUTH_KEY"].is_null());
+    assert!(
+        generated["services"][format!("runner-{runner_port}")]["environment"]["RUNNER_AUTH_KEY"]
+            .is_null()
     );
-    assert_eq!(
-        generated["services"][format!("runner-{runner_port}")]["environment"]["RUNNER_AUTH_KEY"],
-        "process-key"
+    assert!(
+        generated["services"]["main"]["environment"]["DATABASE_URL"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("postgres://previa_main:"))
+    );
+    assert!(
+        generated["services"][format!("runner-{runner_port}")]["environment"]
+            ["PREVIA_QUEUE_DATABASE_URL"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("postgres://previa_runner_queue:"))
     );
 }
 
 #[test]
-fn up_auto_generates_runner_auth_key_for_local_runners() {
+fn up_auto_generates_distinct_postgres_credentials_for_local_runners() {
     let temp = setup_fake_docker();
     let main_port = find_free_port();
     let runner_port = find_free_port();
@@ -1770,35 +1777,35 @@ fn up_auto_generates_runner_auth_key_for_local_runners() {
         .success();
 
     let generated = read_generated_compose(temp.path(), "default");
-    let main_key = generated["services"]["main"]["environment"]["RUNNER_AUTH_KEY"]
+    let main_url = generated["services"]["main"]["environment"]["DATABASE_URL"]
         .as_str()
-        .expect("main runner auth key");
-    let runner_key =
-        generated["services"][format!("runner-{runner_port}")]["environment"]["RUNNER_AUTH_KEY"]
-            .as_str()
-            .expect("runner auth key");
+        .expect("main database URL");
+    let runner_url = generated["services"][format!("runner-{runner_port}")]["environment"]
+        ["PREVIA_QUEUE_DATABASE_URL"]
+        .as_str()
+        .expect("runner queue database URL");
+    assert_ne!(main_url, runner_url);
+    assert!(main_url.contains("previa_main:"));
+    assert!(runner_url.contains("previa_runner_queue:"));
 
-    assert_eq!(main_key, runner_key);
-    assert!(Uuid::parse_str(main_key).is_ok());
-
-    let main_env_key = read_env_var(
+    let main_password = read_env_var(
         &temp.path().join("stacks/default/config/main.env"),
-        "RUNNER_AUTH_KEY",
+        "PREVIA_POSTGRES_PASSWORD",
     )
-    .expect("main env key");
-    let runner_env_key = read_env_var(
-        &temp.path().join("stacks/default/config/runner.env"),
-        "RUNNER_AUTH_KEY",
+    .expect("main database password");
+    let runner_password = read_env_var(
+        &temp.path().join("stacks/default/config/main.env"),
+        "PREVIA_RUNNER_POSTGRES_PASSWORD",
     )
-    .expect("runner env key");
-
-    assert_eq!(main_env_key, main_key);
-    assert_eq!(runner_env_key, main_key);
+    .expect("runner database password");
+    assert_ne!(main_password, runner_password);
+    assert!(main_url.contains(&main_password));
+    assert!(runner_url.contains(&runner_password));
 }
 
 #[cfg(target_os = "linux")]
 #[test]
-fn up_bin_uses_generated_runner_auth_key_for_protected_runner_health_checks() {
+fn up_bin_requires_an_external_postgres_runtime() {
     if !python3_available() {
         return;
     }
@@ -1809,7 +1816,8 @@ fn up_bin_uses_generated_runner_auth_key_for_protected_runner_health_checks() {
     let runner_port = find_free_port();
 
     let mut up = cargo_bin();
-    up.env("PREVIA_HOME", temp.path())
+    let output = up
+        .env("PREVIA_HOME", temp.path())
         .args([
             "up",
             "--bin",
@@ -1825,35 +1833,10 @@ fn up_bin_uses_generated_runner_auth_key_for_protected_runner_health_checks() {
             "--runners",
             "1",
         ])
-        .assert()
-        .success();
-
-    let state: serde_json::Value = serde_json::from_slice(
-        &fs::read(temp.path().join("stacks/default/run/state.json")).expect("runtime state"),
-    )
-    .expect("runtime json");
-    let runner_auth_key = state["runner_auth_key"]
-        .as_str()
-        .expect("runner auth key in state");
-    assert!(Uuid::parse_str(runner_auth_key).is_ok());
-
-    let mut status = cargo_bin();
-    let output = status
-        .env("PREVIA_HOME", temp.path())
-        .args(["status", "--json"])
         .output()
-        .expect("status output");
-    assert!(output.status.success());
-    let status_json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("status json");
-    assert_eq!(status_json["state"], "running");
-    assert_eq!(status_json["runners"][0]["state"], "running");
-
-    let mut down = cargo_bin();
-    down.env("PREVIA_HOME", temp.path())
-        .args(["down"])
-        .assert()
-        .success();
+        .expect("up output");
+    assert!(!output.status.success());
+    assert!(!temp.path().join("stacks/default/run/state.json").exists());
 }
 
 #[test]
@@ -2742,7 +2725,12 @@ fn mcp_install_status_print_and_uninstall_codex_global() {
         .args(["mcp", "status", "codex"])
         .output()
         .expect("status output");
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "status stdout: {}\nstatus stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     assert!(stdout.contains("target: codex"));
     assert!(stdout.contains("installed: yes"));

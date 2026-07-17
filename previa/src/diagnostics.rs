@@ -4,7 +4,9 @@ use std::path::Path;
 use std::process::{Command as StdCommand, Stdio};
 
 use anyhow::{Context, Result};
+use reqwest::Client;
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::envfile::{default_main_env_map, default_runner_env_map, read_env_file};
 use crate::paths::StackPaths;
@@ -218,6 +220,69 @@ pub fn runtime_state_check(path: &Path, state: Option<&DetachedRuntimeState>) ->
             summary: "Context is not running".to_owned(),
             detail: format!("No runtime state file found at {}.", path.display()),
             action: "Run `previa up -d` to start this context.".to_owned(),
+        },
+    }
+}
+
+pub async fn check_postgres_queue(http: &Client, state: &DetachedRuntimeState) -> DiagnosticCheck {
+    let host = match state.main.address.as_str() {
+        "0.0.0.0" | "::" => "127.0.0.1",
+        value => value,
+    };
+    let url = format!("http://{host}:{}/api/v1/queue/diagnostics", state.main.port);
+    let response = match http.get(&url).send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return DiagnosticCheck {
+                id: "postgres-queue".to_owned(),
+                status: DiagnosticStatus::Error,
+                summary: "Postgres queue is unreachable".to_owned(),
+                detail: format!("Main queue diagnostics request failed: {error}"),
+                action: "Check the main and Postgres containers, then rerun `previa doctor`."
+                    .to_owned(),
+            };
+        }
+    };
+    if !response.status().is_success() {
+        return DiagnosticCheck {
+            id: "postgres-queue".to_owned(),
+            status: DiagnosticStatus::Warning,
+            summary: "Postgres queue diagnostics require API access".to_owned(),
+            detail: format!(
+                "Main returned HTTP {} without exposing database credentials.",
+                response.status()
+            ),
+            action: "Use an API token to inspect `/api/v1/queue/diagnostics`, or check main logs."
+                .to_owned(),
+        };
+    }
+
+    let payload = response.json::<Value>().await.unwrap_or(Value::Null);
+    let actual = payload
+        .get("protocolVersion")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let expected = i64::from(previa_runner::queue::QUEUE_PROTOCOL_VERSION.0);
+    let valid = actual == expected;
+    DiagnosticCheck {
+        id: "postgres-queue".to_owned(),
+        status: if valid {
+            DiagnosticStatus::Ok
+        } else {
+            DiagnosticStatus::Error
+        },
+        summary: if valid {
+            "Postgres queue is reachable and migrated".to_owned()
+        } else {
+            "Postgres queue protocol is incompatible".to_owned()
+        },
+        detail: format!(
+            "Queue diagnostics reported protocol {actual}; this CLI expects protocol {expected}."
+        ),
+        action: if valid {
+            "No action required.".to_owned()
+        } else {
+            "Upgrade or roll back main and runners together, then rerun migrations.".to_owned()
         },
     }
 }
