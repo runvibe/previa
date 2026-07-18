@@ -45,7 +45,7 @@ main:
     existingSecret: previa-main-db
     urlKey: DATABASE_URL
   image:
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
 
 kubernetesPlugin:
   database:
@@ -55,9 +55,9 @@ kubernetesPlugin:
     existingSecret: previa-runner-db
     urlKey: PREVIA_QUEUE_DATABASE_URL
   image:
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
   runnerImage:
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
   env:
     PREVIA_KARPENTER_NODE_POOL: previa-runner-small
     PREVIA_RUNNER_CPU_REQUEST: 100m
