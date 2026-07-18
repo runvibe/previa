@@ -638,18 +638,28 @@ exit 1
         let workspace = TempDir::new().expect("workspace");
         let debug_dir = workspace.path().join("target/debug");
         std::fs::create_dir_all(&debug_dir).expect("debug dir");
-        write_version_script(
-            &debug_dir.join("previa-main"),
-            "previa-main",
-            current_release_version(),
-        );
+        let workspace_binary = debug_dir.join("previa-main");
+        write_version_script(&workspace_binary, "previa-main", current_release_version());
 
         let paths = PreviaPaths {
             home: paths.home.clone(),
             workspace_root: Some(workspace.path().to_path_buf()),
         };
 
-        assert!(!should_install_binary(&paths, "previa-main").expect("should install"));
+        assert_eq!(
+            read_binary_version(&workspace_binary).as_deref(),
+            Some(current_release_version()),
+            "workspace binary should report the current CLI version"
+        );
+        let candidates = paths.binary_candidates("previa-main").expect("candidates");
+        let candidate_versions = candidates
+            .iter()
+            .map(|candidate| (candidate.clone(), read_binary_version(candidate)))
+            .collect::<Vec<_>>();
+        assert!(
+            !should_install_binary(&paths, "previa-main").expect("should install"),
+            "candidate versions: {candidate_versions:?}"
+        );
     }
 
     #[test]
