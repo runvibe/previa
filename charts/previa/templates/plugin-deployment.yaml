@@ -44,6 +44,10 @@ spec:
                   key: {{ .Values.kubernetesPlugin.database.urlKey | quote }}
             - name: PREVIA_RUNNER_IMAGE
               value: "{{ .Values.kubernetesPlugin.runnerImage.repository }}:{{ .Values.kubernetesPlugin.runnerImage.tag }}"
+            - name: PREVIA_RUNNER_QUEUE_SECRET_NAME
+              value: {{ required "kubernetesPlugin.runnerDatabase.existingSecret is required" .Values.kubernetesPlugin.runnerDatabase.existingSecret | quote }}
+            - name: PREVIA_RUNNER_QUEUE_SECRET_KEY
+              value: {{ .Values.kubernetesPlugin.runnerDatabase.urlKey | quote }}
             - name: PREVIA_RUNNER_INSTALL_ENABLED
               value: {{ .Values.kubernetesPlugin.runnerInstall.enabled | quote }}
             {{- if .Values.kubernetesPlugin.runnerInstall.urlTemplate }}

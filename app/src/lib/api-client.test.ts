@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createRunner,
   deleteRunner,
+  getQueueDiagnostics,
   loadRecordToRun,
   listRunners,
   projectEnvGroupsToRuntime,
@@ -106,6 +107,36 @@ describe("api-client runners", () => {
 
     await expect(deleteRunner(baseUrl, runner.id)).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith(`${baseUrl}/runners/${runner.id}`, { method: "DELETE" });
+  });
+});
+
+describe("api-client queue diagnostics", () => {
+  it("loads safe Postgres queue health", async () => {
+    const diagnostics = {
+      protocolVersion: 1,
+      queuedJobs: 3,
+      activeJobs: 2,
+      retryWaitJobs: 1,
+      deadLetterJobs: 0,
+      oldestEligibleAgeMs: 250,
+      eventBacklog: 4,
+      readyRunners: 2,
+      staleRunners: 1,
+      runnerStaleAfterMs: 15000,
+      jobLeaseMs: 30000,
+      projectionPollIntervalMs: 1000,
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => diagnostics,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getQueueDiagnostics(baseUrl)).resolves.toEqual(diagnostics);
+    expect(fetchMock).toHaveBeenCalledWith(`${baseUrl}/queue/diagnostics`, undefined);
+    expect(JSON.stringify(diagnostics)).not.toContain("password");
+    expect(JSON.stringify(diagnostics)).not.toContain("databaseUrl");
   });
 });
 

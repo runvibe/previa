@@ -11,11 +11,15 @@ Production installs should use an external Postgres service such as RDS or
 Aurora. The chart does not install Postgres by default and expects database URLs
 from existing Kubernetes Secrets.
 
-Use separate database URLs for `previa-main` and the Kubernetes plugin:
+Use separate URLs for `previa-main`, the restricted runner role, and the
+Kubernetes plugin:
 
 ```bash
 kubectl -n previa create secret generic previa-main-db \
-  --from-literal=ORCHESTRATOR_DATABASE_URL='postgres://previa_main:secret@postgres.example:5432/previa_main'
+  --from-literal=DATABASE_URL='postgres://previa_main:secret@postgres.example:5432/previa'
+
+kubectl -n previa create secret generic previa-runner-db \
+  --from-literal=PREVIA_QUEUE_DATABASE_URL='postgres://previa_runner_queue:secret@postgres.example:5432/previa'
 
 kubectl -n previa create secret generic previa-plugin-db \
   --from-literal=PREVIA_PLUGIN_DATABASE_URL='postgres://previa_plugin:secret@postgres.example:5432/previa_plugin'
@@ -39,7 +43,7 @@ Create a production values file:
 main:
   database:
     existingSecret: previa-main-db
-    urlKey: ORCHESTRATOR_DATABASE_URL
+    urlKey: DATABASE_URL
   image:
     tag: "1.0.0-alpha.41"
 
@@ -47,6 +51,9 @@ kubernetesPlugin:
   database:
     existingSecret: previa-plugin-db
     urlKey: PREVIA_PLUGIN_DATABASE_URL
+  runnerDatabase:
+    existingSecret: previa-runner-db
+    urlKey: PREVIA_QUEUE_DATABASE_URL
   image:
     tag: "1.0.0-alpha.41"
   runnerImage:

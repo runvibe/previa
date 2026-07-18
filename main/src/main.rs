@@ -1,5 +1,3 @@
-mod server;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -8,15 +6,17 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::server::db::{
-    DatabaseKind, DbPool, backfill_project_spec_md5_hashes, cancel_stale_e2e_queues,
-    seed_env_runner_records,
+use previa_main::server::db::{
+    DbPool, backfill_project_spec_md5_hashes, cancel_stale_e2e_queues, seed_env_runner_records,
 };
-use crate::server::execution::{SchedulerConfig, parse_runner_endpoints};
-use crate::server::mcp::models::McpConfig;
-use crate::server::state::{AppState, DB_SCHEMA_VERSION};
-use crate::server::utils::now_iso;
-use crate::server::{AppConfig, build_app_with_config};
+use previa_main::server::execution::{SchedulerConfig, parse_runner_endpoints};
+use previa_main::server::mcp::models::McpConfig;
+use previa_main::server::queue::config::MainQueueConfig;
+use previa_main::server::queue::dispatcher::QueueRuntime;
+use previa_main::server::queue::repository::QueueRepository;
+use previa_main::server::state::{AppState, DB_SCHEMA_VERSION};
+use previa_main::server::utils::now_iso;
+use previa_main::server::{AppConfig, build_app_with_config};
 
 fn should_print_version(args: impl IntoIterator<Item = String>) -> bool {
     args.into_iter()
@@ -62,8 +62,10 @@ async fn main() {
         enabled: truthy_env("PREVIA_APP_ENABLED"),
         mcp_path: mcp_config.enabled.then(|| mcp_config.path.clone()),
     };
-    let database_url = std::env::var("ORCHESTRATOR_DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite://orchestrator.db".to_owned());
+    let queue_config = MainQueueConfig::from_env().expect(
+        "DATABASE_URL is required, must use Postgres, and must contain valid queue settings",
+    );
+    let database_url = queue_config.database_url.clone();
     let rps_per_node = std::env::var("RUNNER_RPS_PER_NODE")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -90,20 +92,23 @@ async fn main() {
     let db = DbPool::connect(&database_url, 5)
         .await
         .expect("failed to connect orchestrator database");
-    match db.kind() {
-        DatabaseKind::Sqlite => {
-            sqlx::migrate!("./migrations/sqlite")
-                .run(db.pool())
-                .await
-                .expect("failed to run sqlite orchestrator database migrations");
-        }
-        DatabaseKind::Postgres => {
-            sqlx::migrate!("./migrations/postgres")
-                .run(db.pool())
-                .await
-                .expect("failed to run postgres orchestrator database migrations");
-        }
-    }
+    sqlx::migrate!("./migrations/postgres")
+        .run(db.pool())
+        .await
+        .expect("failed to run postgres orchestrator database migrations");
+    let queue_repository = QueueRepository::connect(&database_url, 8)
+        .await
+        .expect("failed to connect Postgres execution queue");
+    let protocol = queue_repository
+        .protocol_version()
+        .await
+        .expect("failed to read Postgres queue protocol");
+    assert_eq!(
+        protocol,
+        previa_runner::queue::QUEUE_PROTOCOL_VERSION.0,
+        "Postgres queue protocol version mismatch"
+    );
+    let _queue_runtime = QueueRuntime::start(queue_repository, queue_config);
     let backfilled_spec_hashes = backfill_project_spec_md5_hashes(&db)
         .await
         .expect("failed to backfill OpenAPI spec md5 hashes");
@@ -119,13 +124,13 @@ async fn main() {
         db,
         context_name: context_name.clone(),
         runner_auth_key,
-        auth: crate::server::auth::AuthRuntime::from_config(
-            crate::server::auth::config::AuthConfig::from_env()
+        auth: previa_main::server::auth::AuthRuntime::from_config(
+            previa_main::server::auth::config::AuthConfig::from_env()
                 .expect("invalid auth configuration"),
         )
         .expect("invalid auth runtime"),
         rps_per_node,
-        scheduler: crate::server::execution::ExecutionScheduler::new(SchedulerConfig {
+        scheduler: previa_main::server::execution::ExecutionScheduler::new(SchedulerConfig {
             e2e_per_runner_limit,
             load_per_runner_limit,
         }),

@@ -1,4 +1,10 @@
-# Main and Runner Authentication
+# Main and Runner Authentication (legacy)
+
+> This page describes the pre-Postgres execution transport. Current releases
+> authenticate runner queue access with the restricted
+> `PREVIA_QUEUE_DATABASE_URL` role. Main no longer sends executions, control
+> messages, or telemetry acknowledgements to runner HTTP endpoints. See
+> [Postgres execution queue](./postgres-execution-queue.md).
 
 Previa can secure communication between `previa-main` and `previa-runner` using `RUNNER_AUTH_KEY`.
 

@@ -1,4 +1,4 @@
-use crate::server::db::DbPool;
+use crate::server::db::{DatabaseKind, DbPool};
 use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
@@ -16,8 +16,10 @@ use crate::server::execution::{
     sse_response_from_rx,
 };
 use crate::server::models::{
-    CancelExecutionResponse, ErrorResponse, OrchestratorSseEventData, SseMessage,
+    CancelExecutionResponse, ErrorResponse, OrchestratorSseEventData, QueueDiagnosticsResponse,
+    SseMessage,
 };
+use crate::server::queue::config::MainQueueConfig;
 use crate::server::services::pipeline_access::{PipelineAccess, can_access_optional_pipeline};
 use crate::server::state::{AppState, ExecutionKind};
 
@@ -28,6 +30,99 @@ struct FinishedExecutionSnapshot {
     snapshot_payload: Value,
     terminal_event: &'static str,
     terminal_payload: Value,
+}
+
+#[derive(Debug, Clone)]
+struct DurableQueueSnapshot {
+    execution_id: String,
+    project_id: String,
+    pipeline_id: Option<String>,
+    status: String,
+    version: i64,
+    snapshot: Value,
+}
+
+async fn load_durable_queue_snapshot(
+    db: &DbPool,
+    execution_id: &str,
+) -> Result<Option<DurableQueueSnapshot>, sqlx::Error> {
+    if db.kind() != DatabaseKind::Postgres {
+        return Ok(None);
+    }
+    let row = db
+        .query(
+            "SELECT CAST(execution.id AS TEXT) AS execution_id,
+                    execution.project_id, execution.pipeline_id,
+                    snapshot.status, snapshot.version,
+                    CAST(snapshot.snapshot_json AS TEXT) AS snapshot_json
+             FROM executions execution
+             JOIN execution_snapshots snapshot ON snapshot.execution_id = execution.id
+             WHERE CAST(execution.id AS TEXT) = ?
+             LIMIT 1",
+        )
+        .bind(execution_id)
+        .fetch_optional(db)
+        .await?;
+    row.map(|row| {
+        let raw = row.try_get::<String, _>("snapshot_json")?;
+        Ok(DurableQueueSnapshot {
+            execution_id: row.try_get("execution_id")?,
+            project_id: row.try_get("project_id")?,
+            pipeline_id: row.try_get("pipeline_id")?,
+            status: row.try_get("status")?,
+            version: row.try_get("version")?,
+            snapshot: serde_json::from_str(&raw).unwrap_or(Value::Null),
+        })
+    })
+    .transpose()
+}
+
+fn stream_durable_queue_snapshot(db: DbPool, initial: DurableQueueSnapshot) -> Response {
+    let (tx, rx) = mpsc::unbounded_channel::<SseMessage>();
+    tokio::spawn(async move {
+        let _ = tx.send(SseMessage {
+            event: "execution:init".to_owned(),
+            data: json!({
+                "executionId": initial.execution_id,
+                "status": initial.status,
+                "transport": "postgres"
+            }),
+        });
+        let _ = tx.send(SseMessage {
+            event: "execution:snapshot".to_owned(),
+            data: initial.snapshot.clone(),
+        });
+        let execution_id = initial.execution_id;
+        let mut version = initial.version;
+        let mut status = initial.status;
+        loop {
+            if matches!(status.as_str(), "completed" | "failed" | "cancelled") {
+                let _ = tx.send(SseMessage {
+                    event: "execution:status".to_owned(),
+                    data: json!({"executionId": execution_id, "status": status}),
+                });
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let Ok(Some(next)) = load_durable_queue_snapshot(&db, &execution_id).await else {
+                return;
+            };
+            status = next.status;
+            if next.version > version {
+                version = next.version;
+                if tx
+                    .send(SseMessage {
+                        event: "execution:snapshot".to_owned(),
+                        data: next.snapshot,
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+    });
+    sse_response_from_rx(rx)
 }
 
 fn value_to_object(value: Value) -> Map<String, Value> {
@@ -377,6 +472,34 @@ pub async fn stream_execution(
         return stream_active_execution(execution).await;
     }
 
+    match load_durable_queue_snapshot(&state.db, &execution_id).await {
+        Ok(Some(snapshot)) if snapshot.project_id == project_id => {
+            match can_access_optional_pipeline(
+                &state.db,
+                &project_id,
+                snapshot.pipeline_id.as_deref(),
+                &principal,
+                PipelineAccess::Read,
+            )
+            .await
+            {
+                Ok(true) => return stream_durable_queue_snapshot(state.db.clone(), snapshot),
+                Ok(false) => return not_found_response("execution not found for project"),
+                Err(error) => {
+                    return internal_error_response(format!(
+                        "failed to authorize execution: {error}"
+                    ));
+                }
+            }
+        }
+        Ok(Some(_)) | Ok(None) => {}
+        Err(error) => {
+            return internal_error_response(format!(
+                "failed to load durable execution snapshot: {error}"
+            ));
+        }
+    }
+
     let pipeline_id =
         match load_finished_execution_pipeline_ref(&state.db, &project_id, &execution_id).await {
             Ok(pipeline_id) => pipeline_id,
@@ -488,6 +611,34 @@ pub async fn stream_execution_events(
         return stream_active_execution(execution).await;
     }
 
+    match load_durable_queue_snapshot(&state.db, &execution_id).await {
+        Ok(Some(snapshot)) => {
+            match can_access_optional_pipeline(
+                &state.db,
+                &snapshot.project_id,
+                snapshot.pipeline_id.as_deref(),
+                &principal,
+                PipelineAccess::Read,
+            )
+            .await
+            {
+                Ok(true) => return stream_durable_queue_snapshot(state.db.clone(), snapshot),
+                Ok(false) => return not_found_response("execution not found"),
+                Err(error) => {
+                    return internal_error_response(format!(
+                        "failed to authorize execution: {error}"
+                    ));
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            return internal_error_response(format!(
+                "failed to load durable execution snapshot: {error}"
+            ));
+        }
+    }
+
     let execution_ref =
         match load_finished_execution_project_pipeline_ref(&state.db, &execution_id).await {
             Ok(value) => value,
@@ -582,7 +733,86 @@ pub async fn cancel_execution(
     };
 
     let Some(execution) = execution else {
-        return not_found_response("execution not found or already finished");
+        let snapshot = match load_durable_queue_snapshot(&state.db, &execution_id).await {
+            Ok(Some(snapshot)) => snapshot,
+            Ok(None) => return not_found_response("execution not found or already finished"),
+            Err(error) => {
+                return internal_error_response(format!(
+                    "failed to load durable execution: {error}"
+                ));
+            }
+        };
+        match can_access_optional_pipeline(
+            &state.db,
+            &snapshot.project_id,
+            snapshot.pipeline_id.as_deref(),
+            &principal,
+            PipelineAccess::Run,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return forbidden_response("execution access denied"),
+            Err(error) => {
+                return internal_error_response(format!("failed to authorize execution: {error}"));
+            }
+        }
+        if matches!(
+            snapshot.status.as_str(),
+            "completed" | "failed" | "cancelled"
+        ) {
+            return not_found_response("execution not found or already finished");
+        }
+        let updated = match state
+            .db
+            .query(
+                "UPDATE executions
+                 SET desired_status = 'cancelled',
+                     status = 'cancel_requested',
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE CAST(id AS TEXT) = ?
+                   AND status NOT IN ('completed', 'failed', 'cancelled')",
+            )
+            .bind(&execution_id)
+            .execute(&state.db)
+            .await
+        {
+            Ok(result) => result.rows_affected() > 0,
+            Err(error) => {
+                return internal_error_response(format!(
+                    "failed to cancel durable execution: {error}"
+                ));
+            }
+        };
+        let _ = state
+            .db
+            .query(
+                "UPDATE execution_jobs
+                 SET status = 'cancelled',
+                     finished_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE CAST(execution_id AS TEXT) = ?
+                   AND status IN ('queued', 'retry_wait')",
+            )
+            .bind(&execution_id)
+            .execute(&state.db)
+            .await;
+        let _ = state
+            .db
+            .query("SELECT pg_notify('previa_control', ?)")
+            .bind(&execution_id)
+            .execute(&state.db)
+            .await;
+        return (
+            StatusCode::ACCEPTED,
+            Json(CancelExecutionResponse {
+                execution_id,
+                cancelled: updated,
+                already_cancelled: snapshot.status == "cancel_requested",
+                message: "cancellation requested".to_owned(),
+            }),
+        )
+            .into_response();
     };
     match can_access_optional_pipeline(
         &state.db,
@@ -617,6 +847,81 @@ pub async fn cancel_execution(
         }),
     )
         .into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/queue/diagnostics",
+    responses(
+        (
+            status = 200,
+            description = "Diagnóstico seguro da fila Postgres",
+            body = QueueDiagnosticsResponse
+        ),
+        (
+            status = 500,
+            description = "Falha ao consultar a fila",
+            body = ErrorResponse
+        )
+    )
+)]
+pub async fn queue_diagnostics(State(state): State<AppState>) -> Response {
+    let config = match MainQueueConfig::from_env() {
+        Ok(config) => config,
+        Err(error) => return internal_error_response(error),
+    };
+    let row = match state
+        .db
+        .query(
+            "SELECT
+                (SELECT protocol_version FROM queue_protocol WHERE id = 1) AS protocol_version,
+                (SELECT count(*) FROM execution_jobs WHERE status = 'queued') AS queued_jobs,
+                (SELECT count(*) FROM execution_jobs WHERE status IN ('leased', 'running')) AS active_jobs,
+                (SELECT count(*) FROM execution_jobs WHERE status = 'retry_wait') AS retry_wait_jobs,
+                (SELECT count(*) FROM execution_jobs WHERE status = 'dead_letter') AS dead_letter_jobs,
+                COALESCE((
+                    SELECT (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - min(available_at))) * 1000)::DOUBLE PRECISION
+                    FROM execution_jobs
+                    WHERE status = 'queued' AND available_at <= CURRENT_TIMESTAMP
+                ), 0) AS oldest_eligible_age_ms,
+                (
+                    SELECT count(*)
+                    FROM execution_events event
+                    LEFT JOIN execution_snapshots snapshot
+                      ON snapshot.execution_id = event.execution_id
+                    WHERE event.id > COALESCE(snapshot.last_event_id, 0)
+                ) AS event_backlog,
+                (SELECT count(*) FROM runner_instances WHERE status IN ('ready', 'busy')) AS ready_runners,
+                (SELECT count(*) FROM runner_instances WHERE status = 'stale') AS stale_runners",
+        )
+        .fetch_one(&state.db)
+        .await
+    {
+        Ok(row) => row,
+        Err(error) => {
+            return internal_error_response(format!(
+                "failed to query Postgres queue diagnostics: {error}"
+            ));
+        }
+    };
+    Json(QueueDiagnosticsResponse {
+        protocol_version: row.get("protocol_version"),
+        queued_jobs: row.get("queued_jobs"),
+        active_jobs: row.get("active_jobs"),
+        retry_wait_jobs: row.get("retry_wait_jobs"),
+        dead_letter_jobs: row.get("dead_letter_jobs"),
+        oldest_eligible_age_ms: row
+            .try_get::<f64, _>("oldest_eligible_age_ms")
+            .unwrap_or_default()
+            .max(0.0) as i64,
+        event_backlog: row.get("event_backlog"),
+        ready_runners: row.get("ready_runners"),
+        stale_runners: row.get("stale_runners"),
+        runner_stale_after_ms: config.runner_stale_after.as_millis() as u64,
+        job_lease_ms: config.job_lease.as_millis() as u64,
+        projection_poll_interval_ms: config.projection_poll_interval.as_millis() as u64,
+    })
+    .into_response()
 }
 
 #[cfg(test)]
@@ -891,7 +1196,7 @@ mod tests {
     }
 
     async fn test_state() -> AppState {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")

@@ -22,9 +22,9 @@ use crate::server::models::{
     ProjectRecord, ProjectShareAccessLevel, ProjectShareCreateRequest, ProjectShareRecord,
     ProjectSharingRecord, ProjectSpecRecord, ProjectSpecUpsertRequest, ProjectSqliteExportRequest,
     ProjectTransferQuery, ProjectUpsertRequest, ProjectVisibility, ProjectVisibilityUpdateRequest,
-    ProxyRequest, RunnerInfo, RunnerLoadLine, RunnerRecord, RunnerReservationRecord,
-    RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest, SpecUrlEntry, UserCreateRequest,
-    UserRecord, UserUpdateRequest,
+    ProxyRequest, QueueDiagnosticsResponse, RunnerInfo, RunnerLoadLine, RunnerRecord,
+    RunnerReservationRecord, RunnerRuntimeInfo, RunnerUpdateRequest, RunnerUpsertRequest,
+    SpecUrlEntry, UserCreateRequest, UserRecord, UserUpdateRequest,
 };
 
 const API_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -105,6 +105,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         crate::server::handlers::executions::stream_execution_events,
         crate::server::handlers::executions::stream_execution,
         crate::server::handlers::executions::cancel_execution,
+        crate::server::handlers::executions::queue_diagnostics,
         crate::server::handlers::history_e2e::list_e2e_history,
         crate::server::handlers::history_e2e::delete_e2e_history,
         crate::server::handlers::history_load::list_load_history,
@@ -174,6 +175,7 @@ const API_VERSION: &str = env!("CARGO_PKG_VERSION");
         HistoryOrder,
         ErrorResponse,
         CancelExecutionResponse,
+        QueueDiagnosticsResponse,
         E2eHistoryRecord,
         E2eQueueStatus,
         E2eQueuePipelineRecord,

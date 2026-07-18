@@ -1118,6 +1118,35 @@ export async function validateSpec(
 
 // ============ Execution Cancel ============
 
+export type QueueExecutionStatus =
+  | "queued"
+  | "leased"
+  | "running"
+  | "retrying"
+  | "cancel_requested"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface QueueDiagnostics {
+  protocolVersion: number;
+  queuedJobs: number;
+  activeJobs: number;
+  retryWaitJobs: number;
+  deadLetterJobs: number;
+  oldestEligibleAgeMs: number;
+  eventBacklog: number;
+  readyRunners: number;
+  staleRunners: number;
+  runnerStaleAfterMs: number;
+  jobLeaseMs: number;
+  projectionPollIntervalMs: number;
+}
+
+export async function getQueueDiagnostics(baseUrl: string): Promise<QueueDiagnostics> {
+  return request<QueueDiagnostics>(`${ensureApiPrefix(baseUrl)}/queue/diagnostics`);
+}
+
 export async function cancelExecution(baseUrl: string, executionId: string): Promise<void> {
   const url = `${ensureApiPrefix(baseUrl)}/executions/${executionId}/cancel`;
   await fetch(url, { method: "POST" }).catch(() => {});

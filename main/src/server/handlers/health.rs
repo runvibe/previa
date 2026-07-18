@@ -60,7 +60,7 @@ mod tests {
 
     #[tokio::test]
     async fn info_includes_context_name() {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         let state = AppState {

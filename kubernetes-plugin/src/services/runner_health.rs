@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -63,45 +63,19 @@ impl RunnerHealthApi for ReqwestRunnerHealth {
 
     async fn rearm_runner(
         &self,
-        endpoint: &str,
-        reservation_id: &str,
-        reservation_token: &str,
-        expires_at: Option<&str>,
+        _endpoint: &str,
+        _reservation_id: &str,
+        _reservation_token: &str,
+        _expires_at: Option<&str>,
     ) -> Result<(), RunnerHealthError> {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RearmRequest<'a> {
-            reservation_id: &'a str,
-            reservation_token: &'a str,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            expires_at: Option<&'a str>,
-        }
-
-        self.client
-            .post(format!(
-                "{}/internal/reservation/rearm",
-                endpoint.trim_end_matches('/')
-            ))
-            .json(&RearmRequest {
-                reservation_id,
-                reservation_token,
-                expires_at,
-            })
-            .send()
-            .await?
-            .error_for_status()?;
+        // Runner eligibility is now represented by its Postgres registration
+        // and StatefulSet lifecycle. No HTTP control call is necessary.
         Ok(())
     }
 
-    async fn release_runner(&self, endpoint: &str) -> Result<(), RunnerHealthError> {
-        self.client
-            .post(format!(
-                "{}/internal/reservation/release",
-                endpoint.trim_end_matches('/')
-            ))
-            .send()
-            .await?
-            .error_for_status()?;
+    async fn release_runner(&self, _endpoint: &str) -> Result<(), RunnerHealthError> {
+        // Releasing the Kubernetes reservation removes/scales the runner
+        // resources; the runner marks itself stopped on graceful shutdown.
         Ok(())
     }
 }

@@ -645,7 +645,7 @@ async fn cmd_status(paths: &PreviaPaths, http: &Client, args: StatusArgs) -> Res
     Ok(())
 }
 
-async fn cmd_doctor(paths: &PreviaPaths, _http: &Client, args: DoctorArgs) -> Result<()> {
+async fn cmd_doctor(paths: &PreviaPaths, http: &Client, args: DoctorArgs) -> Result<()> {
     let stack_name = parse_stack_name(&args.context)?;
     let stack_paths = paths.stack(&stack_name);
     let state = read_runtime_state(&stack_paths)?;
@@ -666,6 +666,8 @@ async fn cmd_doctor(paths: &PreviaPaths, _http: &Client, args: DoctorArgs) -> Re
             targets.runner.port,
             "runner",
         ));
+    } else if let Some(state) = state.as_ref() {
+        checks.push(diagnostics::check_postgres_queue(http, state).await);
     }
 
     let report = diagnostics::DoctorReport {

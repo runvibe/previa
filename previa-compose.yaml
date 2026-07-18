@@ -5,6 +5,7 @@ main:
   env:
     MCP_ENABLED: "true"
     RUST_LOG: info
+    PREVIA_QUEUE_JOB_LEASE_MS: "30000"
 runners:
   local:
     address: 127.0.0.1
@@ -14,3 +15,7 @@ runners:
       end: 55889
     env:
       RUST_LOG: info
+      PREVIA_RUNNER_POOL: default
+      PREVIA_RUNNER_SUPPORTED_KINDS: e2e,load
+      PREVIA_RUNNER_MAX_E2E_SLOTS: "1"
+      PREVIA_RUNNER_MAX_LOAD_SLOTS: "1"

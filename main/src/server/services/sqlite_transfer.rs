@@ -43,7 +43,7 @@ pub async fn export_projects_to_sqlite(
         std::fs::remove_file(target_path).map_err(|err| sqlx::Error::Io(err.into()))?;
     }
 
-    let target = DbPool::connect(&sqlite_url(target_path), 1).await?;
+    let target = DbPool::connect_transfer_sqlite(&sqlite_url(target_path), 1).await?;
     sqlx::migrate!("./migrations/sqlite")
         .run(target.pool())
         .await?;
@@ -73,7 +73,7 @@ pub async fn import_projects_from_sqlite(
     source_path: &Path,
     include_history: bool,
 ) -> Result<SqliteProjectImportResponse, sqlx::Error> {
-    let source = DbPool::connect(&sqlite_url(source_path), 1).await?;
+    let source = DbPool::connect_transfer_sqlite(&sqlite_url(source_path), 1).await?;
     let project_ids = list_all_project_ids(&source).await?;
     let mut reserved_names = HashSet::new();
     let mut projects = Vec::with_capacity(project_ids.len());
@@ -241,7 +241,9 @@ mod tests {
     use crate::server::models::{ProjectListQuery, ProjectMetadataUpsertRequest};
 
     async fn migrated_db(url: &str) -> DbPool {
-        let db = DbPool::connect(url, 1).await.expect("connect db");
+        let db = DbPool::connect_test_sqlite(url, 1)
+            .await
+            .expect("connect db");
         sqlx::migrate!("./migrations/sqlite")
             .run(db.pool())
             .await

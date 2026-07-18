@@ -929,29 +929,42 @@ fn write_toml_document(path: &Path, document: &DocumentMut) -> Result<()> {
 fn codex_entry_exists(document: &DocumentMut, name: &str) -> bool {
     document
         .get("mcp_servers")
-        .is_some_and(|_| !document["mcp_servers"][name].is_none())
+        .and_then(Item::as_table)
+        .is_some_and(|servers| servers.contains_key(name))
 }
 
 fn codex_entry_url(document: &DocumentMut, name: &str) -> Option<String> {
-    document.get("mcp_servers").and_then(|_| {
-        document["mcp_servers"][name]["url"]
-            .as_str()
-            .map(ToOwned::to_owned)
-    })
+    document
+        .get("mcp_servers")
+        .and_then(Item::as_table)
+        .and_then(|servers| servers.get(name))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("url"))
+        .and_then(Item::as_str)
+        .map(ToOwned::to_owned)
 }
 
 fn codex_entry_enabled(document: &DocumentMut, name: &str) -> Option<bool> {
     document
         .get("mcp_servers")
-        .and_then(|_| document["mcp_servers"][name]["enabled"].as_bool())
+        .and_then(Item::as_table)
+        .and_then(|servers| servers.get(name))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("enabled"))
+        .and_then(Item::as_bool)
 }
 
 fn codex_entry_authorization(document: &DocumentMut, name: &str) -> Option<String> {
-    document.get("mcp_servers").and_then(|_| {
-        document["mcp_servers"][name]["headers"]["Authorization"]
-            .as_str()
-            .map(ToOwned::to_owned)
-    })
+    document
+        .get("mcp_servers")
+        .and_then(Item::as_table)
+        .and_then(|servers| servers.get(name))
+        .and_then(Item::as_table)
+        .and_then(|entry| entry.get("headers"))
+        .and_then(Item::as_table)
+        .and_then(|headers| headers.get("Authorization"))
+        .and_then(Item::as_str)
+        .map(ToOwned::to_owned)
 }
 
 fn read_json_document(path: &Path) -> Result<Map<String, Value>> {

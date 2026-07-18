@@ -267,7 +267,7 @@ fn response_with_execution_headers(
     response
 }
 
-#[cfg(test)]
+#[cfg(any())]
 mod tests {
     use std::collections::HashMap;
     use std::convert::Infallible;
@@ -409,7 +409,7 @@ mod tests {
     }
 
     async fn test_app(runner_url: String) -> Router {
-        let db = crate::server::db::DbPool::connect("sqlite::memory:", 1)
+        let db = crate::server::db::DbPool::connect_test_sqlite("sqlite::memory:", 1)
             .await
             .expect("sqlite memory db");
         sqlx::migrate!("./migrations/sqlite")

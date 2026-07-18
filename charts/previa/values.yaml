@@ -15,7 +15,7 @@ main:
   containerPort: 5588
   database:
     existingSecret: ""
-    urlKey: ORCHESTRATOR_DATABASE_URL
+    urlKey: DATABASE_URL
   env:
     PREVIA_APP_ENABLED: "true"
     MCP_ENABLED: "false"
@@ -54,6 +54,9 @@ kubernetesPlugin:
   database:
     existingSecret: ""
     urlKey: PREVIA_PLUGIN_DATABASE_URL
+  runnerDatabase:
+    existingSecret: ""
+    urlKey: PREVIA_QUEUE_DATABASE_URL
   env:
     RUST_LOG: info
     PREVIA_RECONCILE_INTERVAL_MS: "1000"

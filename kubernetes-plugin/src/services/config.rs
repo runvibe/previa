@@ -30,6 +30,9 @@ pub struct PluginConfig {
     pub runner_exclusive_taint_effect: String,
     pub capacity_mode: CapacityMode,
     pub static_runner_endpoints: Vec<String>,
+    pub runner_queue_secret_name: String,
+    pub runner_queue_secret_key: String,
+    pub runner_pool: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +121,13 @@ impl PluginConfig {
             ),
             capacity_mode,
             static_runner_endpoints,
+            runner_queue_secret_name: string_value(&values, "PREVIA_RUNNER_QUEUE_SECRET_NAME", ""),
+            runner_queue_secret_key: string_value(
+                &values,
+                "PREVIA_RUNNER_QUEUE_SECRET_KEY",
+                "PREVIA_QUEUE_DATABASE_URL",
+            ),
+            runner_pool: string_value(&values, "PREVIA_RUNNER_POOL", "default"),
         }
     }
 

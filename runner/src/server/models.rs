@@ -1,106 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use previa_runner::Pipeline;
-use previa_runner::RuntimeEnvGroup;
-use previa_runner::RuntimeSpec;
-use previa_runner::StepExecutionResult;
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct E2eTestRequest {
-    pub pipeline: Pipeline,
-    pub selected_base_url_key: Option<String>,
-    pub selected_env_group_slug: Option<String>,
-    #[serde(default)]
-    pub specs: Vec<RuntimeSpec>,
-    #[serde(default)]
-    pub env_groups: Vec<RuntimeEnvGroup>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct E2eRerunFromStepRequest {
-    pub pipeline: Pipeline,
-    pub start_step_id: String,
-    #[serde(default)]
-    pub prior_results: std::collections::HashMap<String, StepExecutionResult>,
-    pub selected_env_group_slug: Option<String>,
-    #[serde(default)]
-    pub specs: Vec<RuntimeSpec>,
-    #[serde(default)]
-    pub env_groups: Vec<RuntimeEnvGroup>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTestRequest {
-    pub pipeline: Pipeline,
-    #[serde(default)]
-    pub config: Option<LoadTestConfig>,
-    #[serde(default)]
-    pub load: Option<LoadProfile>,
-    pub selected_base_url_key: Option<String>,
-    pub selected_env_group_slug: Option<String>,
-    #[serde(default)]
-    pub specs: Vec<RuntimeSpec>,
-    #[serde(default)]
-    pub env_groups: Vec<RuntimeEnvGroup>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadStartResponse {
-    pub runner_execution_id: String,
-    pub status: String,
-    pub next_seq: u64,
-    pub started_at_ms: u64,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTelemetryQuery {
-    #[serde(default)]
-    pub after_seq: Option<u64>,
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTelemetryBucket {
-    pub seq: u64,
-    pub event: String,
-    pub elapsed_ms: u64,
-    pub payload: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTelemetryResponse {
-    pub runner_execution_id: String,
-    pub status: String,
-    pub from_seq: u64,
-    pub through_seq: u64,
-    pub next_seq: u64,
-    pub buckets: Vec<LoadTelemetryBucket>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTelemetryAckRequest {
-    pub through_seq: u64,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadTelemetryAckResponse {
-    pub runner_execution_id: String,
-    pub acked_through_seq: u64,
-    pub retained_from_seq: u64,
-}
-
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LoadTestConfig {
     pub total_requests: usize,
@@ -142,15 +43,6 @@ impl Default for LoadInterpolation {
 
 fn default_load_grace_period_ms() -> u64 {
     30_000
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct E2eSummary {
-    pub total_steps: usize,
-    pub passed: usize,
-    pub failed: usize,
-    pub total_duration: u128,
 }
 
 #[derive(Debug, Serialize, Clone, ToSchema)]
@@ -426,16 +318,4 @@ pub struct RunnerInfoResponse {
     pub started_execution_count: u64,
     pub last_started_at: Option<String>,
     pub last_finished_at: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecutionInitEvent {
-    pub execution_id: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct StepStartEvent {
-    pub step_id: String,
 }

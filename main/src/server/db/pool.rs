@@ -30,7 +30,7 @@ impl DatabaseKind {
             "sqlite" => Ok(Self::Sqlite),
             "postgres" | "postgresql" => Ok(Self::Postgres),
             _ => Err(format!(
-                "unsupported ORCHESTRATOR_DATABASE_URL scheme '{}'; expected sqlite://, postgres://, or postgresql://",
+                "unsupported database URL scheme '{}'; expected postgres:// or postgresql:// for runtime, or sqlite:// for project transfer",
                 scheme
             )),
         }
@@ -51,9 +51,45 @@ impl fmt::Debug for DbPool {
 
 impl DbPool {
     pub async fn connect(database_url: &str, max_connections: u32) -> Result<Self, sqlx::Error> {
-        sqlx::any::install_default_drivers();
         let kind = DatabaseKind::from_url(database_url)
             .map_err(|err| sqlx::Error::Configuration(err.into()))?;
+        if kind != DatabaseKind::Postgres {
+            return Err(sqlx::Error::Configuration(
+                "SQLite is supported only for project import/export; DATABASE_URL must use Postgres"
+                    .into(),
+            ));
+        }
+        Self::connect_with_kind(database_url, max_connections, kind).await
+    }
+
+    pub(crate) async fn connect_transfer_sqlite(
+        database_url: &str,
+        max_connections: u32,
+    ) -> Result<Self, sqlx::Error> {
+        let kind = DatabaseKind::from_url(database_url)
+            .map_err(|err| sqlx::Error::Configuration(err.into()))?;
+        if kind != DatabaseKind::Sqlite {
+            return Err(sqlx::Error::Configuration(
+                "project transfer database must use SQLite".into(),
+            ));
+        }
+        Self::connect_with_kind(database_url, max_connections, kind).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn connect_test_sqlite(
+        database_url: &str,
+        max_connections: u32,
+    ) -> Result<Self, sqlx::Error> {
+        Self::connect_transfer_sqlite(database_url, max_connections).await
+    }
+
+    async fn connect_with_kind(
+        database_url: &str,
+        max_connections: u32,
+        kind: DatabaseKind,
+    ) -> Result<Self, sqlx::Error> {
+        sqlx::any::install_default_drivers();
         if kind == DatabaseKind::Sqlite {
             create_sqlite_file_if_missing(database_url)?;
         }
@@ -289,6 +325,14 @@ mod tests {
             DatabaseKind::Postgres
         );
         assert!(DatabaseKind::from_url("mysql://localhost/db").is_err());
+    }
+
+    #[tokio::test]
+    async fn rejects_sqlite_for_operational_database() {
+        let error = super::DbPool::connect("sqlite::memory:", 1)
+            .await
+            .expect_err("operational SQLite must be rejected");
+        assert!(error.to_string().contains("only for project import/export"));
     }
 
     #[test]

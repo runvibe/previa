@@ -10,8 +10,8 @@ use crate::config::ResolvedUpConfig;
 use crate::pull::{main_image_ref, runner_image_ref};
 use crate::runtime::{DetachedRuntimeState, LocalRunnerRuntime, MainRuntime, RuntimeBackend};
 
-const MAIN_DATA_DIR_IN_CONTAINER: &str = "/previa/data/main";
 pub const MAIN_SERVICE_NAME: &str = "main";
+pub const POSTGRES_SERVICE_NAME: &str = "postgres";
 const COMPOSE_INSTALL_GUIDANCE: &str =
     "Install Docker Desktop or Docker Engine with the Compose plugin, then run `previa doctor`.";
 
@@ -47,6 +47,23 @@ struct ComposeService {
     ports: Vec<ComposePort>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     volumes: Vec<ComposeVolume>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    depends_on: BTreeMap<String, ComposeDependency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    healthcheck: Option<ComposeHealthcheck>,
+}
+
+#[derive(Debug, Serialize)]
+struct ComposeDependency {
+    condition: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ComposeHealthcheck {
+    test: Vec<String>,
+    interval: &'static str,
+    timeout: &'static str,
+    retries: u32,
 }
 
 #[derive(Debug)]
@@ -112,6 +129,7 @@ pub fn compose_project_from_state(state: &DetachedRuntimeState) -> ComposeProjec
 }
 
 pub fn write_generated_compose(resolved: &ResolvedUpConfig) -> Result<()> {
+    write_postgres_init(resolved)?;
     let doc = compose_document(resolved)?;
     let contents =
         serde_json::to_vec_pretty(&doc).context("failed to encode generated compose file")?;
@@ -121,6 +139,30 @@ pub fn write_generated_compose(resolved: &ResolvedUpConfig) -> Result<()> {
             resolved.stack_paths.compose_file.display()
         )
     })?;
+    Ok(())
+}
+
+fn write_postgres_init(resolved: &ResolvedUpConfig) -> Result<()> {
+    let runner_password = resolved
+        .main_env
+        .get("PREVIA_RUNNER_POSTGRES_PASSWORD")
+        .cloned()
+        .unwrap_or_else(|| "previa_runner".to_owned());
+    let escaped = runner_password.replace('\'', "''");
+    let init_path = resolved.stack_paths.main_data_dir.join("postgres-init.sql");
+    std::fs::create_dir_all(&resolved.stack_paths.main_data_dir)?;
+    std::fs::write(
+        &init_path,
+        format!(
+            "DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'previa_runner_queue') THEN\n    CREATE ROLE previa_runner_queue LOGIN PASSWORD '{escaped}';\n  ELSE\n    ALTER ROLE previa_runner_queue LOGIN PASSWORD '{escaped}';\n  END IF;\nEND $$;\n"
+        ),
+    )
+    .with_context(|| format!("failed to write '{}'", init_path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&init_path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
@@ -302,26 +344,70 @@ impl ComposeProject {
 
 fn compose_document(resolved: &ResolvedUpConfig) -> Result<ComposeDocument> {
     let mut services = BTreeMap::new();
+    let main_password = resolved
+        .main_env
+        .get("PREVIA_POSTGRES_PASSWORD")
+        .cloned()
+        .unwrap_or_else(|| "previa_main".to_owned());
+    let runner_password = resolved
+        .main_env
+        .get("PREVIA_RUNNER_POSTGRES_PASSWORD")
+        .cloned()
+        .unwrap_or_else(|| "previa_runner".to_owned());
+    let main_password_url = urlencoding::encode(&main_password);
+    let runner_password_url = urlencoding::encode(&runner_password);
+    let postgres_data = resolved.stack_paths.main_data_dir.join("postgres");
+    let postgres_init = resolved.stack_paths.main_data_dir.join("postgres-init.sql");
+
+    services.insert(
+        POSTGRES_SERVICE_NAME.to_owned(),
+        ComposeService {
+            image: "postgres:17".to_owned(),
+            environment: BTreeMap::from([
+                ("POSTGRES_DB".to_owned(), "previa".to_owned()),
+                ("POSTGRES_USER".to_owned(), "previa_main".to_owned()),
+                ("POSTGRES_PASSWORD".to_owned(), main_password.clone()),
+            ]),
+            ports: Vec::new(),
+            volumes: vec![
+                ComposeVolume {
+                    kind: "bind",
+                    source: postgres_data.display().to_string(),
+                    target: "/var/lib/postgresql/data",
+                },
+                ComposeVolume {
+                    kind: "bind",
+                    source: postgres_init.display().to_string(),
+                    target: "/docker-entrypoint-initdb.d/001-runner-role.sql",
+                },
+            ],
+            depends_on: BTreeMap::new(),
+            healthcheck: Some(ComposeHealthcheck {
+                test: vec![
+                    "CMD-SHELL".to_owned(),
+                    "pg_isready -U previa_main -d previa".to_owned(),
+                ],
+                interval: "2s",
+                timeout: "5s",
+                retries: 30,
+            }),
+        },
+    );
 
     let mut main_environment = resolved.main_env.clone();
+    main_environment.remove("PREVIA_POSTGRES_PASSWORD");
+    main_environment.remove("PREVIA_RUNNER_POSTGRES_PASSWORD");
+    main_environment.remove("ORCHESTRATOR_DATABASE_URL");
+    main_environment.remove("RUNNER_ENDPOINTS");
+    main_environment.remove("RUNNER_AUTH_KEY");
     main_environment.insert("ADDRESS".to_owned(), "0.0.0.0".to_owned());
     main_environment.insert("PORT".to_owned(), resolved.main.port.to_string());
     main_environment
         .entry("PREVIA_APP_ENABLED".to_owned())
         .or_insert_with(|| "true".to_owned());
     main_environment.insert(
-        "RUNNER_ENDPOINTS".to_owned(),
-        resolved
-            .local_runner_ports
-            .iter()
-            .map(|(_, port)| format!("http://{}:{port}", runner_service_name(*port)))
-            .chain(resolved.attached_runners.iter().cloned())
-            .collect::<Vec<_>>()
-            .join(","),
-    );
-    main_environment.insert(
-        "ORCHESTRATOR_DATABASE_URL".to_owned(),
-        format!("sqlite://{MAIN_DATA_DIR_IN_CONTAINER}/orchestrator.db"),
+        "DATABASE_URL".to_owned(),
+        format!("postgres://previa_main:{main_password_url}@postgres:5432/previa"),
     );
 
     services.insert(
@@ -334,18 +420,32 @@ fn compose_document(resolved: &ResolvedUpConfig) -> Result<ComposeDocument> {
                 published: resolved.main.port,
                 host_ip: resolved.main.address.clone(),
             }],
-            volumes: vec![ComposeVolume {
-                kind: "bind",
-                source: resolved.stack_paths.main_data_dir.display().to_string(),
-                target: MAIN_DATA_DIR_IN_CONTAINER,
-            }],
+            volumes: Vec::new(),
+            depends_on: BTreeMap::from([(
+                POSTGRES_SERVICE_NAME.to_owned(),
+                ComposeDependency {
+                    condition: "service_healthy",
+                },
+            )]),
+            healthcheck: None,
         },
     );
 
     for runner in &resolved.local_runners {
         let mut environment = runner.env.clone();
+        environment.remove("RUNNER_AUTH_KEY");
         environment.insert("ADDRESS".to_owned(), "0.0.0.0".to_owned());
         environment.insert("PORT".to_owned(), runner.port.to_string());
+        environment.insert("PREVIA_RUNNER_POOL".to_owned(), "default".to_owned());
+        environment.insert(
+            "PREVIA_RUNNER_SUPPORTED_KINDS".to_owned(),
+            "e2e,load_shard".to_owned(),
+        );
+        environment.insert("PREVIA_RUNNER_SLOTS".to_owned(), "1".to_owned());
+        environment.insert(
+            "PREVIA_QUEUE_DATABASE_URL".to_owned(),
+            format!("postgres://previa_runner_queue:{runner_password_url}@postgres:5432/previa"),
+        );
 
         services.insert(
             runner_service_name(runner.port),
@@ -358,6 +458,13 @@ fn compose_document(resolved: &ResolvedUpConfig) -> Result<ComposeDocument> {
                     host_ip: runner.address.clone(),
                 }],
                 volumes: Vec::new(),
+                depends_on: BTreeMap::from([(
+                    POSTGRES_SERVICE_NAME.to_owned(),
+                    ComposeDependency {
+                        condition: "service_healthy",
+                    },
+                )]),
+                healthcheck: None,
             },
         );
     }
@@ -460,8 +567,8 @@ mod tests {
     use crate::runtime::{PortRange, RuntimeBackend};
 
     use super::{
-        ComposeCli, MAIN_SERVICE_NAME, compose_project_name, resolve_compose_cli_with,
-        runner_service_name, write_generated_compose,
+        ComposeCli, MAIN_SERVICE_NAME, POSTGRES_SERVICE_NAME, compose_project_name,
+        resolve_compose_cli_with, runner_service_name, write_generated_compose,
     };
 
     #[test]
@@ -522,6 +629,16 @@ mod tests {
         let contents = std::fs::read_to_string(PathBuf::from(&stack_paths.compose_file))
             .expect("compose contents");
         assert!(contents.contains(MAIN_SERVICE_NAME));
+        assert!(contents.contains(POSTGRES_SERVICE_NAME));
+        assert!(contents.contains("postgres:17"));
+        assert!(contents.contains("service_healthy"));
+        assert!(contents.contains("DATABASE_URL"));
+        assert!(contents.contains("PREVIA_QUEUE_DATABASE_URL"));
+        assert!(contents.contains("previa_runner_queue"));
+        assert!(contents.contains("PREVIA_RUNNER_SUPPORTED_KINDS"));
+        assert!(!contents.contains("RUNNER_AUTH_KEY"));
+        assert!(!contents.contains("RUNNER_ENDPOINTS"));
+        assert!(!contents.contains("ORCHESTRATOR_DATABASE_URL"));
         assert!(contents.contains("runner-55880"));
         assert!(contents.contains("ghcr.io/runvibe/main:latest"));
         assert!(contents.contains("ghcr.io/runvibe/runner:latest"));

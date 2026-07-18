@@ -6,7 +6,12 @@
 
 - The orchestrator API contract is generated from Rust handlers and models via `utoipa` in `main/src/server/docs.rs`, then served from `/openapi.json`. When adding or changing API routes, update the handler annotation, the `docs.rs` path/component list, and the TypeScript client in `app/src/lib/api-client.ts`.
 
-- The orchestrator database layer intentionally uses `sqlx::Any` so the same code supports SQLite and Postgres. Prefer `DbPool::query`, `DbPool::sql`, and `QueryBuilder` with bound parameters for portable SQL. Use `query!`/`query_as!` only for code that does not need the multi-backend abstraction.
+- Postgres is mandatory for operational state and the execution queue.
+  `DbPool::connect` rejects SQLite. SQLite access is private to
+  `services/sqlite_transfer.rs` for portable project import/export only.
+  Main/runner execution communication must use the fenced Postgres queue;
+  runner HTTP is operational-only (`/health`, `/ready`, `/info`,
+  `/openapi.json`).
 
 - After API client or OpenAPI route changes, validate:
   - `cargo test -p previa-main server::docs`
