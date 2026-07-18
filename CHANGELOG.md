@@ -2,6 +2,16 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.43] - 2026-07-18
+
+### Bug Fixes
+- Redact database credentials from startup logs (fcd232b)
+
+### Maintenance
+- Update release metadata for v1.0.0-alpha.42 (519aa92)
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.42...v1.0.0-alpha.43
+
 ## [v1.0.0-alpha.42] - 2026-07-18
 
 ### Features
