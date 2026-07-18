@@ -7,7 +7,7 @@ main:
   replicas: 2
   image:
     repository: ghcr.io/runvibe/main
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -45,7 +45,7 @@ kubernetesPlugin:
   replicas: 1
   image:
     repository: ghcr.io/runvibe/previa-kubernetes-plugin
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -79,7 +79,7 @@ kubernetesPlugin:
     PREVIA_RUNNER_EXCLUSIVE_TAINT_EFFECT: NoSchedule
   runnerImage:
     repository: ghcr.io/runvibe/runner
-    tag: "1.0.0-alpha.41"
+    tag: "1.0.0-alpha.42"
   runnerInstall:
     enabled: false
     urlTemplate: ""
