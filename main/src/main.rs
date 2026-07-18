@@ -42,6 +42,14 @@ fn truthy_env(key: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn database_log_label(database_url: &str) -> &'static str {
+    if database_url.starts_with("postgres://") || database_url.starts_with("postgresql://") {
+        "postgres"
+    } else {
+        "unknown"
+    }
+}
+
 #[tokio::main]
 async fn main() {
     if should_print_version(std::env::args()) {
@@ -150,7 +158,10 @@ async fn main() {
 
     info!(
         "previa-main listening on http://{} (context: {}, database: {}, schema_version: {})",
-        local_addr, context_name, database_url, DB_SCHEMA_VERSION
+        local_addr,
+        context_name,
+        database_log_label(&database_url),
+        DB_SCHEMA_VERSION
     );
     if mcp_config.enabled {
         info!(
@@ -182,7 +193,7 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_print_version;
+    use super::{database_log_label, should_print_version};
 
     #[test]
     fn detects_version_flags() {
@@ -195,5 +206,15 @@ mod tests {
             "-v".to_owned(),
         ]));
         assert!(!should_print_version(vec!["previa-main".to_owned()]));
+    }
+
+    #[test]
+    fn database_log_label_does_not_expose_credentials() {
+        let label =
+            database_log_label("postgresql://previa:super-secret@postgres.example:5432/previa");
+
+        assert_eq!(label, "postgres");
+        assert!(!label.contains("previa"));
+        assert!(!label.contains("super-secret"));
     }
 }
