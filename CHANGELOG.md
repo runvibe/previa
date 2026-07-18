@@ -2,6 +2,36 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.42] - 2026-07-18
+
+### Features
+- Deploy postgres execution queue (1ff63cb)
+- Project durable queued executions (803dcc4)
+- Run postgres queue worker (53572ad)
+- Add fenced postgres job claims (fe5b60a)
+- Add postgres execution queue schema (0b13bf5)
+- Add local json project transfer (f1e6695)
+
+### Bug Fixes
+- Build app before rust validation (bd33989)
+
+### Documentation
+- Add postgres queue implementation plan (e4575e9)
+- Redesign runner transport around postgres queue (0fb4926)
+- Specify postgres load telemetry queue (7bab233)
+
+### Refactors
+- Remove runner execution http api (4783593)
+
+### Testing
+- Migrate postgres queue fixtures (d3e6fe7)
+
+### Maintenance
+- Bump version to v1.0.0-alpha.42 (8868c04)
+- Update release metadata for v1.0.0-alpha.41 (4f5211f)
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.41...v1.0.0-alpha.42
+
 ## Unreleased
 
 ### Breaking changes
