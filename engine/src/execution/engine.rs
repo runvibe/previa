@@ -448,7 +448,7 @@ where
                         extracts: HashMap::new(),
                         assert_results: None,
                     };
-                    log_step_response(&step.id, None, result.error.as_deref());
+                    log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
 
                     if attempt < max_attempts {
                         continue;
@@ -491,7 +491,7 @@ where
                         extracts: HashMap::new(),
                         assert_results: None,
                     };
-                    log_step_response(&step.id, None, result.error.as_deref());
+                    log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
 
                     if attempt < max_attempts {
                         continue;
@@ -588,7 +588,12 @@ where
                                     extracts: HashMap::new(),
                                     assert_results: None,
                                 };
-                                log_step_response(&step.id, None, result.error.as_deref());
+                                log_step_response(
+                                    &step.id,
+                                    None,
+                                    result.error.as_deref(),
+                                    &result.extracts,
+                                );
 
                                 if attempt < max_attempts {
                                     continue;
@@ -691,7 +696,12 @@ where
                         }
                     }
 
-                    log_step_response(&step.id, result.response.as_ref(), result.error.as_deref());
+                    log_step_response(
+                        &step.id,
+                        result.response.as_ref(),
+                        result.error.as_deref(),
+                        &result.extracts,
+                    );
 
                     if (extraction_failed || assertion_failed) && attempt < max_attempts {
                         continue;
@@ -726,7 +736,7 @@ where
                         extracts: HashMap::new(),
                         assert_results: None,
                     };
-                    log_step_response(&step.id, None, result.error.as_deref());
+                    log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
 
                     if attempt < max_attempts {
                         continue;

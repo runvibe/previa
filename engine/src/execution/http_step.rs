@@ -273,7 +273,7 @@ where
                 prepared.max_attempts,
                 None,
             );
-            log_step_response(&step.id, None, result.error.as_deref());
+            log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
             Some(Err(result))
         }
     }
@@ -331,7 +331,7 @@ where
                     started.max_attempts,
                     None,
                 );
-                log_step_response(&step.id, None, result.error.as_deref());
+                log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
                 return Some(result);
             }
         }
@@ -415,7 +415,12 @@ where
         }
     }
 
-    log_step_response(&step.id, result.response.as_ref(), result.error.as_deref());
+    log_step_response(
+        &step.id,
+        result.response.as_ref(),
+        result.error.as_deref(),
+        &result.extracts,
+    );
     Some(result)
 }
 
