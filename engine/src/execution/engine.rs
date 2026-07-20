@@ -12,6 +12,7 @@ use crate::core::types::{
 use crate::execution::cancel::await_with_cancel;
 use crate::execution::http::{parse_absolute_http_url, parse_method};
 use crate::execution::logging::{log_step_request, log_step_response};
+use crate::extractions::evaluate_step_extractions;
 use crate::template::resolve::resolve_template_variables;
 
 fn noop_request_start_gate<'a>(
@@ -638,42 +639,61 @@ where
                         assert_results: None,
                     };
 
-                    let has_status_assert = has_status_assertion(step);
-                    let assert_results = evaluate_assertions(
-                        step,
-                        &result,
-                        &context,
-                        specs,
-                        env_groups,
-                        selected_env_group_slug,
-                    );
-                    let assertion_failed = assert_results.iter().any(|r| !r.passed);
-                    if !assert_results.is_empty() {
-                        if assertion_failed {
-                            result.status = "error".to_owned();
-                            let failed_count = assert_results.iter().filter(|r| !r.passed).count();
-                            result.error = Some(match result.error {
-                                Some(err) => {
-                                    format!("{} | {} assertion(s) failed", err, failed_count)
-                                }
-                                None => format!("{} assertion(s) failed", failed_count),
-                            });
-                        } else if http_error.is_some() {
-                            if has_status_assert {
-                                result.status = "success".to_owned();
-                                result.error = None;
-                            } else {
-                                result.status = "error".to_owned();
-                            }
+                    let extraction_failed = match evaluate_step_extractions(step, &result) {
+                        Ok(extracts) => {
+                            result.extracts = extracts;
+                            false
                         }
-                        result.assert_results = Some(assert_results);
-                    } else if http_error.is_some() {
-                        result.status = "error".to_owned();
+                        Err(error) => {
+                            result.status = "error".to_owned();
+                            result.error = Some(match result.error.take() {
+                                Some(existing) => format!("{existing} | {error}"),
+                                None => error,
+                            });
+                            true
+                        }
+                    };
+
+                    let mut assertion_failed = false;
+                    if !extraction_failed {
+                        let has_status_assert = has_status_assertion(step);
+                        let assert_results = evaluate_assertions(
+                            step,
+                            &result,
+                            &context,
+                            specs,
+                            env_groups,
+                            selected_env_group_slug,
+                        );
+                        assertion_failed = assert_results.iter().any(|r| !r.passed);
+                        if !assert_results.is_empty() {
+                            if assertion_failed {
+                                result.status = "error".to_owned();
+                                let failed_count =
+                                    assert_results.iter().filter(|r| !r.passed).count();
+                                result.error = Some(match result.error {
+                                    Some(err) => {
+                                        format!("{} | {} assertion(s) failed", err, failed_count)
+                                    }
+                                    None => format!("{} assertion(s) failed", failed_count),
+                                });
+                            } else if http_error.is_some() {
+                                if has_status_assert {
+                                    result.status = "success".to_owned();
+                                    result.error = None;
+                                } else {
+                                    result.status = "error".to_owned();
+                                }
+                            }
+                            result.assert_results = Some(assert_results);
+                        } else if http_error.is_some() {
+                            result.status = "error".to_owned();
+                        }
                     }
 
                     log_step_response(&step.id, result.response.as_ref(), result.error.as_deref());
 
-                    if assertion_failed && attempt < max_attempts {
+                    if (extraction_failed || assertion_failed) && attempt < max_attempts {
                         continue;
                     }
 
@@ -734,7 +754,8 @@ where
 mod tests {
     use super::*;
     use crate::core::types::{
-        Pipeline, PipelineStep, RuntimeSpec, StepAssertion, StepRequest, StepResponse,
+        Pipeline, PipelineStep, RuntimeSpec, StepAssertion, StepExecutionResult, StepExtraction,
+        StepRequest, StepResponse,
     };
     use httpmock::Method::{GET, POST};
     use httpmock::MockServer;
@@ -944,6 +965,160 @@ mod tests {
                 .as_ref()
                 .is_some_and(|err| err.contains("assertion(s) failed"))
         );
+    }
+
+    #[tokio::test]
+    async fn extracts_response_value_for_a_later_request() {
+        let server = MockServer::start_async().await;
+        let email = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/message");
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json!({"HTML": "<strong>123456</strong>"}));
+            })
+            .await;
+        let verify = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/verify")
+                    .json_body(json!({"code": "123456"}));
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json!({"accessToken": "token"}));
+            })
+            .await;
+        let pipeline = Pipeline {
+            id: None,
+            name: "Extract code".to_owned(),
+            description: None,
+            steps: vec![
+                PipelineStep {
+                    id: "email".to_owned(),
+                    name: "Read e-mail".to_owned(),
+                    description: None,
+                    method: "GET".to_owned(),
+                    url: format!("{}/message", server.base_url()),
+                    headers: HashMap::new(),
+                    body: None,
+                    operation_id: None,
+                    delay: None,
+                    retry: None,
+                    asserts: Vec::new(),
+                    extracts: vec![StepExtraction {
+                        name: "code".to_owned(),
+                        field: "body.HTML".to_owned(),
+                        regex: r"<strong>([0-9]{6})</strong>".to_owned(),
+                        group: 1,
+                        required: true,
+                    }],
+                },
+                PipelineStep {
+                    id: "verify".to_owned(),
+                    name: "Verify".to_owned(),
+                    description: None,
+                    method: "POST".to_owned(),
+                    url: format!("{}/verify", server.base_url()),
+                    headers: HashMap::from([(
+                        "content-type".to_owned(),
+                        "application/json".to_owned(),
+                    )]),
+                    body: Some(json!({"code": "{{extracts.email.code}}"})),
+                    operation_id: None,
+                    delay: None,
+                    retry: None,
+                    asserts: Vec::new(),
+                    extracts: Vec::new(),
+                },
+            ],
+        };
+
+        let results = execute_pipeline(&pipeline, None).await;
+
+        email.assert_async().await;
+        verify.assert_async().await;
+        assert_eq!(results[0].extracts.get("code"), Some(&"123456".to_owned()));
+        assert_eq!(results[1].status, "success");
+    }
+
+    #[tokio::test]
+    async fn required_extraction_failure_stops_without_leaking_response() {
+        let server = MockServer::start_async().await;
+        let next = server
+            .mock_async(|when, then| {
+                when.method(POST).path("/next");
+                then.status(204);
+            })
+            .await;
+        let pipeline = Pipeline {
+            id: None,
+            name: "Required extraction".to_owned(),
+            description: None,
+            steps: vec![
+                PipelineStep {
+                    id: "email".to_owned(),
+                    name: "Read e-mail".to_owned(),
+                    description: None,
+                    method: "GET".to_owned(),
+                    url: format!("{}/missing", server.base_url()),
+                    headers: HashMap::new(),
+                    body: None,
+                    operation_id: None,
+                    delay: None,
+                    retry: None,
+                    asserts: Vec::new(),
+                    extracts: vec![StepExtraction {
+                        name: "code".to_owned(),
+                        field: "body".to_owned(),
+                        regex: r"([0-9]{6})".to_owned(),
+                        group: 1,
+                        required: true,
+                    }],
+                },
+                PipelineStep {
+                    id: "next".to_owned(),
+                    name: "Next".to_owned(),
+                    description: None,
+                    method: "POST".to_owned(),
+                    url: format!("{}/next", server.base_url()),
+                    headers: HashMap::new(),
+                    body: None,
+                    operation_id: None,
+                    delay: None,
+                    retry: None,
+                    asserts: Vec::new(),
+                    extracts: Vec::new(),
+                },
+            ],
+        };
+
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/missing");
+                then.status(200)
+                    .header("content-type", "text/plain")
+                    .body("sensitive response without a code");
+            })
+            .await;
+
+        let results = execute_pipeline(&pipeline, None).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, "error");
+        assert!(
+            results[0]
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("required extraction 'code'"))
+        );
+        assert!(
+            !results[0]
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("sensitive response")
+        );
+        next.assert_calls_async(0).await;
     }
 
     #[tokio::test]
