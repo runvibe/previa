@@ -49,6 +49,13 @@ export interface ApiPipelineStep {
   body?: Record<string, unknown> | null;
   operationId?: string | null;
   asserts?: Array<{ field: string; operator: string; expected?: string | null }>;
+  extracts?: Array<{
+    name: string;
+    field: string;
+    regex: string;
+    group?: number;
+    required?: boolean;
+  }>;
   delay?: number | null;
   retry?: number | null;
 }
@@ -419,6 +426,7 @@ function pipelineToInput(p: Pipeline): PipelineInput {
       body: s.body ?? null,
       operationId: s.operationId ?? null,
       asserts: s.asserts?.map((a) => ({ field: a.field, operator: a.operator, expected: a.expected ?? null })),
+      extracts: s.extracts?.map((extraction) => ({ ...extraction })),
       delay: s.delay ?? null,
       retry: s.retry ?? null,
     })),
@@ -444,6 +452,7 @@ function apiPipelineToLocal(p: ApiPipeline): Pipeline {
         operator: a.operator as any,
         expected: a.expected ?? undefined,
       })),
+      extracts: s.extracts?.map((extraction) => ({ ...extraction })),
       delay: s.delay ?? undefined,
       retry: s.retry ?? undefined,
     })),

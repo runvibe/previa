@@ -674,6 +674,7 @@ mod tests {
                     attempts: None,
                     attempt: Some(1),
                     max_attempts: Some(1),
+                    extracts: Default::default(),
                     assert_results: None,
                 },
             })
@@ -755,6 +756,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: Vec::new(),
             }],
         };
@@ -811,6 +813,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: Vec::new(),
             }],
         };
@@ -865,6 +868,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: Vec::new(),
             }],
         });

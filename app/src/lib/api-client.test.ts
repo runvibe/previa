@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createRunner,
+  createPipeline,
   deleteRunner,
   getQueueDiagnostics,
   loadRecordToRun,
@@ -11,6 +12,7 @@ import {
   type LoadHistoryRecord,
   type RunnerRecord,
 } from "@/lib/api-client";
+import type { Pipeline } from "@/types/pipeline";
 import { parseApiErrorText, userFacingApiErrorMessage } from "@/lib/api-errors";
 
 const baseUrl = "http://127.0.0.1:5588/api/v1";
@@ -33,6 +35,43 @@ const runner: RunnerRecord = {
   createdAt: "2026-04-30T09:00:00Z",
   updatedAt: "2026-04-30T10:00:00Z",
 };
+
+describe("api-client pipeline extractions", () => {
+  it("round-trips extraction definitions", async () => {
+    const pipeline = {
+      name: "Extract code",
+      description: "",
+      steps: [{
+        id: "email",
+        name: "Read e-mail",
+        description: "",
+        headers: {},
+        method: "GET",
+        url: "https://example.test/message",
+        extracts: [{
+          name: "code",
+          field: "body.HTML",
+          regex: "<strong>([0-9]{6})</strong>",
+          group: 1,
+          required: true,
+        }],
+      }],
+    } as Pipeline;
+    const response = { id: "pipeline-1", ...pipeline };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => response,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const created = await createPipeline(baseUrl, "project-1", pipeline);
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body)).steps[0].extracts).toEqual(pipeline.steps[0].extracts);
+    expect((created.steps[0] as unknown as Record<string, unknown>).extracts).toEqual(pipeline.steps[0].extracts);
+  });
+});
 
 describe("api-client runners", () => {
   beforeEach(() => {

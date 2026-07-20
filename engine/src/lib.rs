@@ -1,6 +1,7 @@
 mod assertions;
 mod core;
 mod execution;
+mod extractions;
 mod template;
 
 use std::collections::HashMap;
@@ -9,7 +10,7 @@ use serde_json::Value;
 
 pub use core::types::{
     AssertionResult, Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepAssertion,
-    StepExecutionResult, StepRequest, StepResponse,
+    StepExecutionResult, StepExtraction, StepRequest, StepResponse,
 };
 pub use execution::{
     PreparedHttpStep, StartedHttpStep, complete_started_http_step_with_hook, execute_pipeline,
@@ -20,6 +21,7 @@ pub use execution::{
     prepare_http_step, send_prepared_http_step, send_prepared_http_step_with_hooks,
     start_prepared_http_step_with_hooks,
 };
+pub use extractions::{evaluate_step_extractions, validate_step_extractions};
 
 pub fn render_template_value(
     value: &Value,

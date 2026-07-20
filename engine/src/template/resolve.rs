@@ -131,6 +131,17 @@ pub(crate) fn build_template_context(
     }
     root.insert("steps".to_owned(), Value::Object(steps_map));
 
+    let mut extracts_map = Map::new();
+    for (step_id, result) in steps {
+        let values = result
+            .extracts
+            .iter()
+            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+            .collect();
+        extracts_map.insert(step_id.clone(), Value::Object(values));
+    }
+    root.insert("extracts".to_owned(), Value::Object(extracts_map));
+
     let mut specs_map = Map::new();
     if let Some(specs) = specs {
         for spec in specs {
@@ -201,7 +212,71 @@ pub(crate) fn value_to_string(value: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::RuntimeEnvGroup;
+    use crate::core::types::{RuntimeEnvGroup, StepExecutionResult, StepResponse};
+
+    fn completed_step(body: Value, extracts: HashMap<String, String>) -> StepExecutionResult {
+        StepExecutionResult {
+            step_id: "login".to_owned(),
+            status: "success".to_owned(),
+            request: None,
+            response: Some(StepResponse {
+                status: 200,
+                status_text: "OK".to_owned(),
+                headers: HashMap::new(),
+                body,
+            }),
+            error: None,
+            duration: Some(1),
+            attempts: None,
+            attempt: Some(1),
+            max_attempts: Some(1),
+            assert_results: None,
+            extracts,
+        }
+    }
+
+    #[test]
+    fn resolves_response_fields_and_extracted_values_in_parallel() {
+        let steps = HashMap::from([(
+            "login".to_owned(),
+            completed_step(
+                serde_json::json!({"token": "existing"}),
+                HashMap::from([("code".to_owned(), "123456".to_owned())]),
+            ),
+        )]);
+
+        let rendered = resolve_template_variables(
+            &serde_json::json!({
+                "old": "{{steps.login.token}}",
+                "new": "{{extracts.login.code}}"
+            }),
+            &steps,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(rendered["old"], "existing");
+        assert_eq!(rendered["new"], "123456");
+    }
+
+    #[test]
+    fn preserves_scalar_step_response_interpolation() {
+        let steps = HashMap::from([(
+            "login".to_owned(),
+            completed_step(Value::String("plain-body".to_owned()), HashMap::new()),
+        )]);
+
+        let rendered = resolve_template_variables(
+            &Value::String("{{steps.login}}".to_owned()),
+            &steps,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(rendered, Value::String("plain-body".to_owned()));
+    }
 
     #[test]
     fn resolves_explicit_env_group_url_variable() {

@@ -10,6 +10,14 @@ export interface AssertionResult {
   actual?: string;
 }
 
+export interface StepExtraction {
+  name: string;
+  field: string;
+  regex: string;
+  group?: number;
+  required?: boolean;
+}
+
 export interface PipelineStep {
   id: string;
   name: string;
@@ -20,6 +28,7 @@ export interface PipelineStep {
   body?: Record<string, unknown>;
   operationId?: string;
   asserts?: StepAssertion[];
+  extracts?: StepExtraction[];
   delay?: number;
   retry?: number;
 }
@@ -51,6 +60,7 @@ export interface StepExecutionResult {
   duration?: number;
   assertResults?: AssertionResult[];
   assertFailures?: AssertionResult[];
+  extracts?: Record<string, string>;
   attempts?: number;
   maxAttempts?: number;
   startedAt?: number;

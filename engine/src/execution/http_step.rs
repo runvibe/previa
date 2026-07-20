@@ -11,6 +11,7 @@ use crate::core::types::{
 use crate::execution::cancel::await_with_cancel;
 use crate::execution::http::{parse_absolute_http_url, parse_method};
 use crate::execution::logging::log_step_response;
+use crate::extractions::evaluate_step_extractions;
 use crate::template::resolve::resolve_template_variables;
 
 #[derive(Debug, Clone)]
@@ -272,7 +273,7 @@ where
                 prepared.max_attempts,
                 None,
             );
-            log_step_response(&step.id, None, result.error.as_deref());
+            log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
             Some(Err(result))
         }
     }
@@ -330,7 +331,7 @@ where
                     started.max_attempts,
                     None,
                 );
-                log_step_response(&step.id, None, result.error.as_deref());
+                log_step_response(&step.id, None, result.error.as_deref(), &result.extracts);
                 return Some(result);
             }
         }
@@ -363,41 +364,63 @@ where
         None,
     );
 
-    let has_status_assert = has_status_assertion(step);
-    let assert_results = evaluate_assertions(
-        step,
-        &result,
-        context,
-        specs,
-        env_groups,
-        selected_env_group_slug,
-    );
-    let assertion_failed = assert_results.iter().any(|result| !result.passed);
-    if !assert_results.is_empty() {
-        if assertion_failed {
-            result.status = "error".to_owned();
-            let failed_count = assert_results
-                .iter()
-                .filter(|result| !result.passed)
-                .count();
-            result.error = Some(match result.error {
-                Some(err) => format!("{} | {} assertion(s) failed", err, failed_count),
-                None => format!("{} assertion(s) failed", failed_count),
-            });
-        } else if http_error.is_some() {
-            if has_status_assert {
-                result.status = "success".to_owned();
-                result.error = None;
-            } else {
-                result.status = "error".to_owned();
-            }
+    let extraction_failed = match evaluate_step_extractions(step, &result) {
+        Ok(extracts) => {
+            result.extracts = extracts;
+            false
         }
-        result.assert_results = Some(assert_results);
-    } else if http_error.is_some() {
-        result.status = "error".to_owned();
+        Err(error) => {
+            result.status = "error".to_owned();
+            result.error = Some(match result.error.take() {
+                Some(existing) => format!("{existing} | {error}"),
+                None => error,
+            });
+            true
+        }
+    };
+
+    if !extraction_failed {
+        let has_status_assert = has_status_assertion(step);
+        let assert_results = evaluate_assertions(
+            step,
+            &result,
+            context,
+            specs,
+            env_groups,
+            selected_env_group_slug,
+        );
+        let assertion_failed = assert_results.iter().any(|result| !result.passed);
+        if !assert_results.is_empty() {
+            if assertion_failed {
+                result.status = "error".to_owned();
+                let failed_count = assert_results
+                    .iter()
+                    .filter(|result| !result.passed)
+                    .count();
+                result.error = Some(match result.error {
+                    Some(err) => format!("{} | {} assertion(s) failed", err, failed_count),
+                    None => format!("{} assertion(s) failed", failed_count),
+                });
+            } else if http_error.is_some() {
+                if has_status_assert {
+                    result.status = "success".to_owned();
+                    result.error = None;
+                } else {
+                    result.status = "error".to_owned();
+                }
+            }
+            result.assert_results = Some(assert_results);
+        } else if http_error.is_some() {
+            result.status = "error".to_owned();
+        }
     }
 
-    log_step_response(&step.id, result.response.as_ref(), result.error.as_deref());
+    log_step_response(
+        &step.id,
+        result.response.as_ref(),
+        result.error.as_deref(),
+        &result.extracts,
+    );
     Some(result)
 }
 
@@ -447,6 +470,7 @@ fn step_result(
         },
         attempt: Some(attempt),
         max_attempts: Some(max_attempts),
+        extracts: HashMap::new(),
         assert_results,
     }
 }
@@ -454,7 +478,7 @@ fn step_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::PipelineStep;
+    use crate::core::types::{PipelineStep, StepExtraction};
     use httpmock::Method::GET;
     use serde_json::json;
     use std::collections::HashMap;
@@ -483,6 +507,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();
@@ -500,6 +525,57 @@ mod tests {
         assert_eq!(result.step_id, "get-users");
         assert_eq!(result.status, "success");
         assert_eq!(result.response.as_ref().map(|r| r.status), Some(200));
+    }
+
+    #[tokio::test]
+    async fn prepared_step_extracts_from_text_response() {
+        let server = httpmock::MockServer::start_async().await;
+        server
+            .mock_async(|when, then| {
+                when.method(GET).path("/message");
+                then.status(200)
+                    .header("content-type", "text/html")
+                    .body("<strong>123456</strong>");
+            })
+            .await;
+        let step = PipelineStep {
+            id: "message".to_owned(),
+            name: "Read message".to_owned(),
+            description: None,
+            method: "GET".to_owned(),
+            url: format!("{}/message", server.base_url()),
+            headers: HashMap::new(),
+            body: None,
+            operation_id: None,
+            delay: None,
+            retry: None,
+            asserts: Vec::new(),
+            extracts: vec![StepExtraction {
+                name: "code".to_owned(),
+                field: "body".to_owned(),
+                regex: r"<strong>([0-9]{6})</strong>".to_owned(),
+                group: 1,
+                required: true,
+            }],
+        };
+        let context = HashMap::new();
+        let prepared = prepare_http_step(&step, &context, None, None, None, 1, 1)
+            .expect("step should prepare");
+
+        let result = send_prepared_http_step(
+            &reqwest::Client::new(),
+            prepared,
+            &step,
+            &context,
+            None,
+            None,
+            None,
+            || false,
+        )
+        .await
+        .expect("send should not be cancelled");
+
+        assert_eq!(result.extracts.get("code"), Some(&"123456".to_owned()));
     }
 
     #[tokio::test]
@@ -526,6 +602,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();
@@ -592,6 +669,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();
