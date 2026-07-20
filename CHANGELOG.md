@@ -2,6 +2,27 @@
 
 All notable changes to Previa are documented in this file.
 
+## [v1.0.0-alpha.44] - 2026-07-20
+
+### Features
+- Expose response extractions in pipeline contracts (535f510)
+- Main: validate response extraction templates (ddfe838)
+- Engine: interpolate extracted response values (7696552)
+- Engine: add response extraction contracts (0f58d35)
+
+### Bug Fixes
+- Engine: redact extracted secrets from HTTP logs (e8e7077)
+
+### Documentation
+- Plan Cobran SDX response extraction implementation (70a92fc)
+- Design Cobran SDX E2E response extraction (5018b68)
+
+### Maintenance
+- Bump version to v1.0.0-alpha.44 (cd4ba2a)
+- Update release metadata for v1.0.0-alpha.43 (f3d27ff)
+
+Full Changelog: https://github.com/runvibe/previa/compare/v1.0.0-alpha.43...v1.0.0-alpha.44
+
 ## [v1.0.0-alpha.43] - 2026-07-18
 
 ### Bug Fixes
