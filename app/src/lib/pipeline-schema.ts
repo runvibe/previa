@@ -10,6 +10,14 @@ export const StepAssertionSchema = z.object({
   expected: z.string().optional(),
 });
 
+export const StepExtractionSchema = z.object({
+  name: z.string().min(1, "name é obrigatório"),
+  field: z.string().min(1, "field é obrigatório"),
+  regex: z.string().min(1, "regex é obrigatório"),
+  group: z.number().int().min(0).optional(),
+  required: z.boolean().optional(),
+});
+
 export const PipelineStepSchema = z.object({
   id: z.string().min(1, "id é obrigatório"),
   name: z.string().min(1, "name é obrigatório"),
@@ -22,6 +30,7 @@ export const PipelineStepSchema = z.object({
   body: z.record(z.string(), z.unknown()).nullish(),
   operationId: z.string().optional(),
   asserts: z.array(StepAssertionSchema).optional(),
+  extracts: z.array(StepExtractionSchema).optional(),
   delay: z.number().int().min(0).max(300000).optional(),
   retry: z.number().int().min(0).max(10).optional(),
 });

@@ -197,6 +197,29 @@ PWA service worker precaching is disabled by default so the embedded app cannot 
 
 Se o comando de browser falhar, o CLI mantém a saída em erro, destaca a mensagem em vermelho e ainda imprime a URL final para abrir manualmente.
 
+### Chaining extracted response values
+
+An E2E step can capture a value from its response for use by a later step:
+
+```json
+{
+  "extracts": [
+    {
+      "name": "code",
+      "field": "body.HTML",
+      "regex": "<strong>([0-9]{6})</strong>",
+      "group": 1,
+      "required": true
+    }
+  ]
+}
+```
+
+Reference the capture with `{{extracts.<stepId>.<name>}}`, for example
+`{{extracts.read_login_email.code}}`. Extraction references can only target
+earlier steps. Required captures fail the step when the field, match, or capture
+group is missing; optional captures are omitted.
+
 ## Documentation
 
 Start here for the full documentation hub:

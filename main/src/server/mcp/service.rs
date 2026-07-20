@@ -3540,6 +3540,7 @@ fn pipeline_creation_guide() -> Value {
             "pipeline.steps must contain at least one step",
             "each step requires id, name, method, and url",
             "steps.<stepId> references can only target steps that already ran earlier in the same pipeline",
+            "extracts.<stepId>.<name> references can only target a named extraction declared by an earlier step",
             "specs.<slug>.url.<name> references only work when the project has matching runtime specs configured",
             "supported template locations include step url, headers, body, and assertion expected values"
         ],
@@ -3548,6 +3549,11 @@ fn pipeline_creation_guide() -> Value {
                 "pattern": "{{steps.<stepId>.<fieldPath>}}",
                 "description": "Reads values from the response body of a previous step.",
                 "example": "{{steps.login.token}}"
+            },
+            "extracts": {
+                "pattern": "{{extracts.<stepId>.<name>}}",
+                "description": "Reads a named regular-expression capture declared by a previous step.",
+                "example": "{{extracts.read_login_email.code}}"
             },
             "specs": {
                 "pattern": "{{specs.<slug>.url.<name>}}",
@@ -3629,7 +3635,7 @@ fn pipeline_test_assistant_prompt() -> String {
         "You are responsible for operating Previa pipelines through the MCP server.",
         "Your job has three parts: create pipelines, evaluate executed tests and step results, and fix broken steps when needed.",
         "When creating pipelines, prefer this workflow: inspect the project, inspect project specs, call get_pipeline_creation_guide, build the pipeline, then call create_project_pipeline or update_project_pipeline.",
-        "Use only supported template variables. Valid roots are steps.<stepId>.*, specs.<slug>.url.<name>, and helpers.*. Do not invent variables such as run.id, project.id, pipeline.id, or env.*.",
+        "Use only supported template variables. Valid roots are steps.<stepId>.*, extracts.<stepId>.<name>, specs.<slug>.url.<name>, and helpers.*. Do not invent variables such as run.id, project.id, pipeline.id, or env.*.",
         "When evaluating tests, inspect list_e2e_history or list_load_history first, then use get_e2e_test or get_load_test to analyze the exact execution details, including request, response, body, asserts, and step-level failures when available.",
         "When a step fails, identify the most likely root cause from the execution data before suggesting any change. Consider status assertions, request body mistakes, wrong URLs, missing headers, invalid template references, and downstream dependency errors.",
         "When you find a problem, always propose a concrete solution first and then ask the user if they want you to apply it. Do not silently modify a pipeline without explicit user confirmation.",
@@ -3669,12 +3675,15 @@ Creation rules:\n\
 - pipeline.steps must contain at least one step.\n\
 - Each step requires id, name, method, and url.\n\
 - steps.<stepId> references can only point to steps that ran earlier in the same pipeline.\n\
+- extracts.<stepId>.<name> references can only point to named extractions declared by earlier steps.\n\
 - Supported template locations include url, headers, body, and assertion expected values.\n\
 - Unknown variables like {{{{run.id}}}}, {{{{project.id}}}}, {{{{pipeline.id}}}}, and {{{{env.API_URL}}}} are invalid.\n\
 \n\
 Supported template variables:\n\
 - Previous step response body: {{{{steps.<stepId>.<fieldPath>}}}}\n\
   Example: {{{{steps.login.token}}}}\n\
+- Previous step named extraction: {{{{extracts.<stepId>.<name>}}}}\n\
+  Example: {{{{extracts.read_login_email.code}}}}\n\
 - Runtime spec base URLs: {{{{specs.<slug>.url.<name>}}}}\n\
   Example: {{{{specs.payments.url.hml}}}}\n\
 - Helpers:\n\
@@ -4199,6 +4208,7 @@ mod tests {
 
         assert!(text.contains("Schema for pipeline"));
         assert!(text.contains("{{steps.<stepId>.<fieldPath>}}"));
+        assert!(text.contains("{{extracts.<stepId>.<name>}}"));
         assert!(text.contains("{{specs.<slug>.url.<name>}}"));
         assert!(text.contains("Example payload for create_project_pipeline"));
         assert!(text.contains("save_pipeline"));

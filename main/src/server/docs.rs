@@ -251,6 +251,17 @@ mod tests {
     }
 
     #[test]
+    fn openapi_exposes_step_extraction_schema() {
+        let document = serde_json::to_value(build_openapi_document()).expect("openapi json");
+
+        assert!(
+            document
+                .pointer("/components/schemas/StepExtraction")
+                .is_some()
+        );
+    }
+
+    #[test]
     fn openapi_contains_router_critical_paths() {
         let document = serde_json::to_value(build_openapi_document()).expect("openapi json");
         let paths = document
