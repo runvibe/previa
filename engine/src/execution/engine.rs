@@ -444,6 +444,7 @@ where
                         },
                         attempt: Some(attempt),
                         max_attempts: Some(max_attempts),
+                        extracts: HashMap::new(),
                         assert_results: None,
                     };
                     log_step_response(&step.id, None, result.error.as_deref());
@@ -486,6 +487,7 @@ where
                         },
                         attempt: Some(attempt),
                         max_attempts: Some(max_attempts),
+                        extracts: HashMap::new(),
                         assert_results: None,
                     };
                     log_step_response(&step.id, None, result.error.as_deref());
@@ -582,6 +584,7 @@ where
                                     },
                                     attempt: Some(attempt),
                                     max_attempts: Some(max_attempts),
+                                    extracts: HashMap::new(),
                                     assert_results: None,
                                 };
                                 log_step_response(&step.id, None, result.error.as_deref());
@@ -631,6 +634,7 @@ where
                         },
                         attempt: Some(attempt),
                         max_attempts: Some(max_attempts),
+                        extracts: HashMap::new(),
                         assert_results: None,
                     };
 
@@ -699,6 +703,7 @@ where
                         },
                         attempt: Some(attempt),
                         max_attempts: Some(max_attempts),
+                        extracts: HashMap::new(),
                         assert_results: None,
                     };
                     log_step_response(&step.id, None, result.error.as_deref());
@@ -767,6 +772,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: Vec::new(),
                 },
                 PipelineStep {
@@ -783,6 +789,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: Vec::new(),
                 },
             ],
@@ -810,6 +817,7 @@ mod tests {
                 attempts: Some(1),
                 attempt: Some(1),
                 max_attempts: Some(1),
+                extracts: HashMap::new(),
                 assert_results: None,
             },
         )]);
@@ -880,6 +888,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: vec![
                         StepAssertion {
                             field: "status".to_owned(),
@@ -904,6 +913,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: vec![
                         StepAssertion {
                             field: "status".to_owned(),
@@ -970,6 +980,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![],
             }],
         };
@@ -1025,6 +1036,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![],
             }],
         };
@@ -1071,6 +1083,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![],
             }],
         };
@@ -1123,6 +1136,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "status".to_owned(),
                     operator: "equals".to_owned(),
@@ -1178,6 +1192,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: vec![StepAssertion {
                         field: "status".to_owned(),
                         operator: "equals".to_owned(),
@@ -1195,6 +1210,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: vec![],
                 },
             ],
@@ -1381,6 +1397,7 @@ mod tests {
                 operation_id: None,
                 delay: Some(0),
                 retry: Some(2),
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "body.ok".to_owned(),
                     operator: "equals".to_owned(),
@@ -1423,6 +1440,7 @@ mod tests {
                 operation_id: None,
                 delay: Some(0),
                 retry: Some(5),
+                extracts: Vec::new(),
                 asserts: vec![],
             }],
         };
@@ -1463,6 +1481,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: Some(5),
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "status".to_owned(),
                     operator: "equals".to_owned(),
@@ -1513,6 +1532,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "status".to_owned(),
                     operator: "equals".to_owned(),
@@ -1578,6 +1598,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![
                     StepAssertion {
                         field: "status".to_owned(),
@@ -1647,6 +1668,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: Some(2),
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "status".to_owned(),
                     operator: "equals".to_owned(),
@@ -1697,6 +1719,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: Some(1),
+                extracts: Vec::new(),
                 asserts: vec![
                     StepAssertion {
                         field: "status".to_owned(),
@@ -1754,6 +1777,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: Some(3),
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "body.message".to_owned(),
                     operator: "equals".to_owned(),
@@ -1802,6 +1826,7 @@ mod tests {
                 operation_id: None,
                 delay: None,
                 retry: None,
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "status".to_owned(),
                     operator: "not_equals".to_owned(),
@@ -1845,6 +1870,7 @@ mod tests {
                 operation_id: None,
                 delay: Some(30),
                 retry: Some(2),
+                extracts: Vec::new(),
                 asserts: vec![StepAssertion {
                     field: "body.ok".to_owned(),
                     operator: "equals".to_owned(),

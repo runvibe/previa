@@ -447,6 +447,7 @@ fn step_result(
         },
         attempt: Some(attempt),
         max_attempts: Some(max_attempts),
+        extracts: HashMap::new(),
         assert_results,
     }
 }
@@ -483,6 +484,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();
@@ -526,6 +528,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();
@@ -592,6 +595,7 @@ mod tests {
             operation_id: None,
             delay: None,
             retry: None,
+            extracts: Vec::new(),
             asserts: vec![],
         };
         let context = HashMap::new();

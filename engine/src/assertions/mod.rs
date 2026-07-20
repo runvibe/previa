@@ -134,6 +134,7 @@ mod tests {
             attempts: None,
             attempt: Some(1),
             max_attempts: Some(1),
+            extracts: HashMap::new(),
             assert_results: None,
         }
     }

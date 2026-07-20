@@ -48,6 +48,28 @@ pub struct PipelineStep {
     pub retry: Option<usize>,
     #[serde(default)]
     pub asserts: Vec<StepAssertion>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extracts: Vec<StepExtraction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StepExtraction {
+    pub name: String,
+    pub field: String,
+    pub regex: String,
+    #[serde(default = "default_extraction_group")]
+    pub group: usize,
+    #[serde(default = "default_extraction_required")]
+    pub required: bool,
+}
+
+fn default_extraction_group() -> usize {
+    1
+}
+
+fn default_extraction_required() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -107,4 +129,6 @@ pub struct StepExecutionResult {
     pub max_attempts: Option<usize>,
     #[serde(rename = "assertResults", skip_serializing_if = "Option::is_none")]
     pub assert_results: Option<Vec<AssertionResult>>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub extracts: HashMap<String, String>,
 }

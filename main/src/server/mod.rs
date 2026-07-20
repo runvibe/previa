@@ -1382,6 +1382,7 @@ mod tests {
                     operation_id: None,
                     delay: None,
                     retry: None,
+                    extracts: Vec::new(),
                     asserts: Vec::new(),
                 }],
             },
