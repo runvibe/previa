@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec};
+use previa_runner::{Pipeline, RuntimeEnvGroup, RuntimeSpec, validate_step_extractions};
 use regex::Regex;
 use serde_json::Value;
 
@@ -18,13 +18,20 @@ pub fn validate_pipeline_templates(
     let specs_index = build_specs_index(specs);
     let env_groups_index = build_env_groups_index(env_groups);
     let mut known_steps = HashSet::new();
+    let mut known_extractions = HashMap::new();
     let mut errors = Vec::new();
 
     for step in &pipeline.steps {
+        errors.extend(
+            validate_step_extractions(step)
+                .into_iter()
+                .map(|error| format!("step '{}': {error}", step.id)),
+        );
         validate_string_templates(
             &step.url,
             &format!("step '{}' field 'url'", step.id),
             &known_steps,
+            &known_extractions,
             &specs_index,
             &env_groups_index,
             selected_env_group_slug,
@@ -36,6 +43,7 @@ pub fn validate_pipeline_templates(
                 header_value,
                 &format!("step '{}' header '{}'", step.id, header_name),
                 &known_steps,
+                &known_extractions,
                 &specs_index,
                 &env_groups_index,
                 selected_env_group_slug,
@@ -48,6 +56,7 @@ pub fn validate_pipeline_templates(
                 body,
                 &format!("step '{}' body", step.id),
                 &known_steps,
+                &known_extractions,
                 &specs_index,
                 &env_groups_index,
                 selected_env_group_slug,
@@ -61,6 +70,7 @@ pub fn validate_pipeline_templates(
                     expected,
                     &format!("step '{}' assertion {} expected value", step.id, index + 1),
                     &known_steps,
+                    &known_extractions,
                     &specs_index,
                     &env_groups_index,
                     selected_env_group_slug,
@@ -70,6 +80,13 @@ pub fn validate_pipeline_templates(
         }
 
         known_steps.insert(step.id.clone());
+        known_extractions.insert(
+            step.id.clone(),
+            step.extracts
+                .iter()
+                .map(|extraction| extraction.name.clone())
+                .collect::<HashSet<_>>(),
+        );
     }
 
     errors
@@ -79,6 +96,7 @@ fn validate_value_templates(
     value: &Value,
     path: &str,
     known_steps: &HashSet<String>,
+    known_extractions: &HashMap<String, HashSet<String>>,
     specs_index: &HashMap<String, HashSet<String>>,
     env_groups_index: &HashMap<String, HashSet<String>>,
     selected_env_group_slug: Option<&str>,
@@ -90,6 +108,7 @@ fn validate_value_templates(
                 value,
                 path,
                 known_steps,
+                known_extractions,
                 specs_index,
                 env_groups_index,
                 selected_env_group_slug,
@@ -102,6 +121,7 @@ fn validate_value_templates(
                     item,
                     &format!("{path}[{index}]"),
                     known_steps,
+                    known_extractions,
                     specs_index,
                     env_groups_index,
                     selected_env_group_slug,
@@ -115,6 +135,7 @@ fn validate_value_templates(
                     item,
                     &format!("{path}.{key}"),
                     known_steps,
+                    known_extractions,
                     specs_index,
                     env_groups_index,
                     selected_env_group_slug,
@@ -130,6 +151,7 @@ fn validate_string_templates(
     value: &str,
     path: &str,
     known_steps: &HashSet<String>,
+    known_extractions: &HashMap<String, HashSet<String>>,
     specs_index: &HashMap<String, HashSet<String>>,
     env_groups_index: &HashMap<String, HashSet<String>>,
     selected_env_group_slug: Option<&str>,
@@ -155,6 +177,7 @@ fn validate_string_templates(
         if let Some(message) = validate_expression(
             &normalized,
             known_steps,
+            known_extractions,
             specs_index,
             env_groups_index,
             selected_env_group_slug,
@@ -167,6 +190,7 @@ fn validate_string_templates(
 fn validate_expression(
     expression: &str,
     known_steps: &HashSet<String>,
+    known_extractions: &HashMap<String, HashSet<String>>,
     specs_index: &HashMap<String, HashSet<String>>,
     env_groups_index: &HashMap<String, HashSet<String>>,
     selected_env_group_slug: Option<&str>,
@@ -197,6 +221,32 @@ fn validate_expression(
         } else {
             Some(format!(
                 "template variable '{{{{{expression}}}}}' references step '{step_id}' that is not available yet"
+            ))
+        };
+    }
+
+    if let Some(extraction_expression) = expression.strip_prefix("extracts.") {
+        let mut parts = extraction_expression.split('.');
+        let step_id = parts.next().unwrap_or_default().trim();
+        let extraction_name = parts.next().unwrap_or_default().trim();
+        if step_id.is_empty() || extraction_name.is_empty() || parts.next().is_some() {
+            return Some(format!(
+                "template variable '{{{{{expression}}}}}' must use the format '{{{{extracts.<stepId>.<name>}}}}'"
+            ));
+        }
+        if !known_steps.contains(step_id) {
+            return Some(format!(
+                "template variable '{{{{{expression}}}}}' references step '{step_id}' that is not available yet"
+            ));
+        }
+        return if known_extractions
+            .get(step_id)
+            .is_some_and(|names| names.contains(extraction_name))
+        {
+            None
+        } else {
+            Some(format!(
+                "template variable '{{{{{expression}}}}}' references unknown extraction '{extraction_name}' for step '{step_id}'"
             ))
         };
     }
@@ -349,7 +399,7 @@ fn template_regex() -> &'static Regex {
 mod tests {
     use std::collections::HashMap;
 
-    use previa_runner::{Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec};
+    use previa_runner::{Pipeline, PipelineStep, RuntimeEnvGroup, RuntimeSpec, StepExtraction};
     use serde_json::json;
 
     use super::validate_pipeline_templates;
@@ -369,6 +419,109 @@ mod tests {
             extracts: Vec::new(),
             asserts: Vec::new(),
         }
+    }
+
+    fn extracted_step(id: &str, name: &str) -> PipelineStep {
+        let mut step = sample_step(id, "https://example.com/message");
+        step.extracts.push(StepExtraction {
+            name: name.to_owned(),
+            field: "body.HTML".to_owned(),
+            regex: r"<strong>([0-9]{6})</strong>".to_owned(),
+            group: 1,
+            required: true,
+        });
+        step
+    }
+
+    #[test]
+    fn accepts_reference_to_prior_declared_extraction() {
+        let mut verify = sample_step("verify", "https://example.com/verify");
+        verify.body = Some(json!({"code": "{{extracts.email.code}}"}));
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![extracted_step("email", "code"), verify],
+        };
+
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
+
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn rejects_unknown_extraction_name() {
+        let mut verify = sample_step("verify", "https://example.com/verify");
+        verify.body = Some(json!({"code": "{{extracts.email.missing}}"}));
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![extracted_step("email", "code"), verify],
+        };
+
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("unknown extraction 'missing'"))
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_and_forward_extraction_steps() {
+        let mut first = sample_step("first", "https://example.com");
+        first.body =
+            Some(json!({"a": "{{extracts.missing.code}}", "b": "{{extracts.email.code}}"}));
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![first, extracted_step("email", "code")],
+        };
+
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
+
+        assert!(errors.iter().any(|error| error.contains("step 'missing'")));
+        assert!(errors.iter().any(|error| error.contains("step 'email'")));
+    }
+
+    #[test]
+    fn rejects_malformed_extraction_reference() {
+        let mut verify = sample_step("verify", "https://example.com/verify");
+        verify.body = Some(json!({"code": "{{extracts.email}}"}));
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![extracted_step("email", "code"), verify],
+        };
+
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("must use the format"))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_extraction_definition() {
+        let mut step = extracted_step("email", "bad name");
+        step.extracts[0].regex = "(".to_owned();
+        let pipeline = Pipeline {
+            id: None,
+            name: "test".to_owned(),
+            description: None,
+            steps: vec![step],
+        };
+
+        let errors = validate_pipeline_templates(&pipeline, None, None, None);
+
+        assert!(errors.iter().any(|error| error.contains("invalid name")));
+        assert!(errors.iter().any(|error| error.contains("invalid regex")));
     }
 
     #[test]
